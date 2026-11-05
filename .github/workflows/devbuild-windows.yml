@@ -5,6 +5,7 @@ name: Dev build for the laptop (test-signed installer, pinned)
 # orphan branch `dev-builds` (one commit, force-pushed). The laptop job runner installs it (job "install").
 # Never a release artifact: test-signer feature + per-run self-signed certificate.
 
+# Needs the orphan branch `geo-data` (made by geo-data.yml) before the first build in a new repository.
 on:
   push:
     branches: [main]
