@@ -1,0 +1,223 @@
+name: A15 UI build (Tauri, Windows)
+
+# A15: Tauri 코어(파이프 클라이언트) + 프런트 번들을 Windows 에서 빌드한다.
+# A22: 빌드한 실제 앱을 테스트 인증서로 서명하고, svc-poc(--demo, 파이프·서명·관리자 검사 실제 경로)에 붙여
+#      WebView2 원격 디버깅(CDP)으로 Playwright 가 같은 종단 시나리오를 돈다. CSP 위반·페이지 오류·외부 출처를 판정.
+on:
+  push:
+    paths:
+      - "ui/**"
+      - "crates/svc/**"
+      - ".github/workflows/poc5-ui-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 같은 브랜치에 새로 올리면 앞서 돌던 실행은 취소(비용)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ui/src-tauri/target
+            target
+          key: a22-windows-${{ hashFiles('ui/src-tauri/Cargo.lock', 'ui/src-tauri/Cargo.toml', 'Cargo.lock') }}
+      - name: Frontend
+        working-directory: ui
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build
+      - name: Tauri app (tauri build --no-bundle, embeds dist)
+        working-directory: ui
+        shell: pwsh
+        run: |
+          $env:RUSTFLAGS = "-D warnings"
+          npx tauri build --no-bundle --features e2e-cdp 2>&1 | Tee-Object -FilePath ../build-ui.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-Item src-tauri/target/release/story-firewall-ui.exe | Select-Object Name, Length
+
+      - name: Build svc-poc (test-signer)
+        shell: pwsh
+        run: cargo build --release --locked -p svc --features test-signer --bin svc-poc 2>&1 | Tee-Object -FilePath build-svc.log
+
+      - name: Sign UI with a self-signed test certificate
+        shell: pwsh
+        run: |
+          $exe = "ui\src-tauri\target\release\story-firewall-ui.exe"
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=StoryFirewall Test" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(2)
+          $cer = Join-Path $env:RUNNER_TEMP "test.cer"
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
+          $r = Set-AuthenticodeSignature -FilePath $exe -Certificate $cert -HashAlgorithm SHA256
+          "sign status: $($r.Status)"
+
+      - name: Real UI end-to-end (WebView2 + CDP + svc-poc pipe)
+        shell: pwsh
+        run: |
+          $log = "ui-e2e.out"
+          function Log($s) { $s | Tee-Object -FilePath $log -Append }
+          $svc = Start-Process -FilePath ".\target\release\svc-poc.exe" -ArgumentList 'server','"StoryFirewall Test"','8','--demo','--concurrent' -RedirectStandardOutput svc.out -RedirectStandardError svc.err -PassThru
+          Start-Sleep -Seconds 2
+          # 환경 변수는 설정의 additionalBrowserArgs 를 대신하므로(추측: WebView2 는 환경 변수를 우선) 같은 인자를 앞에 붙여 실제 앱과 같게 잰다
+          $cfgArgs = (Get-Content ui\src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).app.windows[0].additionalBrowserArgs
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "$cfgArgs --remote-debugging-port=9222"
+          # A23: approval helper auto-answer file (e2e-cdp build only; release ignores it)
+          $env:STORYFW_E2E_APPROVE_OUT = Join-Path $PWD "approve-out.txt"
+          $ui = Start-Process -FilePath ".\ui\src-tauri\target\release\story-firewall-ui.exe" -PassThru
+          Remove-Item Env:\WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+          # UI 자신의 외부 통신 측정(노트북 L015 발견 2): UI 와 그 자손(msedgewebview2)의 TCP 원격 주소를 1초마다, 처음 본 것만 기록
+          $egress = Start-Job -ArgumentList $ui.Id {
+            param($root)
+            $seen = @{}
+            $end = (Get-Date).AddSeconds(240)
+            while ((Get-Date) -lt $end) {
+              $all = Get-CimInstance Win32_Process
+              $kids = @($root)
+              do { $n = $kids.Count; $kids = @($kids + @($all | Where-Object { $kids -contains $_.ParentProcessId } | ForEach-Object { $_.ProcessId }) | Select-Object -Unique) } while ($kids.Count -ne $n)
+              Get-NetTCPConnection -ErrorAction SilentlyContinue | Where-Object { $kids -contains $_.OwningProcess -and $_.RemoteAddress -notmatch '^(127\.|::1$|0\.0\.0\.0$|::$)' } | ForEach-Object {
+                $name = ($all | Where-Object ProcessId -eq $_.OwningProcess | Select-Object -First 1).Name
+                $k = "$name $($_.RemoteAddress):$($_.RemotePort)"
+                if (-not $seen.ContainsKey($k)) { $seen[$k] = 1; "ui-egress: $k $($_.State)" }
+              }
+              Start-Sleep -Seconds 1
+            }
+          }
+          Push-Location ui
+          $env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
+          npm install --no-save playwright@1.63.0 2>&1 | Out-Null
+          node scripts/e2e-tauri.mjs 9222 ..\e2e-tauri-out 2>&1 | Tee-Object -FilePath ..\$log -Append
+          $rc = $LASTEXITCODE
+          Pop-Location
+          Stop-Job $egress -ErrorAction SilentlyContinue
+          $eg = @(Receive-Job $egress -ErrorAction SilentlyContinue)
+          Log ("ui-egress-count: " + $eg.Count)
+          $eg | ForEach-Object { Log $_ }
+          # 판정(2026-11-03 고정): 보안 제품 UI 는 실행 중 스스로 외부에 접속하지 않는다 (WebView2 백그라운드 네트워킹 끔, 8ab3273 에서 0 확인)
+          if ($eg.Count -gt 0) { Log "FAIL ui made external connections"; $rc = 1 } else { Log "PASS ui made no external connections" }
+          Stop-Process -Id $ui.Id -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          Stop-Process -Id $svc.Id -Force -ErrorAction SilentlyContinue
+          Log "--- svc.out ---"; Get-Content svc.out | Tee-Object -FilePath $log -Append
+          Log "--- svc.err ---"; Get-Content svc.err -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+          exit $rc
+      - name: Approval window self-test (A24 clickjacking guard, screenshot)
+        shell: pwsh
+        run: |
+          $out = Join-Path $PWD "approve-selftest.txt"
+          $p = Start-Process -FilePath ".\ui\src-tauri\target\release\story-firewall-ui.exe" -ArgumentList '--approve-selftest',"`"$out`"" -PassThru
+          $null = $p.Handle  # keep a handle so ExitCode is available after exit
+          Start-Sleep -Seconds 2
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save((Join-Path $PWD "approve-window.png"))
+          $g.Dispose(); $bmp.Dispose()
+          if (-not $p.WaitForExit(30000)) { Stop-Process -Id $p.Id -Force; "selftest timeout" | Tee-Object -FilePath approve-selftest.txt -Append; exit 1 }
+          "exit=$($p.ExitCode)" | Tee-Object -FilePath approve-selftest.txt -Append
+          Get-Content approve-selftest.txt
+          if ($p.ExitCode -ne 0) { exit 1 }
+      - name: A27 real UI as a standard user (view mode, approval helper via UAC stand-in)
+        if: always()
+        shell: pwsh
+        run: |
+          $log = "ui-user.out"
+          function Log($s) { $s | Tee-Object -FilePath $log -Append }
+          # standard user (Users group only)
+          $pw = "Sf!" + [guid]::NewGuid().ToString("N").Substring(0, 16) + "a1"
+          $sec = ConvertTo-SecureString $pw -AsPlainText -Force
+          New-LocalUser -Name sfuiuser -Password $sec -PasswordNeverExpires | Out-Null
+          Add-LocalGroupMember -Group Users -Member sfuiuser -ErrorAction SilentlyContinue
+          $cred = New-Object System.Management.Automation.PSCredential("$env:COMPUTERNAME\sfuiuser", $sec)
+          Log ("groups: " + ((Get-LocalGroup | Where-Object { (Get-LocalGroupMember $_ -ErrorAction SilentlyContinue).Name -match 'sfuiuser' }).Name -join ","))
+          $exe = (Resolve-Path ".\ui\src-tauri\target\release\story-firewall-ui.exe").Path
+          icacls (Split-Path $exe) /grant "sfuiuser:(OI)(CI)RX" /T | Out-Null
+          # UAC stand-in: the user's UI drops req-<id>.txt, the admin side runs the helper elevated and writes done-<id>.txt
+          $uac = Join-Path $env:RUNNER_TEMP "uac"
+          New-Item -ItemType Directory -Path $uac -Force | Out-Null
+          icacls $uac /grant "sfuiuser:(OI)(CI)M" | Out-Null
+          $aout = Join-Path $PWD "approve-user.txt"
+          $svc = Start-Process -FilePath ".\target\release\svc-poc.exe" -ArgumentList 'server','"StoryFirewall Test"','16','--demo','--concurrent' -RedirectStandardOutput svc-user.out -RedirectStandardError svc-user.err -PassThru
+          Start-Sleep -Seconds 2
+          $standin = Start-Job -ArgumentList $uac, $exe, $aout {
+            param($dir, $exe, $out)
+            $end = (Get-Date).AddMinutes(8)
+            while ((Get-Date) -lt $end) {
+              Get-ChildItem $dir -Filter 'req-*.txt' -ErrorAction SilentlyContinue | ForEach-Object {
+                $id = $_.BaseName.Substring(4)
+                Remove-Item $_.FullName -Force
+                $p = Start-Process -FilePath $exe -ArgumentList '--approve', $id, '--e2e-auto', "`"$out`"" -PassThru -Wait
+                Set-Content -Path (Join-Path $dir "done-$id.txt") -Value $p.ExitCode
+                "helper $id exit=$($p.ExitCode)"
+              }
+              Start-Sleep -Milliseconds 300
+            }
+          }
+          $uiArgs = @('--e2e-env', 'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223', '--e2e-env', "STORYFW_E2E_UAC_DIR=$uac")
+          $ui = Start-Process -FilePath $exe -ArgumentList $uiArgs -Credential $cred -LoadUserProfile -WorkingDirectory (Split-Path $exe) -PassThru
+          Start-Sleep -Seconds 5
+          $owner = (Get-Process -Id $ui.Id -IncludeUserName -ErrorAction SilentlyContinue).UserName
+          Log "ui pid=$($ui.Id) owner=$owner"
+          Push-Location ui
+          $env:STORYFW_E2E_APPROVE_OUT = $aout
+          node scripts/e2e-tauri.mjs 9223 ..\e2e-user-out user 2>&1 | Tee-Object -FilePath ..\$log -Append
+          $rc = $LASTEXITCODE
+          Pop-Location
+          if ($owner -notmatch 'sfuiuser') { Log "FAIL ui process owner is not sfuiuser ($owner)"; $rc = 1 } else { Log "PASS ui process owner is sfuiuser" }
+          Stop-Process -Id $ui.Id -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          Stop-Process -Id $svc.Id -Force -ErrorAction SilentlyContinue
+          Stop-Job $standin -ErrorAction SilentlyContinue
+          Log "--- stand-in ---"; Receive-Job $standin -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+          Log "--- svc-user.out ---"; Get-Content svc-user.out -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+          Log "--- svc-user.err ---"; Get-Content svc-user.err -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+          Remove-LocalUser -Name sfuiuser -ErrorAction SilentlyContinue
+          exit $rc
+
+      - name: Publish logs to ci-logs branch
+        if: always()
+        shell: pwsh
+        run: |
+          $dst = Join-Path $env:RUNNER_TEMP "ci-logs"
+          git clone --quiet --branch ci-logs --single-branch "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" $dst 2>$null
+          $run = Join-Path $dst "poc5/run-${{ github.run_number }}/windows-2022"
+          New-Item -ItemType Directory -Path $run -Force | Out-Null
+          Copy-Item build-ui.log, build-svc.log, ui-e2e.out $run -ErrorAction SilentlyContinue
+          if (Test-Path e2e-tauri-out) { Copy-Item e2e-tauri-out\* $run -Recurse -ErrorAction SilentlyContinue }
+          Copy-Item approve-selftest.txt, approve-window.png, ui-user.out, approve-user.txt $run -ErrorAction SilentlyContinue
+          if (Test-Path e2e-user-out) { $u = Join-Path $run "user"; New-Item -ItemType Directory -Path $u -Force | Out-Null; Copy-Item e2e-user-out\* $u -ErrorAction SilentlyContinue }
+          "${{ github.sha }}" | Set-Content (Join-Path $run "commit.txt")
+          git -C $dst config user.name "github-actions"
+          git -C $dst config user.email "actions@github.com"
+          Get-ChildItem (Join-Path $dst "poc5") -Directory -ErrorAction SilentlyContinue | Sort-Object { [int]($_.Name -replace 'run-','') } -Descending | Select-Object -Skip 10 | Remove-Item -Recurse -Force
+          git -C $dst add -A
+          git -C $dst commit --quiet -m "poc5 run ${{ github.run_number }} (${{ job.status }})" 2>$null
+          $pushed = $false
+          for ($i = 0; $i -lt 10; $i++) {
+            git -C $dst fetch --quiet origin ci-logs 2>$null
+            git -C $dst rebase --quiet origin/ci-logs 2>$null
+            if ($LASTEXITCODE -ne 0) { git -C $dst rebase --abort 2>$null; git -C $dst reset --quiet --hard origin/ci-logs; git -C $dst add -A; git -C $dst commit --quiet -m "poc5 run ${{ github.run_number }} retry" 2>$null }
+            git -C $dst push --quiet origin ci-logs 2>$null
+            if ($LASTEXITCODE -eq 0) { $pushed = $true; break }
+            Start-Sleep -Seconds (2 * ($i + 1) + (Get-Random -Maximum 5))
+          }
+          if (-not $pushed) { "ci-logs push failed after retries"; exit 1 }

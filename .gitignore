@@ -1,0 +1,8 @@
+target/
+*.log
+*.err
+# 테스트 고정 데이터(.out)는 예외
+*.out
+!crates/*/tests/fixtures/*.out
+# 병렬 작업용 임시 작업 폴더(커밋하지 않음)
+.claude/worktrees/

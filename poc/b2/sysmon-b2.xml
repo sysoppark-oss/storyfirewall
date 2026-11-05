@@ -1,0 +1,52 @@
+<!--
+  B2 ground-truth config (dev measurement only, never shipped).
+  Logs everything the story-firewall collector also watches:
+    1 ProcessCreate, 5 ProcessTerminate, 3 NetworkConnect, 22 DnsQuery,
+    11 FileCreate (executable/script extensions only).
+  Kept for later injection work (low volume): 8 CreateRemoteThread, 25 ProcessTampering.
+  Everything noisy or side-effecting is switched off with an empty include
+  (FileDelete would archive deleted files to C:\Sysmon - off).
+-->
+<Sysmon schemaversion="4.50">
+  <HashAlgorithms>SHA256</HashAlgorithms>
+  <CheckRevocation>False</CheckRevocation>
+  <EventFiltering>
+    <RuleGroup name="b2-all" groupRelation="or">
+      <ProcessCreate onmatch="exclude"/>
+      <ProcessTerminate onmatch="exclude"/>
+      <NetworkConnect onmatch="exclude"/>
+      <DnsQuery onmatch="exclude"/>
+      <CreateRemoteThread onmatch="exclude"/>
+      <ProcessTampering onmatch="exclude"/>
+    </RuleGroup>
+    <RuleGroup name="b2-files" groupRelation="or">
+      <FileCreate onmatch="include">
+        <TargetFilename condition="end with">.exe</TargetFilename>
+        <TargetFilename condition="end with">.dll</TargetFilename>
+        <TargetFilename condition="end with">.scr</TargetFilename>
+        <TargetFilename condition="end with">.com</TargetFilename>
+        <TargetFilename condition="end with">.bat</TargetFilename>
+        <TargetFilename condition="end with">.cmd</TargetFilename>
+        <TargetFilename condition="end with">.ps1</TargetFilename>
+        <TargetFilename condition="end with">.vbs</TargetFilename>
+        <TargetFilename condition="end with">.js</TargetFilename>
+        <TargetFilename condition="end with">.hta</TargetFilename>
+        <TargetFilename condition="end with">.msi</TargetFilename>
+        <TargetFilename condition="end with">.tmp</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+    <RuleGroup name="b2-off" groupRelation="or">
+      <FileCreateTime onmatch="include"/>
+      <DriverLoad onmatch="include"/>
+      <ImageLoad onmatch="include"/>
+      <RawAccessRead onmatch="include"/>
+      <ProcessAccess onmatch="include"/>
+      <RegistryEvent onmatch="include"/>
+      <FileCreateStreamHash onmatch="include"/>
+      <PipeEvent onmatch="include"/>
+      <WmiEvent onmatch="include"/>
+      <FileDelete onmatch="include"/>
+      <ClipboardChange onmatch="include"/>
+    </RuleGroup>
+  </EventFiltering>
+</Sysmon>

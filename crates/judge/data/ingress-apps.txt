@@ -1,0 +1,15 @@
+chrome.exe
+msedge.exe
+firefox.exe
+brave.exe
+whale.exe
+outlook.exe
+thunderbird.exe
+winrar.exe
+7zfm.exe
+7z.exe
+bandizip.exe
+kakaotalk.exe
+slack.exe
+discord.exe
+telegram.exe

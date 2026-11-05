@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "externalBin": [
+      "binaries/story-firewall-svc"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "installMode": "perMachine",
+        "installerHooks": "installer-hooks.nsh",
+        "languages": [
+          "Korean",
+          "English"
+        ],
+        "displayLanguageSelector": false
+      }
+    },
+    "resources": {
+      "geo/dbip-country-lite.mmdb": "geo/dbip-country-lite.mmdb",
+      "geo/dbip-asn-lite.mmdb": "geo/dbip-asn-lite.mmdb"
+    }
+  }
+}

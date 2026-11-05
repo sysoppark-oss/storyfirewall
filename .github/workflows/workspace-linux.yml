@@ -1,0 +1,103 @@
+name: Workspace test (Linux)
+
+# OS 독립 크레이트(graph, story, dsl …)는 Linux 러너에서 검사한다. Windows 러너는 ETW·WFP 전용.
+on:
+  push:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "ui/**"
+      - ".github/workflows/workspace-linux.yml"
+  pull_request:
+  workflow_dispatch:
+
+# 같은 브랜치에 새로 올리면 앞서 돌던 실행은 취소(비용)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # geo 크레이트가 실제 DB-IP 파일로 국가·ASN 을 읽는지 (geo-data 브랜치)
+      - uses: actions/checkout@v4
+        with:
+          ref: geo-data
+          path: geo-data
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ws-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Build
+        run: cargo build --workspace --locked
+      - name: Test
+        run: cargo test --workspace --locked
+        env:
+          SF_GEO_DIR: ${{ github.workspace }}/geo-data
+      - name: Deny warnings
+        run: RUSTFLAGS="-D warnings" cargo build --workspace --locked
+      - name: Check Windows-only code on Linux (host-check)
+        run: RUSTFLAGS="-D warnings" cargo check --workspace --locked --features collector/host-check,policy/host-check,svc/host-check
+      - name: Release build must not carry the test signer (svc without test-signer)
+        run: |
+          # test-signer 는 기본 feature 에 절대 들어가면 안 된다 (제안 3)
+          ! grep -Eq '^default\s*=.*test-signer' crates/svc/Cargo.toml
+          RUSTFLAGS="-D warnings" cargo check -p svc --locked --release --features svc/host-check
+
+  # A15 UI 프런트: 타입 검사·단위 테스트(위생 처리)·번들. Tauri 코어(ui/src-tauri)는 webkit2gtk 가 없어 Windows 러너(poc5)에서 빌드.
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ws-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Frontend check, test, build
+        working-directory: ui
+        run: |
+          npm ci
+          npm run check
+          npm test
+          npm run build
+      - name: Protocol smoke against svc-dev (fake service)
+        run: |
+          cargo build --locked -p svc --bin svc-dev
+          ./target/debug/svc-dev --listen 127.0.0.1:7878 &
+          sleep 2
+          node ui/scripts/smoke.mjs 127.0.0.1:7878
+      - name: UI end-to-end (Chromium + svc-dev, screenshots)
+        working-directory: ui
+        run: |
+          # Playwright 는 시험 도구라 package.json 에 넣지 않는다(배포 의존성 아님). 작업 환경과 같은 판
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+          ../target/debug/svc-dev --listen 127.0.0.1:7879 &
+          sleep 2
+          node scripts/e2e.mjs 127.0.0.1:7879 e2e-out
+          # 보기 모드 UI: 변경은 맡기고(change.stage) 승인 도우미 흉내(관리자 포트)가 요약 확인 -> 실행 -> 유지 (A23)
+          ../target/debug/svc-dev --listen 127.0.0.1:7880 --non-admin --admin-listen 127.0.0.1:7881 &
+          sleep 2
+          node scripts/e2e.mjs 127.0.0.1:7880 e2e-out/nonadmin nonadmin 127.0.0.1:7881
+      - name: Upload UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-e2e
+          path: ui/e2e-out

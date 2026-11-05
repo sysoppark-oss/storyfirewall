@@ -1,0 +1,47 @@
+name: Windows unit tests (laptop runner)
+
+# 노트북 실행 서버에서 Windows 단위 시험(관리자 권한 불필요한 것만): cargo test, UI vitest.
+# 저장소 변수 SF_LAPTOP_RUNNER=1 일 때만 돈다 — 설정 전에는 아무 데서도 돌지 않는다(GitHub 사용량을 쓰지 않음).
+# ETW·WFP·서비스 설치 시험은 여기서 하지 않는다(실기기 보호, 지침: 정책 적용은 VM 먼저).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "ui/src/**"
+      - "ui/package*.json"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/win-check-laptop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    if: vars.SF_LAPTOP_RUNNER == '1'
+    runs-on: [self-hosted, Windows, sf-laptop]
+    # 노트북 RAM 5.8GB(여유 0.5GB, L027): 동시 컴파일을 2개로 제한. GitHub 러너에서는 영향 작음
+    env:
+      CARGO_BUILD_JOBS: 2
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: cargo test (workspace)
+        shell: pwsh
+        run: cargo test --locked --workspace
+      - name: UI unit tests
+        shell: pwsh
+        working-directory: ui
+        run: |
+          npm ci
+          npx vitest run

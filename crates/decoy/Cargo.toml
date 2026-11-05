@@ -1,0 +1,11 @@
+[package]
+name = "decoy"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "미끼(카나리) 폴더: 후보 목록, 사용자 권한에서 만들기, 서비스가 읽기만 해서 찾기 (17판 23-2 ②)"
+
+# 의존성 없음 — UI(src-tauri, 사용자 권한)와 엔진(graph, 서비스)이 같이 쓴다
+[dependencies]
+
+[dev-dependencies]

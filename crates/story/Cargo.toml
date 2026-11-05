@@ -1,0 +1,18 @@
+[package]
+name = "story"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "이야기 생성기: 출처 그래프 → 사실 목록 → 장면 → 템플릿 문장 (화법 3종, 모든 문장에 근거 id)"
+
+[dependencies]
+graph = { path = "../graph" }
+judge = { path = "../judge" }
+geo = { path = "../geo" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+# 테스트는 graph 의 run-2 고정 데이터를 재사용한다

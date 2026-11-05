@@ -1,0 +1,21 @@
+# 제품 본체 워크스페이스. poc/ 아래의 검증 코드는 여기에 포함하지 않는다.
+[workspace]
+resolver = "2"
+members = ["crates/decoy", "crates/graph", "crates/story", "crates/collector", "crates/policy", "crates/dsl", "crates/judge", "crates/engine", "crates/api", "crates/svc", "crates/b2", "crates/geo", "crates/board"]
+
+[workspace.package]
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[workspace.dependencies]
+# rusqlite: MIT. bundled 로 SQLite 를 내장해 배포 의존성을 없앤다.
+rusqlite = { version = "0.41", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# sha2: MIT OR Apache-2.0 (RustCrypto). 0.10 계열 — 0.11 은 2026-10 출시라 안정 계열을 쓴다 (A20: 출신 기록 해시)
+sha2 = "0.10"
+
+# ferrisetw: 실시간 소비에 RAW_TIMESTAMP 를 켤 수 있게 한 판 (third_party/ferrisetw/PATCHES.md, 23차 Q2)
+[patch.crates-io]
+ferrisetw = { path = "third_party/ferrisetw" }

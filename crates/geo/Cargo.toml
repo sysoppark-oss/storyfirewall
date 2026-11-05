@@ -1,0 +1,10 @@
+[package]
+name = "geo"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# maxminddb: ISC. MMDB 읽기 (DB-IP Lite 국가·ASN, CC BY 4.0 — 앱 정보 화면에 출처 표기)
+maxminddb = "0.32"
+serde.workspace = true

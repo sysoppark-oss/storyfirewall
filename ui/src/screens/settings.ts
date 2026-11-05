@@ -1,0 +1,137 @@
+import { mutation, rpc } from "../rpc";
+import { el, button, errorBox, clear } from "../ui";
+import { state } from "../state";
+import { loadTheme, setTheme, type Theme } from "../theme";
+import { diagnostics } from "./diag";
+import { FIRST_RUN_CHOICES, FIRST_RUN_MINUTES, FIRST_RUN_MINUTES_SENTENCE, firstRunSentence, firstRunSetting, umbrellaText, type FirstRunMode } from "./first-run";
+import { approvalBox, countdown, type ApplyReply } from "../confirm";
+
+/// 보관 설정 값 → "원시 기록 7일 · 연결 요약 30일". 아는 키가 없으면 빈 문자열
+export function retentionText(v: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const n = (k: string) => (typeof v[k] === "number" ? (v[k] as number) : null);
+  // D033-2: 개발 말("원시") 대신 사용자 말
+  if (n("raw_days") != null) parts.push(`자세한 기록 ${n("raw_days")}일`);
+  if (n("summary_days") != null) parts.push(`연결 요약 ${n("summary_days")}일`);
+  // 서버 필드는 suspicious_days(graph::retention::RetentionPolicy). 예전 이름 incident_days 도 읽는다
+  const sus = n("suspicious_days") ?? n("incident_days");
+  if (sus != null) parts.push(`의심 사건 ${sus}일`);
+  return parts.length ? `보관: ${parts.join(" · ")}` : "";
+}
+
+/// 설정: 보관·화법·연결 끝점. 외부 전송 옵션(Claude 서술 등)은 켤 때 무엇이 나가는지 보여 준다 (지침 AI 요소).
+export function settings(): HTMLElement {
+  const root = el("section", "screen");
+  root.append(el("h1", undefined, "설정"));
+  // D025-B: 진단을 맨 위에(수집 상태 줄 "자세히 ›"가 여기로 온다)
+  root.append(diagnostics());
+  const out = el("div", "out");
+  const voice = el("select");
+  for (const [v, l] of [["plain", "담백하게"], ["story", "이야기처럼"]] as const) {
+    const o = el("option", undefined, l);
+    o.value = v;
+    voice.append(o);
+  }
+  // 첫 실행 관찰실 (17판 23-2 ①): 끄기 / 알리기 / 알리고 막기 + 관찰 시간. 바꾸기는 관리자 승인 경로(settings.set)
+  const frMode = el("select");
+  for (const c of FIRST_RUN_CHOICES) {
+    const o = el("option", undefined, c.label);
+    o.value = c.value;
+    frMode.append(o);
+  }
+  frMode.value = "notify";
+  const frModeTip = el("p", "muted", firstRunSentence("notify"));
+  frMode.addEventListener("change", () => { frModeTip.textContent = firstRunSentence(frMode.value as FirstRunMode); });
+  const frMin = el("select");
+  for (const m of FIRST_RUN_MINUTES) {
+    const o = el("option", undefined, `${m}분`);
+    o.value = String(m);
+    frMin.append(o);
+  }
+  frMin.value = "10";
+  // 관찰실 차단 정책(우산)의 지금 상태 — 막기 모드일 때만 한 줄
+  const frUmb = el("p", "muted");
+  const refreshUmbrella = async () => {
+    const g = await rpc<Record<string, unknown>>("settings.get", {});
+    if (g.ok) frUmb.textContent = umbrellaText(firstRunSetting(g.result).mode, g.result["first_run_umbrella"]);
+  };
+  const endpoint = el("input");
+  endpoint.value = state.endpoint;
+  const reconnect = button("다시 연결", async () => {
+    state.endpoint = endpoint.value;
+    const ok = await state.connect();
+    out.replaceChildren(ok ? el("div", "ok", `연결됨: 서버 ${state.serverVersion}`) : errorBox(state.lastError));
+  });
+  const save = button("저장", async () => {
+    const r = await mutation<{ ok: boolean; policies?: ApplyReply[] }>("settings.set", { voice: voice.value, first_run_watch: frMode.value, first_run_minutes: Number(frMin.value) });
+    if (!r.ok) return out.replaceChildren(errorBox(r.error.message));
+    out.replaceChildren(el("div", "ok", "저장됨"));
+    // 막기를 고르면 관찰실 차단 정책(우산)이 생긴다: 승인 창을 거쳤으면 그 결과, 직접 실행이면 60초 확인
+    if (r.approval) out.append(approvalBox(r.approval, "관찰실 "));
+    else for (const pol of r.result.policies ?? []) out.append(countdown(pol, root, () => void refreshUmbrella(), "관찰실 "));
+    void refreshUmbrella();
+  }, "btn primary");
+  // D006-5: 끝점·다시 연결은 고급 접힘 안으로
+  const adv = el("details", "advanced", el("summary", undefined, "고급"), el("label", undefined, "서비스 끝점 ", endpoint, " ", reconnect));
+  const geoAge = el("p", "muted");
+  // D007-3: DB 있음/없음에 따라 문장이 모순되지 않게 한 곳에서 정한다
+  const geoSrc = el("p", "muted");
+  // D011: 화면 테마 — Windows 따라가기 / 밝게 / 어둡게 (이 브라우저에 기억, 서비스 설정 아님)
+  const theme = el("select");
+  for (const [v, l] of [["system", "Windows 따라가기"], ["light", "밝게"], ["dark", "어둡게"]] as const) {
+    const o = el("option", undefined, l);
+    o.value = v;
+    theme.append(o);
+  }
+  theme.value = loadTheme();
+  theme.addEventListener("change", () => setTheme(theme.value as Theme));
+  root.append(
+    el("div", "form",
+      el("label", undefined, "화면 테마 ", theme),
+      el("label", undefined, "이야기 화법 ", voice),
+      el("p", "muted", "Claude 서술·로컬 언어 모델은 아직 없습니다. 켜는 옵션이 생기면 무엇이 전송되는지 먼저 보여 줍니다."),
+      el("label", undefined, "첫 실행 관찰 ", frMode),
+      frModeTip,
+      frUmb,
+      el("label", undefined, "관찰 시간 ", frMin),
+      el("p", "muted", FIRST_RUN_MINUTES_SENTENCE),
+      el("div", "actions", save)),
+    out,
+    el("h2", undefined, "데이터 출처"),
+    geoAge,
+    geoSrc,
+    el("p", "muted", "국기 그림: flag-icons (MIT, Panayiotis Lipiridis). 국가 이름: i18n-iso-countries (MIT)."),
+    adv,
+  );
+  void (async () => {
+    const r = await rpc<Record<string, unknown>>("settings.get", {});
+    if (r.ok && typeof r.result["voice"] === "string") voice.value = r.result["voice"];
+    if (r.ok) {
+      const fr = firstRunSetting(r.result);
+      frMode.value = fr.mode;
+      frModeTip.textContent = firstRunSentence(fr.mode);
+      frMin.value = String(fr.minutes);
+      frUmb.textContent = umbrellaText(fr.mode, r.result["first_run_umbrella"]);
+    }
+    // D033-3: 보관 기간은 진단 카드에만(여기 줄은 중복이라 뺐다)
+    clear(out);
+    // IP 데이터 기준일(제안 A5 첫 단계): 90일 넘으면 주황
+    const c = await rpc<{ geo?: { built?: number | null } }>("connections.list", { since_secs: 1 });
+    const built = c.ok ? c.result.geo?.built : null;
+    if (built) {
+      const d = new Date(built * 1000);
+      const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+      geoAge.textContent = `IP 데이터 기준일 ${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      if (days > 90) {
+        geoAge.className = "warn";
+        geoAge.textContent += " — 데이터가 오래되었습니다(앱을 업데이트하세요)";
+      }
+    } else {
+      geoAge.textContent = "IP 국가·ASN 데이터가 설치되어 있지 않습니다. 주소 종류(로컬망 등)만 표시합니다.";
+    }
+    geoSrc.textContent = built
+      ? "IP 국가·ASN 데이터: DB-IP.com (IP to Country Lite, IP to ASN Lite) — CC BY 4.0, https://db-ip.com. 조회는 이 PC 안에서만 합니다. 위치 정보와 조직 정보를 보여 줍니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."
+      : "사용할 데이터: DB-IP Lite (CC BY 4.0, https://db-ip.com). 국가 표기는 정치적 입장을 뜻하지 않습니다.";
+  })();
+  return root;
+}

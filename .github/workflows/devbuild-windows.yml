@@ -1,0 +1,180 @@
+name: Dev build for the laptop (test-signed installer, pinned)
+
+# Builds a test-signer installer for the dev laptop (B4/B5 real use), checks it on the runner WITHOUT trusting the
+# test certificate as a root (the service pins the leaf SHA-256), then publishes setup.exe + manifest to the
+# orphan branch `dev-builds` (one commit, force-pushed). The laptop job runner installs it (job "install").
+# Never a release artifact: test-signer feature + per-run self-signed certificate.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "ui/**"
+      - "third_party/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/devbuild-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: devbuild
+  cancel-in-progress: true
+
+jobs:
+  devbuild:
+    # 비용: 노트북 설치가 필요할 때만 — 커밋 메시지에 [devbuild] 가 있거나 수동 실행
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[devbuild]')
+    # 노트북 실행 서버(self-hosted, 사용자 결정 2026-11-03): 저장소 변수 SF_LAPTOP_RUNNER=1 이면 노트북에서 빌드만 한다.
+    # 노트북에서는 설치·서비스 등록 시험을 하지 않는다(실기기 = 설치 대상이고, 실행 서버는 일반 권한 계정)
+    runs-on: ${{ vars.SF_LAPTOP_RUNNER == '1' && fromJSON('["self-hosted","Windows","sf-laptop"]') || 'windows-2025' }}
+    # 노트북 RAM 5.8GB(여유 0.5GB, L027): 동시 컴파일을 2개로 제한. GitHub 러너에서는 영향 작음
+    env:
+      CARGO_BUILD_JOBS: 2
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      # GitHub 이미지에는 Rust 가 있지만 노트북 실행 서버 계정에는 없다
+      - name: Rust toolchain (self-hosted)
+        if: runner.environment == 'self-hosted'
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # 원격 주소 국가·ASN DB (geo-data 브랜치, DB-IP Lite CC BY 4.0) -> 설치 폴더 geo\
+      - name: Fetch geo data
+        uses: actions/checkout@v4
+        with:
+          ref: geo-data
+          path: ui/src-tauri/geo
+      - name: Cache cargo
+        if: runner.environment == 'github-hosted'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            ui/src-tauri/target
+          key: devbuild-${{ hashFiles('Cargo.lock', 'ui/src-tauri/Cargo.lock') }}
+
+      - name: Test certificate (per run, not trusted as a root)
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=StoryFirewall Dev" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(400)
+          $pin = -join ([Security.Cryptography.SHA256]::Create().ComputeHash($cert.RawData) | ForEach-Object { $_.ToString("x2") })
+          "SF_DEV_CERT_THUMB=$($cert.Thumbprint)" | Add-Content $env:GITHUB_ENV
+          "SF_DEV_PIN=$pin" | Add-Content $env:GITHUB_ENV
+          "pin=$pin"
+
+      - name: Build service (test-signer) and signed test client
+        shell: pwsh
+        run: |
+          cargo build --release --locked -p svc --features test-signer --bin story-firewall-svc --bin svc-poc 2>&1 | Tee-Object -FilePath build-svc.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          New-Item -ItemType Directory -Force ui\src-tauri\binaries | Out-Null
+          Copy-Item target\release\story-firewall-svc.exe ui\src-tauri\binaries\story-firewall-svc-x86_64-pc-windows-msvc.exe
+          Copy-Item target\release\svc-poc.exe target\release\svc-poc-unsigned.exe
+          & ui\scripts\sign-dev.ps1 -Path (Resolve-Path target\release\svc-poc.exe).Path
+
+      - name: Build NSIS installer (UI and sidecar signed via signCommand)
+        working-directory: ui
+        shell: pwsh
+        run: |
+          # pwsh, not Windows PowerShell 5.1: 5.1 started from pwsh inherits pwsh's PSModulePath and loses the Cert: drive.
+          # Tauri splits signCommand on spaces and passes quotes through literally -> the path must have no spaces, no quotes
+          $sign = (Resolve-Path scripts\sign-dev.ps1).Path
+          if ($sign -match ' ') { throw "sign script path has a space: $sign" }
+          $c = Get-Content src-tauri\tauri.installer.conf.json -Raw | ConvertFrom-Json
+          $c.bundle.windows | Add-Member -NotePropertyName signCommand -NotePropertyValue ("pwsh -NoProfile -ExecutionPolicy Bypass -File $sign %1") -Force
+          $c | ConvertTo-Json -Depth 10 | Set-Content src-tauri\tauri.devbuild.conf.json -Encoding utf8
+          npm ci
+          npx tauri build --config src-tauri/tauri.devbuild.conf.json 2>&1 | Tee-Object -FilePath ../build-installer.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Pick installer (self-hosted - no install on the laptop runner)
+        if: runner.environment == 'self-hosted'
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem ui\src-tauri\target\release\bundle\nsis\*-setup.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+          Copy-Item $setup story-firewall-dev-setup.exe -Force
+          "picked $setup"
+
+      - name: Install on the runner and check pinned authentication (root NOT trusted)
+        if: runner.environment == 'github-hosted'
+        shell: pwsh
+        run: |
+          $log = "devbuild-test.txt"
+          $bad = 0
+          function Log($s) { $s | Tee-Object -FilePath $log -Append }
+          function Check($ok, $msg) { if ($ok) { Log "PASS  $msg" } else { Log "FAIL  $msg"; $script:bad++ } }
+          $setup = (Get-ChildItem ui\src-tauri\target\release\bundle\nsis\*-setup.exe | Select-Object -First 1).FullName
+          $dir = Join-Path $env:ProgramFiles "Story Firewall"
+          $svcExe = Join-Path $dir "story-firewall-svc.exe"
+          $uiExe = Join-Path $dir "story-firewall-ui.exe"
+          Check (-not (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Thumbprint -eq $env:SF_DEV_CERT_THUMB)) "test cert is not a trusted root"
+          $p = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
+          Log "install exit=$($p.ExitCode)"
+          $s = Get-AuthenticodeSignature $uiExe
+          Check ($s.SignerCertificate.Thumbprint -eq $env:SF_DEV_CERT_THUMB) "installed UI signed with the dev cert ($($s.Status))"
+          & $svcExe install --test-signer-sha256 $env:SF_DEV_PIN 2>&1 | ForEach-Object { Log $_ }
+          & $svcExe stop 2>&1 | ForEach-Object { Log $_ }
+          & $svcExe start 2>&1 | ForEach-Object { Log $_ }
+          Start-Sleep -Seconds 5
+          $cl = & .\target\release\svc-poc.exe client 2>&1 | Out-String
+          Log $cl
+          Check ($cl -match '"id":1,"result":\{"api":\[1,0\]') "pinned signed client accepted (hello)"
+          $un = & .\target\release\svc-poc-unsigned.exe client 2>&1 | Out-String
+          Log $un
+          # the server may drop the pipe before the client even sets its read mode (0xe9 ERROR_PIPE_NOT_CONNECTED) - also a rejection
+          Check (($un -match 'closed by server|connect failed: .*0xe9') -and ($un -notmatch '"result"')) "unsigned client rejected"
+          # a different self-signed cert with the same CN must be rejected (pin, not name)
+          $other = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=StoryFirewall Dev" -CertStoreLocation Cert:\CurrentUser\My
+          Copy-Item .\target\release\svc-poc-unsigned.exe .\target\release\svc-poc-other.exe
+          Set-AuthenticodeSignature -FilePath .\target\release\svc-poc-other.exe -Certificate $other -HashAlgorithm SHA256 | Out-Null
+          $ot = & .\target\release\svc-poc-other.exe client 2>&1 | Out-String
+          Log $ot
+          Check (($ot -match 'closed by server|connect failed: .*0xe9') -and ($ot -notmatch '"result"')) "same-CN different cert rejected"
+          $st = & $svcExe status 2>&1 | Out-String
+          Log $st
+          Check ((Get-Service StoryFirewall).Status -eq 'Running') "service running"
+          $p = Start-Process -FilePath (Join-Path $dir "uninstall.exe") -ArgumentList "/S" -Wait -PassThru
+          Log "uninstall exit=$($p.ExitCode)"
+          Log "assert: $bad failed"
+          Copy-Item $setup story-firewall-dev-setup.exe
+          if ($bad -gt 0) { exit 1 }
+
+      - name: Publish to dev-builds branch
+        shell: pwsh
+        run: |
+          $sha = (Get-FileHash story-firewall-dev-setup.exe -Algorithm SHA256).Hash.ToLower()
+          $d = Join-Path $env:RUNNER_TEMP "devbuilds"
+          New-Item -ItemType Directory -Force $d | Out-Null
+          Copy-Item story-firewall-dev-setup.exe $d
+          @("commit=$env:GITHUB_SHA", "pin=$env:SF_DEV_PIN", "setup_sha256=$sha", "built=$((Get-Date).ToUniversalTime().ToString('s'))Z") | Set-Content (Join-Path $d "manifest.txt") -Encoding ascii
+          git -C $d init -q
+          git -C $d checkout -q --orphan dev-builds
+          git -C $d add -A
+          git -C $d -c user.name="devbuild" -c user.email="devbuild@users.noreply.github.com" commit -q -m "dev build $env:GITHUB_SHA"
+          $url = "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git -C $d push -q -f $url dev-builds
+          Get-Content (Join-Path $d "manifest.txt")
+
+      - name: Logs
+        if: always()
+        shell: pwsh
+        run: Get-Content devbuild-test.txt -ErrorAction SilentlyContinue
+
+      # L010 review: the per-build private key must not outlive the job (the VM is discarded anyway; the cache step
+      # only holds cargo dirs). Delete the key explicitly and check nothing with the dev subject is left.
+      - name: Delete test certificates and private keys
+        if: always()
+        shell: pwsh
+        run: |
+          Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq "CN=StoryFirewall Dev" | ForEach-Object { Remove-Item $_.PSPath -DeleteKey }
+          $left = @(Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq "CN=StoryFirewall Dev").Count
+          "dev certs left: $left"
+          if ($left -ne 0) { exit 1 }

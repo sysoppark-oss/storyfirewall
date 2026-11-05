@@ -1,0 +1,13 @@
+[package]
+name = "judge"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "4장 판정 엔진: 출처 그래프 → 사건(뿌리+사슬) → 장·점수·근거. 프로그램별 기준선. 언어 모델 없음"
+
+[dependencies]
+graph = { path = "../graph" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

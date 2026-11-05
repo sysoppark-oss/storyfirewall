@@ -1,0 +1,17 @@
+[package]
+name = "poc1-connlist"
+version = "0.1.0"
+edition = "2021"
+description = "PoC 1: 프로세스별 TCP/UDP 연결 목록을 1초 간격으로 출력 (제품 A 수집 모듈 검증)"
+
+[dependencies]
+# windows-sys: Win32 API 원시 바인딩. cargo search windows-sys 로 최신 버전 확인 후 조정 가능.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+    "Win32_System_Threading",
+] }
+
+[profile.release]
+opt-level = 2

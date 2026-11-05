@@ -1,0 +1,13 @@
+powershell.exe
+pwsh.exe
+cmd.exe
+mshta.exe
+wscript.exe
+cscript.exe
+rundll32.exe
+regsvr32.exe
+certutil.exe
+bitsadmin.exe
+msiexec.exe
+installutil.exe
+msbuild.exe

@@ -1,0 +1,197 @@
+name: A28 installer (NSIS, Windows)
+
+# 설치 프로그램을 만들고 러너에서 조용한 설치 → 다시 설치(업그레이드 흉내) → 제거를 돌려 결과를 판정한다.
+# 서비스는 제품 빌드(test-signer 없음). UI 서명은 하지 않으므로 UI↔서비스 연결은 여기서 보지 않는다(poc5 몫).
+on:
+  push:
+    paths:
+      - "ui/src-tauri/tauri.installer.conf.json"
+      - "ui/src-tauri/installer-hooks.nsh"
+      - "ui/src-tauri/src/**"
+      - "crates/svc/**"
+      - ".github/workflows/a28-installer-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 같은 브랜치에 새로 올리면 앞서 돌던 실행은 취소(비용)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      # 원격 주소 국가·ASN DB (geo-data 브랜치, DB-IP Lite CC BY 4.0) -> 설치 폴더 geo\
+      - name: Fetch geo data
+        uses: actions/checkout@v4
+        with:
+          ref: geo-data
+          path: ui/src-tauri/geo
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            ui/src-tauri/target
+          key: a28-${{ hashFiles('Cargo.lock', 'ui/src-tauri/Cargo.lock') }}
+
+      # test-signer feature: the policy-kept-across-upgrade step needs a signed admin client (svc-poc client-apply).
+      # This installer is a CI TEST build - never distribute it (release builds never enable test-signer).
+      - name: Build service (test-signer, CI only) and signed test client
+        shell: pwsh
+        run: |
+          cargo build --release --locked -p svc --features test-signer --bin story-firewall-svc --bin svc-poc 2>&1 | Tee-Object -FilePath build-svc.log
+          New-Item -ItemType Directory -Force ui\src-tauri\binaries | Out-Null
+          Copy-Item target\release\story-firewall-svc.exe ui\src-tauri\binaries\story-firewall-svc-x86_64-pc-windows-msvc.exe
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=StoryFirewall Test" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(2)
+          $cer = Join-Path $env:RUNNER_TEMP "test.cer"
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
+          $r = Set-AuthenticodeSignature -FilePath target\release\svc-poc.exe -Certificate $cert -HashAlgorithm SHA256
+          "sign svc-poc: $($r.Status)"
+
+      - name: UI core unit tests (tray watchdog)
+        working-directory: ui/src-tauri
+        shell: pwsh
+        run: cargo test --release --lib 2>&1 | Tee-Object -FilePath ..\..\test-ui.log
+
+      - name: Build NSIS installer
+        working-directory: ui
+        shell: pwsh
+        run: |
+          npm ci
+          npx tauri build --config src-tauri/tauri.installer.conf.json 2>&1 | Tee-Object -FilePath ../build-installer.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem src-tauri\target\release\bundle\nsis | Select-Object Name, Length
+
+      - name: Install, reinstall, uninstall (silent) and assert
+        shell: pwsh
+        run: |
+          $log = "installer-test.txt"
+          $bad = 0
+          function Log($s) { $s | Tee-Object -FilePath $log -Append }
+          function Check($ok, $msg) { if ($ok) { Log "PASS  $msg" } else { Log "FAIL  $msg"; $script:bad++ } }
+          $setup = (Get-ChildItem ui\src-tauri\target\release\bundle\nsis\*-setup.exe | Select-Object -First 1).FullName
+          Log "setup=$setup"
+          $dir = Join-Path $env:ProgramFiles "Story Firewall"
+          $svcExe = Join-Path $dir "story-firewall-svc.exe"
+          $runKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
+          function SvcState { (Get-Service StoryFirewall -ErrorAction SilentlyContinue).Status }
+
+          # 1. install
+          $p = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
+          Log "install exit=$($p.ExitCode)"
+          Check (Test-Path (Join-Path $dir "story-firewall-ui.exe")) "ui exe in Program Files"
+          Check (Test-Path $svcExe) "svc exe in Program Files"
+          Check ((Test-Path (Join-Path $dir "geo\dbip-country-lite.mmdb")) -and (Test-Path (Join-Path $dir "geo\dbip-asn-lite.mmdb"))) "geo data installed"
+          for ($i = 0; $i -lt 20 -and (SvcState) -ne "Running"; $i++) { Start-Sleep -Seconds 1 }
+          Check ((SvcState) -eq "Running") "service running after install ($(SvcState))"
+          $st = & $svcExe status 2>&1 | Out-String
+          Log $st
+          Check ($st -match 'published=\\\\\.\\pipe\\story-firewall-[0-9a-f]{32}') "pipe name published"
+          Check ($st -match 'owner_trusted=true') "data dir owner trusted"
+          $run = (Get-ItemProperty $runKey -Name StoryFirewall -ErrorAction SilentlyContinue).StoryFirewall
+          Check ($run -match 'story-firewall-ui\.exe" --tray') "HKLM Run --tray ($run)"
+          $acl = (Get-Acl $dir).Access | Where-Object { $_.IdentityReference -match 'Users|Authenticated' -and $_.FileSystemRights -match 'Write|Modify|FullControl' -and $_.AccessControlType -eq 'Allow' }
+          Check ($null -eq $acl) "users cannot write install dir"
+          $start = (Get-CimInstance Win32_Service -Filter "Name='StoryFirewall'")
+          Check ($start.StartMode -eq "Auto") "start mode auto ($($start.StartMode))"
+          Check ($start.PathName -like "*Program Files\Story Firewall\story-firewall-svc.exe*") "service path in Program Files ($($start.PathName))"
+
+          # 1b. 22nd review: apply one real policy (signed admin client) so the upgrade runs with WFP filters present
+          $keep = Join-Path $env:RUNNER_TEMP "svc-copy.exe"
+          Copy-Item $svcExe $keep
+          & $svcExe install --test-signer "StoryFirewall Test" 2>&1 | ForEach-Object { Log $_ }
+          & $svcExe stop 2>&1 | ForEach-Object { Log $_ }
+          & $svcExe start 2>&1 | ForEach-Object { Log $_ }
+          Start-Sleep -Seconds 4
+          $ap = & .\target\release\svc-poc.exe client-apply 2>&1 | Out-String
+          Log $ap
+          Check ($ap -match 'confirm=ok') "policy applied and confirmed before upgrade"
+          $n0 = 0; if ((& $keep status | Out-String) -match 'wfp_filters=(\d+)') { $n0 = [int]$Matches[1] }
+          Check ($n0 -ge 1) "WFP filters present before upgrade ($n0)"
+
+          # 2. reinstall over it (upgrade path), sampling our filter count the whole time
+          $pidBefore = $start.ProcessId
+          $flag = Join-Path $env:RUNNER_TEMP "upgrade-done.txt"
+          $sampler = Start-Job -ArgumentList $keep, $flag {
+            param($keep, $flag)
+            $min = 999999; $n = 0
+            while (-not (Test-Path $flag)) {
+              $o = & $keep status | Out-String
+              if ($o -match 'wfp_filters=(\d+)') { $v = [int]$Matches[1]; $n++; if ($v -lt $min) { $min = $v } }
+              Start-Sleep -Milliseconds 200
+            }
+            "samples=$n min=$min"
+          }
+          Start-Sleep -Seconds 2
+          $p = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
+          Log "reinstall exit=$($p.ExitCode)"
+          Start-Sleep -Seconds 3
+          Set-Content $flag "x"
+          $samp = (Receive-Job $sampler -Wait -AutoRemoveJob | Out-String).Trim()
+          Log "during upgrade: $samp"
+          $smin = -1; if ($samp -match 'min=(\d+)') { $smin = [int]$Matches[1] }
+          Check (($samp -match 'samples=[1-9]') -and $smin -ge $n0) "filters never dropped during upgrade (min=$smin, before=$n0)"
+          for ($i = 0; $i -lt 20 -and (SvcState) -ne "Running"; $i++) { Start-Sleep -Seconds 1 }
+          Check ((SvcState) -eq "Running") "service running after reinstall"
+          $after = Get-CimInstance Win32_Service -Filter "Name='StoryFirewall'"
+          Log "service pid before=$pidBefore after=$($after.ProcessId) (restarted = files replaced)"
+          $st2 = & $svcExe status 2>&1 | Out-String
+          Log $st2
+          Check ($st2 -match "wfp_filters=$n0\b") "same filter count after upgrade + restart reconcile"
+
+          # 3. uninstall (silent = keep data)
+          $un = Join-Path $dir "uninstall.exe"
+          $p = Start-Process -FilePath $un -ArgumentList "/S" -Wait -PassThru
+          Log "uninstall exit=$($p.ExitCode)"
+          for ($i = 0; $i -lt 60 -and ((Get-Service StoryFirewall -ErrorAction SilentlyContinue) -or (Test-Path $svcExe)); $i++) { Start-Sleep -Seconds 1 }
+          Check (-not (Get-Service StoryFirewall -ErrorAction SilentlyContinue)) "service removed"
+          Check (-not (Test-Path $svcExe)) "files removed"
+          Check (-not (Get-ItemProperty $runKey -Name StoryFirewall -ErrorAction SilentlyContinue)) "Run value removed"
+          $st3 = & $keep status 2>&1 | Out-String
+          Log $st3
+          Check ($st3 -match 'published=-') "pipe name unpublished"
+          Check ($st3 -match 'wfp_filters=0') "no WFP filters left"
+          Check (Test-Path (Join-Path $env:ProgramData "StoryFirewall")) "data kept on silent uninstall"
+          Log "assert: $bad failed"
+          if ($bad -gt 0) { exit 1 }
+
+      - name: Publish logs to ci-logs branch
+        if: always()
+        shell: pwsh
+        run: |
+          $dst = Join-Path $env:RUNNER_TEMP "ci-logs"
+          git clone --quiet --branch ci-logs --single-branch "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" $dst 2>$null
+          $run = Join-Path $dst "a28/run-${{ github.run_number }}"
+          New-Item -ItemType Directory -Path $run -Force | Out-Null
+          Copy-Item build-svc.log, test-ui.log, build-installer.log, installer-test.txt $run -ErrorAction SilentlyContinue
+          "${{ github.sha }}" | Set-Content (Join-Path $run "commit.txt")
+          git -C $dst config user.name "github-actions"
+          git -C $dst config user.email "actions@github.com"
+          Get-ChildItem (Join-Path $dst "a28") -Directory -ErrorAction SilentlyContinue | Sort-Object { [int]($_.Name -replace 'run-','') } -Descending | Select-Object -Skip 10 | Remove-Item -Recurse -Force
+          git -C $dst add -A
+          git -C $dst commit --quiet -m "a28 run ${{ github.run_number }} (${{ job.status }})" 2>$null
+          $pushed = $false
+          for ($i = 0; $i -lt 10; $i++) {
+            git -C $dst fetch --quiet origin ci-logs 2>$null
+            git -C $dst rebase --quiet origin/ci-logs 2>$null
+            if ($LASTEXITCODE -ne 0) { git -C $dst rebase --abort 2>$null; git -C $dst reset --quiet --hard origin/ci-logs; git -C $dst add -A; git -C $dst commit --quiet -m "a28 run ${{ github.run_number }} retry" 2>$null }
+            git -C $dst push --quiet origin ci-logs 2>$null
+            if ($LASTEXITCODE -eq 0) { $pushed = $true; break }
+            Start-Sleep -Seconds (2 * ($i + 1) + (Get-Random -Maximum 5))
+          }
+          if (-not $pushed) { "ci-logs push failed after retries"; exit 1 }

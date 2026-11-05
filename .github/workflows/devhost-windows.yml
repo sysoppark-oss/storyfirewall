@@ -1,0 +1,111 @@
+name: Dev-laptop job runner check
+
+# 노트북에 설치할 작업 실행기(poc/devhost)를 러너에서 먼저 검증: 설치 → 요청 파일 → 실행 → 기록.
+# 보안 회귀(23차 전 노트북 세션 지적): 사용자 쓰기 가능한 설정에 심은 것(~/.gitconfig 의 core.fsmonitor·url.insteadOf,
+# ~/.cargo/config.toml 의 rustc-wrapper, HKCU cmd AutoRun)이 관리자 실행기에서 실행되지 않아야 한다.
+on:
+  push:
+    paths:
+      - "poc/devhost/**"
+      - "poc/b2/**"
+      - ".github/workflows/devhost-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 같은 브랜치에 새로 올리면 앞서 돌던 실행은 취소(비용)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  devhost:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: story-firewall
+      - name: Install runner, plant user-level traps, drop requests, run once, assert
+        shell: powershell
+        env:
+          SF_GIT_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force C:\fw | Out-Null
+          Copy-Item -Recurse story-firewall C:\fw\story-firewall
+          powershell -ExecutionPolicy Bypass -File C:\fw\story-firewall\poc\devhost\install-job-runner.ps1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $t = Get-ScheduledTask -TaskName StoryFirewallDevJobs
+          "task principal: $($t.Principal.UserId) $($t.Principal.LogonType) $($t.Principal.RunLevel)"
+          Disable-ScheduledTask -TaskName StoryFirewallDevJobs | Out-Null
+          # Sysmon for b2 (outside the runner, once)
+          powershell -ExecutionPolicy Bypass -File C:\fw\story-firewall\poc\b2\b2-run.ps1 -InstallSysmon -Seconds 60 -NoScenario | Out-Null
+
+          # ---- traps a medium-integrity user process could plant ----
+          $mark = "C:\fw\trap"
+          New-Item -ItemType Directory -Force $mark | Out-Null
+          $gitTrap = "[core]`n`tfsmonitor = cmd /c echo pwned > C:\\fw\\trap\\git.txt`n[url `"https://example.invalid/`"]`n`tinsteadOf = https://github.com/`n"
+          Add-Content -Path (Join-Path $env:USERPROFILE ".gitconfig") -Value $gitTrap
+          New-Item -ItemType Directory -Force (Join-Path $env:USERPROFILE ".cargo") | Out-Null
+          Set-Content -Path (Join-Path $env:USERPROFILE ".cargo\config.toml") -Value "[build]`nrustc-wrapper = 'C:\\fw\\trap\\wrap.cmd'`n"
+          Set-Content -Path "$mark\wrap.cmd" -Value "@echo pwned > C:\fw\trap\cargo.txt`r`n@%*"
+          New-Item -Path "HKCU:\Software\Microsoft\Command Processor" -Force | Out-Null
+          Set-ItemProperty -Path "HKCU:\Software\Microsoft\Command Processor" -Name AutoRun -Value "echo pwned > C:\fw\trap\cmd.txt"
+
+          $inbox = Join-Path $env:ProgramFiles "StoryFirewallDev\requests"
+          '{"job":"status"}' | Set-Content $inbox\t1.json -Encoding UTF8
+          '{"job":"evil","cmd":"calc"}' | Set-Content $inbox\t2.json -Encoding UTF8
+          '{"job":"b2","seconds":5}' | Set-Content $inbox\t3.json -Encoding UTF8
+          # 23rd review S2: a job name carrying a fake log line must not reach the log
+          '{"job":"x\r\n2026-01-01 00:00:00Z done exit=0"}' | Set-Content $inbox\t5.json -Encoding UTF8
+          '{"job":"uninstall"}' | Set-Content $inbox\t6.json -Encoding UTF8
+          '{"job":"b2","seconds":60}' | Set-Content $inbox\t4.json -Encoding UTF8
+          $base = Join-Path $env:ProgramFiles "StoryFirewallDev"
+          # run the real task as SYSTEM, wait until the b2 request finished
+          Enable-ScheduledTask -TaskName StoryFirewallDevJobs | Out-Null
+          Start-ScheduledTask -TaskName StoryFirewallDevJobs
+          for ($i = 0; $i -lt 120; $i++) {
+            Start-Sleep -Seconds 15
+            $t4 = Join-Path $base "logs\jobs\t4.txt"
+            if ((Test-Path $t4) -and ((Get-Content $t4 -Raw) -match "done exit=")) { break }
+          }
+          Disable-ScheduledTask -TaskName StoryFirewallDevJobs | Out-Null
+          $bad = 0
+          function Check($ok, $m) { if ($ok) { "PASS  $m" } else { "FAIL  $m"; $script:bad++ } }
+          $j = Join-Path $base "logs\jobs"
+          Get-ChildItem $j | ForEach-Object { "--- $($_.Name)"; Get-Content $_.FullName }
+          Check ((Get-Content (Join-Path $j "t1.txt") -Raw) -match "ok free_gb=.* admin_toolchain=True") "status job, admin toolchain"
+          Check ((Get-Content (Join-Path $j "t2.txt") -Raw) -match "rejected: unknown job") "unknown job rejected"
+          Check ((Get-Content (Join-Path $j "t3.txt") -Raw) -match "rejected: seconds") "bad seconds rejected"
+          Check ((Get-Content (Join-Path $j "t6.txt") -Raw) -match "not installed") "uninstall job when nothing installed"
+          $t5 = Get-Content (Join-Path $j "t5.txt") -Raw
+          Check (($t5 -match "rejected: bad job name") -and ($t5 -notmatch "done exit")) "forged job name not logged"
+          Check ((Get-Content (Join-Path $j "t4.txt") -Raw) -match "fetch exit=0 repo at [0-9a-f]+") "repo fetched from real origin (insteadOf ignored)"
+          Check ((Get-Content (Join-Path $j "t4.txt") -Raw) -match "done exit=0 out=") "b2 job ran"
+          $last = Get-ChildItem (Join-Path $base "logs\b2-*") -Directory | Sort-Object Name | Select-Object -Last 1
+          Check ($last -and (Test-Path (Join-Path $last.FullName "report-2s.txt"))) "b2 report in admin log folder"
+          Check (-not (Get-ChildItem $inbox -Filter *.json)) "requests consumed"
+          Check (-not (Test-Path "$mark\git.txt")) "user ~/.gitconfig fsmonitor not executed"
+          Check (-not (Test-Path "$mark\cargo.txt")) "user ~/.cargo rustc-wrapper not executed"
+          Check (-not (Test-Path "$mark\cmd.txt")) "HKCU cmd AutoRun not executed"
+          $acl = (Get-Acl $base).Access | Where-Object { $_.IdentityReference -match 'Users' -and $_.FileSystemRights -match 'Write|Modify|FullControl' }
+          Check ($null -eq $acl) "users cannot write runner folder"
+          $cfg = (Get-Acl (Join-Path $base "story-firewall\.git\config")).Access | Where-Object { $_.IdentityReference -match 'Users' }
+          Check ($null -eq $cfg) "users cannot read clone .git\config (token)"
+          $t = Get-ScheduledTask -TaskName StoryFirewallDevJobs
+          Check ($t.Principal.UserId -match 'SYSTEM|S-1-5-18') "task runs as SYSTEM ($($t.Principal.UserId))"
+          $ia = (Get-Acl $inbox).Access | Where-Object { $_.IdentityReference -match 'Users' }
+          Check (($ia | Where-Object { $_.FileSystemRights -match 'Delete|FullControl|Modify' }) -eq $null) "users cannot delete/rename the inbox ($(($ia | ForEach-Object { $_.FileSystemRights }) -join ','))"
+          Check (($ia | Where-Object { $_.FileSystemRights -match 'CreateFiles|WriteData' }) -ne $null) "users can add request files"
+          if ($last) { Get-Content (Join-Path $last.FullName "report-2s.txt") -Encoding UTF8 | Select-Object -First 10 }
+          "assert: $bad failed"
+          if ($bad -gt 0) { exit 1 }
+
+      - name: Remove traps (they would also hit the runner's own git/cmd in post steps)
+        if: always()
+        shell: powershell
+        run: |
+          Remove-Item (Join-Path $env:USERPROFILE ".gitconfig") -Force -ErrorAction SilentlyContinue
+          Remove-Item (Join-Path $env:USERPROFILE ".cargo\config.toml") -Force -ErrorAction SilentlyContinue
+          Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Command Processor" -Name AutoRun -ErrorAction SilentlyContinue
+          "traps removed"

@@ -1,0 +1,73 @@
+PoC 1-b — ETW 수집기 (20초 수집)
+PROC_START  ts=134377664655883666 pid=7368 ppid=6732 image=\Device\HarddiskVolume3\Windows\System32\curl.exe
+DNS         ts=134377664656537428 id=3006 pid=7368 name=www.rust-lang.org type=1 results=-
+DNS         ts=134377664656537476 id=3006 pid=7368 name=www.rust-lang.org type=28 results=-
+UDP_SEND    ts=134377664656573614 id=42 pid=1896 saddr=10.1.0.35 sport=62377 daddr=168.63.129.16 dport=53 size=35
+UDP_SEND    ts=134377664656573614 id=42 pid=1896 saddr=10.1.0.35 sport=57825 daddr=168.63.129.16 dport=53 size=35
+DNS         ts=134377664656575036 id=3020 pid=7368 name=www.rust-lang.org type=28 results=
+DNS         ts=134377664656575184 id=3020 pid=7368 name=www.rust-lang.org type=1 results=
+DNS         ts=134377664656992191 id=3020 pid=7368 name=www.rust-lang.org type=28 results=type: 5 rust-lang.github.io;2606:50c0:8003::153;2606:50c0:8002::153;2606:50c0:8000::153;2606:50c0:8001::153;
+DNS         ts=134377664656993991 id=3008 pid=7368 name=www.rust-lang.org type=28 results=type: 5 rust-lang.github.io;2606:50c0:8003::153;2606:50c0:8002::153;2606:50c0:8000::153;2606:50c0:8001::153;
+DNS         ts=134377664657144180 id=3020 pid=7368 name=www.rust-lang.org type=1 results=type: 5 rust-lang.github.io;185.199.108.153;185.199.109.153;185.199.110.153;185.199.111.153;
+DNS         ts=134377664657145228 id=3008 pid=7368 name=www.rust-lang.org type=1 results=type: 5 rust-lang.github.io;185.199.108.153;185.199.109.153;185.199.110.153;185.199.111.153;
+TCP_CONNECT ts=134377664657781194 id=12 pid=7368 saddr=10.1.0.35 sport=50237 daddr=185.199.108.153 dport=443 size=0
+DNS         ts=134377664658085163 id=3006 pid=880 name=x1.c.lencr.org type=28 results=-
+DNS         ts=134377664658085322 id=3006 pid=880 name=x1.c.lencr.org type=1 results=-
+DNS         ts=134377664658085347 id=3008 pid=880 name=x1.c.lencr.org type=1 results=
+UDP_SEND    ts=134377664658087316 id=42 pid=1896 saddr=10.1.0.35 sport=57825 daddr=168.63.129.16 dport=53 size=32
+DNS         ts=134377664658088356 id=3020 pid=880 name=x1.c.lencr.org type=1 results=
+DNS         ts=134377664658103881 id=3020 pid=880 name=x1.c.lencr.org type=1 results=type: 5 crl.root-x1.letsencrypt.org.edgekey.net;type: 5 e8652.dscx.akamaiedge.net;184.29.31.119;
+DNS         ts=134377664658104730 id=3008 pid=880 name=x1.c.lencr.org type=28 results=type: 5 crl.root-x1.letsencrypt.org.edgekey.net;type: 5 e8652.dscx.akamaiedge.net;::ffff:184.29.31.119;
+TCP_CONNECT ts=134377664658250259 id=12 pid=880 saddr=10.1.0.35 sport=50238 daddr=184.29.31.119 dport=80 size=0
+DNS         ts=134377664658480934 id=3006 pid=880 name=yr.c.lencr.org type=28 results=-
+DNS         ts=134377664658480973 id=3006 pid=880 name=yr.c.lencr.org type=1 results=-
+DNS         ts=134377664658480997 id=3008 pid=880 name=yr.c.lencr.org type=1 results=
+UDP_SEND    ts=134377664658483015 id=42 pid=1896 saddr=10.1.0.35 sport=62377 daddr=168.63.129.16 dport=53 size=32
+DNS         ts=134377664658484313 id=3020 pid=880 name=yr.c.lencr.org type=1 results=
+DNS         ts=134377664658501480 id=3020 pid=880 name=yr.c.lencr.org type=1 results=type: 5 e5.i.lencr.org.edgekey.net;type: 5 e192961.dscx.akamaiedge.net;23.220.103.70;23.220.103.82;
+DNS         ts=134377664658502379 id=3008 pid=880 name=yr.c.lencr.org type=28 results=type: 5 e5.i.lencr.org.edgekey.net;type: 5 e192961.dscx.akamaiedge.net;::ffff:23.220.103.70;::ffff:23.220.103.82;
+TCP_CONNECT ts=134377664658645359 id=12 pid=880 saddr=10.1.0.35 sport=50239 daddr=23.220.103.70 dport=80 size=0
+DNS         ts=134377664658864486 id=3006 pid=880 name=yr1.c.lencr.org type=28 results=-
+DNS         ts=134377664658864529 id=3006 pid=880 name=yr1.c.lencr.org type=1 results=-
+DNS         ts=134377664658864548 id=3008 pid=880 name=yr1.c.lencr.org type=1 results=
+UDP_SEND    ts=134377664658866407 id=42 pid=1896 saddr=10.1.0.35 sport=57825 daddr=168.63.129.16 dport=53 size=33
+DNS         ts=134377664658867692 id=3020 pid=880 name=yr1.c.lencr.org type=1 results=
+DNS         ts=134377664658880156 id=3020 pid=880 name=yr1.c.lencr.org type=1 results=104.18.21.213;104.18.20.213;
+DNS         ts=134377664658880829 id=3008 pid=880 name=yr1.c.lencr.org type=28 results=::ffff:104.18.21.213;::ffff:104.18.20.213;
+TCP_CONNECT ts=134377664658944134 id=12 pid=880 saddr=10.1.0.35 sport=50240 daddr=104.18.21.213 dport=80 size=0
+PROC_STOP   ts=134377664659984198 pid=7368 ppid=- image=curl.exe
+PROC_START  ts=134377664668345610 pid=2756 ppid=1740 image=\Device\HarddiskVolume3\Windows\System32\wbem\WMIADAP.exe
+PROC_START  ts=134377664680163229 pid=1616 ppid=6732 image=\Device\HarddiskVolume3\Windows\System32\curl.exe
+DNS         ts=134377664680272797 id=3006 pid=1616 name=api.github.com type=28 results=-
+DNS         ts=134377664680272854 id=3006 pid=1616 name=api.github.com type=1 results=-
+UDP_SEND    ts=134377664680286468 id=42 pid=1896 saddr=10.1.0.35 sport=57825 daddr=168.63.129.16 dport=53 size=32
+UDP_SEND    ts=134377664680286469 id=42 pid=1896 saddr=10.1.0.35 sport=62377 daddr=168.63.129.16 dport=53 size=32
+DNS         ts=134377664680287478 id=3020 pid=1616 name=api.github.com type=28 results=
+DNS         ts=134377664680287501 id=3020 pid=1616 name=api.github.com type=1 results=
+DNS         ts=134377664680304435 id=3020 pid=1616 name=api.github.com type=28 results=
+DNS         ts=134377664680305645 id=3020 pid=1616 name=api.github.com type=1 results=140.82.114.6;
+DNS         ts=134377664680305740 id=3008 pid=1616 name=api.github.com type=28 results=
+DNS         ts=134377664680306433 id=3008 pid=1616 name=api.github.com type=1 results=140.82.114.6;
+TCP_CONNECT ts=134377664680661628 id=12 pid=1616 saddr=10.1.0.35 sport=50241 daddr=140.82.114.6 dport=443 size=0
+DNS         ts=134377664681009591 id=3006 pid=880 name=ocsp.sectigo.com type=28 results=-
+DNS         ts=134377664681009671 id=3006 pid=880 name=ocsp.sectigo.com type=1 results=-
+DNS         ts=134377664681009693 id=3008 pid=880 name=ocsp.sectigo.com type=1 results=
+DNS         ts=134377664681012066 id=3008 pid=880 name=ocsp.sectigo.com type=28 results=type: 5 ocsp.comodoca.com.cdn.cloudflare.net;::ffff:104.18.38.233;::ffff:172.64.149.23;
+TCP_CONNECT ts=134377664681079083 id=12 pid=880 saddr=10.1.0.35 sport=50242 daddr=104.18.38.233 dport=80 size=0
+PROC_STOP   ts=134377664681661734 pid=1616 ppid=- image=curl.exe
+DNS         ts=134377664682613734 id=3006 pid=6732 name=github.com type=28 results=-
+DNS         ts=134377664682621356 id=3006 pid=6732 name=github.com type=1 results=-
+DNS         ts=134377664682621379 id=3008 pid=6732 name=github.com type=1 results=
+UDP_SEND    ts=134377664682632402 id=42 pid=1896 saddr=10.1.0.35 sport=57825 daddr=168.63.129.16 dport=53 size=28
+DNS         ts=134377664682633224 id=3020 pid=6732 name=github.com type=1 results=
+DNS         ts=134377664682648045 id=3020 pid=6732 name=github.com type=1 results=140.82.113.4;
+DNS         ts=134377664682648773 id=3008 pid=6732 name=github.com type=28 results=::ffff:140.82.113.4;
+TCP_CONNECT ts=134377664682927740 id=12 pid=6732 saddr=10.1.0.35 sport=50243 daddr=140.82.113.4 dport=443 size=0
+TCP_CONNECT ts=134377664683291205 id=12 pid=3956 saddr=10.1.0.35 sport=50244 daddr=168.63.129.16 dport=80 size=0
+TCP_CONNECT ts=134377664683312519 id=12 pid=3956 saddr=10.1.0.35 sport=50245 daddr=168.63.129.16 dport=80 size=0
+TCP_CONNECT ts=134377664683331999 id=12 pid=3956 saddr=10.1.0.35 sport=50246 daddr=168.63.129.16 dport=80 size=0
+TCP_CONNECT ts=134377664683353174 id=12 pid=3956 saddr=10.1.0.35 sport=50247 daddr=168.63.129.16 dport=80 size=0
+TCP_CONNECT ts=134377664683370763 id=12 pid=3956 saddr=10.1.0.35 sport=50248 daddr=168.63.129.16 dport=80 size=0
+TCP_CONNECT ts=134377664717799540 id=12 pid=3956 saddr=10.1.0.35 sport=50249 daddr=168.63.129.16 dport=80 size=0
+PROC_STOP   ts=134377664775429928 pid=2756 ppid=- image=WMIADAP.exe
+END

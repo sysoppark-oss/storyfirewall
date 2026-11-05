@@ -1,0 +1,93 @@
+name: PoC1 Windows build and run
+
+# PoC 1(프로세스별 연결 수집기)을 GitHub Actions의 Windows 러너에서 빌드하고
+# 10초간 실행해 출력 로그를 아티팩트로 남긴다. 러너는 일회용 VM이므로 실험에 안전하다.
+on:
+  push:
+    paths:
+      - "poc/poc1-connlist/**"
+      - ".github/workflows/poc1-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 결과 로그를 ci-logs 브랜치에 커밋하기 위함
+
+# 같은 브랜치에 새로 올리면 앞서 돌던 실행은 취소(비용)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-run:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: poc/poc1-connlist
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain (stable-msvc)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            poc/poc1-connlist/target
+          key: poc1-${{ runner.os }}-${{ hashFiles('poc/poc1-connlist/Cargo.toml') }}
+
+      - name: Build (release)
+        run: cargo build --release --locked 2>&1 | Tee-Object -FilePath build.log
+        shell: pwsh
+
+      - name: Run 10 seconds and capture output
+        shell: pwsh
+        run: |
+          # 러너에서 약간의 네트워크 활동을 일으켜 NEW/END 변화가 보이게 한다
+          $p = Start-Process -FilePath ".\target\release\poc1-connlist.exe" `
+                 -RedirectStandardOutput run.out -RedirectStandardError run.err -PassThru
+          Start-Sleep -Seconds 2
+          Invoke-WebRequest -Uri https://www.rust-lang.org -UseBasicParsing | Out-Null
+          Start-Sleep -Seconds 2
+          Invoke-WebRequest -Uri https://github.com -UseBasicParsing | Out-Null
+          Start-Sleep -Seconds 6
+          Stop-Process -Id $p.Id -Force
+          "=== STDOUT (first 80 lines) ==="; Get-Content run.out -TotalCount 80
+          "=== STDERR (stat lines) ==="; Get-Content run.err
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: poc1-logs
+          path: |
+            poc/poc1-connlist/build.log
+            poc/poc1-connlist/run.out
+            poc/poc1-connlist/run.err
+
+      # 아티팩트 저장소에 접근할 수 없는 환경에서도 결과를 읽을 수 있도록
+      # 로그를 ci-logs 브랜치(고아 브랜치)에 커밋한다. 코드 브랜치는 건드리지 않는다.
+      - name: Publish logs to ci-logs branch
+        if: always()
+        shell: pwsh
+        working-directory: ${{ github.workspace }}
+        run: |
+          $dst = Join-Path $env:RUNNER_TEMP "ci-logs"
+          git clone --quiet --branch ci-logs --single-branch "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" $dst 2>$null
+          if (-not (Test-Path $dst)) {
+            New-Item -ItemType Directory -Path $dst | Out-Null
+            git -C $dst init --quiet
+            git -C $dst checkout --quiet --orphan ci-logs
+            git -C $dst remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}"
+          }
+          $run = Join-Path $dst "poc1/run-${{ github.run_number }}"
+          New-Item -ItemType Directory -Path $run -Force | Out-Null
+          Copy-Item poc/poc1-connlist/build.log, poc/poc1-connlist/run.out, poc/poc1-connlist/run.err $run -ErrorAction SilentlyContinue
+          "${{ github.sha }}" | Set-Content (Join-Path $run "commit.txt")
+          git -C $dst config user.name "github-actions"
+          git -C $dst config user.email "actions@github.com"
+          git -C $dst add -A
+          git -C $dst commit --quiet -m "poc1 run ${{ github.run_number }} (${{ job.status }})" 2>$null
+          git -C $dst push --quiet origin ci-logs

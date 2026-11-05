@@ -1,0 +1,293 @@
+name: A3 collector build and run
+
+# A3 수집기를 Windows 러너(2022·2025 매트릭스, P8)에서 빌드하고 25초 수집 시나리오를 돌린다.
+# 시나리오 (명세 4판 5장): 1 curl 사슬, P9 .tmp→.exe 이름 변경 후 실행, P6 실험 공급자(RPC·WinHttp·CAPI2),
+# P7 DoH 조회. 결과는 ci-logs 브랜치 poc3/run-N/<os>/ 로 회수한다.
+on:
+  push:
+    paths:
+      - "crates/graph/**"
+      - "crates/story/**"
+      - "crates/collector/**"
+      - "Cargo.toml"
+      - "third_party/**"
+      - "Cargo.lock"
+      - ".github/workflows/poc3-collector-windows.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "41 18 * * 0"
+
+permissions:
+  contents: write
+
+# 같은 브랜치에 새로 올리면 앞서 돌던 실행은 취소(비용)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-run:
+    strategy:
+      fail-fast: false
+      matrix:
+        # 비용(Actions 사용량): push 는 한 버전만, 두 버전 묶음은 수동·주 1회
+        os: ${{ github.event_name == 'push' && fromJSON('["windows-2025"]') || fromJSON('["windows-2022","windows-2025"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain (stable-msvc)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: a3-${{ matrix.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build collector-poc (release)
+        shell: pwsh
+        run: |
+          cargo build --release --locked -p collector --bin collector-poc 2>&1 | Tee-Object -FilePath build.log
+          cargo build --release --locked -p svc --bin defender-probe 2>&1 | Tee-Object -FilePath build.log -Append
+
+      - name: Unit tests on Windows (graph, story, collector)
+        shell: pwsh
+        run: cargo test --release --locked --workspace 2>&1 | Tee-Object -FilePath test.log
+
+      - name: Run 45 seconds as admin with scenario
+        shell: pwsh
+        run: |
+          # Runner is admin. ETW session needs it.
+          $exe = ".\target\release\collector-poc.exe"
+          $p = Start-Process -FilePath $exe -ArgumentList "55", "collector.db", "--experimental" `
+                 -RedirectStandardOutput run.out -RedirectStandardError run.err -PassThru
+          Start-Sleep -Seconds 4
+
+          # Scenario 1: curl chain (baseline for attribution and rewind)
+          & curl.exe -s --output NUL https://www.rust-lang.org/
+          Start-Sleep -Seconds 1
+
+          # Scenario P9: new file (.tmp) -> rename (.exe) -> execute -> Run key -> outbound
+          $dl = Join-Path $env:TEMP "sfdl"
+          New-Item -ItemType Directory -Path $dl -Force | Out-Null
+          $tmp = Join-Path $dl "payload.tmp"
+          Copy-Item "$env:SystemRoot\System32\curl.exe" $tmp
+          # simulate Mark-of-the-Web as a browser download would (A4 reads this)
+          Set-Content -Path $tmp -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`nHostUrl=https://example.com/payload.exe`r`n"
+          Rename-Item -Path $tmp -NewName "payload.exe"
+          $pl = Join-Path $dl "payload.exe"
+          # A4: break the Authenticode signature by appending one byte (overlay); PE still runs
+          [IO.File]::AppendAllText($pl, "x")
+          & reg.exe add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v sfpoc /t REG_SZ /d "$pl" /f | Out-Null
+          & $pl -s --output NUL https://api.github.com/
+          Start-Sleep -Seconds 1
+
+          # Scenario P7: DNS over HTTPS (bypasses DNS-Client ETW). Failure is informative too.
+          & curl.exe -s --output NUL --doh-url https://cloudflare-dns.com/dns-query https://example.com/ 2>&1 | Out-Null
+          Start-Sleep -Seconds 1
+
+          # 10th ed. 5-9 (1): Kernel-Process start has no CommandLine -> collector reads it at start for recovery tools only.
+          # Harmless read-only commands (no deletion). Expect ProcessCommand events with these exact lines.
+          & vssadmin.exe list shadows | Out-Null
+          & bcdedit.exe /enum "{current}" | Out-Null
+          # 29th review Q1: renamed copy of vssadmin (OriginalFileName stays VSSADMIN.EXE) -> still collected, with tool=vssadmin.exe
+          $vc = Join-Path $env:TEMP "sf_vsscopy.exe"
+          Copy-Item "$env:SystemRoot\System32\vssadmin.exe" $vc -Force
+          & $vc list shadows | Out-Null
+          Start-Sleep -Seconds 1
+
+          # 10th ed. 5-9 (3): CFA state source check (disposable runner VM). Registry path is not in Microsoft docs -> compare with Get-MpPreference,
+          # flip to AuditMode once and back, and see the registry value follow.
+          $cfaKey = 'HKLM:\SOFTWARE\Microsoft\Windows Defender\Windows Defender Exploit Guard\Controlled Folder Access'
+          function CfaReg { $v = (Get-ItemProperty $cfaKey -ErrorAction SilentlyContinue).EnableControlledFolderAccess; if ($null -eq $v) { 'none' } else { "$v" } }
+          try {
+            $mp0 = "$((Get-MpPreference -ErrorAction Stop).EnableControlledFolderAccess)"
+            $r0 = CfaReg
+            Set-MpPreference -EnableControlledFolderAccess AuditMode -ErrorAction Stop
+            Start-Sleep -Seconds 2
+            $mp1 = "$((Get-MpPreference).EnableControlledFolderAccess)"; $r1 = CfaReg
+            # 10th ed. 5-9 (3): unsigned probe writes into Documents while in AuditMode -> event 1124 expected.
+            # Field names of 1123/1124 are not in Microsoft docs -> dump the raw XML and our parser's view.
+            $docs = [Environment]::GetFolderPath('MyDocuments')
+            & .\target\release\defender-probe.exe write (Join-Path $docs "sf_cfa_probe.txt") | Tee-Object -FilePath cfa.txt -Append
+            Start-Sleep -Seconds 5
+            $xe = Get-WinEvent -LogName 'Microsoft-Windows-Windows Defender/Operational' -MaxEvents 300 -ErrorAction SilentlyContinue | Where-Object { $_.Id -in 1123, 1124 } | Select-Object -First 3
+            "CFAEVT: count=$(@($xe).Count)" | Tee-Object -FilePath cfa.txt -Append
+            foreach ($x in $xe) { $x.ToXml() | Tee-Object -FilePath cfa.txt -Append }
+            & .\target\release\defender-probe.exe read | Tee-Object -FilePath cfa.txt -Append
+            Remove-Item (Join-Path $docs "sf_cfa_probe.txt") -ErrorAction SilentlyContinue
+            Set-MpPreference -EnableControlledFolderAccess Disabled -ErrorAction SilentlyContinue
+            $ok = ($mp1 -eq $r1) -and (($r0 -eq 'none' -and $mp0 -eq '0') -or ($mp0 -eq $r0))
+            "CFA: before mp=$mp0 reg=$r0 audit mp=$mp1 reg=$r1 match=$ok" | Tee-Object -FilePath cfa.txt -Append
+          } catch {
+            "CFA: defender unavailable ($($_.Exception.Message)) match=na" | Tee-Object -FilePath cfa.txt -Append
+            & .\target\release\defender-probe.exe read | Tee-Object -FilePath cfa.txt -Append
+          }
+
+          # Short connection from PowerShell itself
+          try { Invoke-WebRequest -Uri https://github.com -UseBasicParsing | Out-Null } catch {}
+
+          # A4: Firefox (NSS, no schannel/CAPI2) headless -> its own PID attribution, no connected_via expected
+          $ff = "C:\Program Files\Mozilla Firefox\firefox.exe"
+          if (Test-Path $ff) {
+            $fp = Start-Process -FilePath $ff -ArgumentList "-headless","https://example.org/" -PassThru
+            Start-Sleep -Seconds 6
+            try { Stop-Process -Id $fp.Id -Force -ErrorAction SilentlyContinue } catch {}
+            Get-Process firefox -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          } else { "firefox not found" }
+
+          # 23rd review Q2: wall clock jump while the ETW session runs. ETW times now come as raw QPC and are
+          # converted with (QPC, wall) pairs taken every second, so an event after the jump must carry the NEW wall time.
+          # (Before: ETW converted with the session-start base -> ~150 s off, as Sysmon was in B2 run 3.)
+          # Azure 러너는 Hyper-V 시간 동기화(vmictimesync)가 우리 Set-Date 를 몇 초 안에 되돌린다 — 그 되돌림이 쌍 간격(1초) 안에
+          # 끼면 판정이 흔들린다(2026-11-03 windows-2022: -149977ms). 시험 동안 둘 다 멈춘다
+          Stop-Service w32time, vmictimesync -ErrorAction SilentlyContinue
+          Set-Date -Adjust ([TimeSpan]::FromSeconds(-150)) | Out-Null
+          Start-Sleep -Seconds 3
+          (Get-Date).ToFileTimeUtc() | Set-Content clockmark.txt
+          & "$env:SystemRoot\System32\whoami.exe" | Out-Null
+          Start-Sleep -Seconds 1
+          Set-Date -Adjust ([TimeSpan]::FromSeconds(150)) | Out-Null
+          Start-Service w32time, vmictimesync -ErrorAction SilentlyContinue
+
+          # Scenario P8 (load, 4th review M1): bandwidth + many distinct connections + file churn, concurrently.
+          # (a) 100MB download -> thousands of recv events on one connection
+          $dl1 = Start-Process -FilePath "curl.exe" -ArgumentList '-sL','--output','NUL','-w','"download_bytes=%{size_download} time=%{time_total} speed=%{speed_download} http=%{http_code}"','"https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-64-bit.7z.exe"' -RedirectStandardOutput p8.txt -RedirectStandardError p8.err -PassThru
+          # (b) 300 connect/close to a local listener on distinct source ports (+ 100 to distinct public IPs)
+          $lst = Start-Job {
+            $l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 47555); $l.Start()
+            $end = (Get-Date).AddSeconds(20)
+            while ((Get-Date) -lt $end) { if ($l.Pending()) { $c = $l.AcceptTcpClient(); $c.Close() } else { Start-Sleep -Milliseconds 5 } }
+            $l.Stop()
+          }
+          Start-Sleep -Seconds 1
+          $conn = Start-Job {
+            for ($i = 0; $i -lt 300; $i++) {
+              try { $c = [System.Net.Sockets.TcpClient]::new(); $c.Connect("127.0.0.1", 47555); $c.Close() } catch {}
+            }
+            # distinct public IPs: 1.0.0.0/24 style sweep against port 443 with 300ms timeout (SYN only, most time out)
+            for ($i = 1; $i -le 100; $i++) {
+              try { $c = [System.Net.Sockets.TcpClient]::new(); $null = $c.ConnectAsync("1.1.1.$i", 443).Wait(300); $c.Close() } catch {}
+            }
+          }
+          # (c) 500 temp files create/rename/delete
+          $files = Start-Job -ArgumentList $dl {
+            param($dl)
+            for ($i = 0; $i -lt 500; $i++) {
+              $t = Join-Path $dl ("churn$i.tmp"); Set-Content -Path $t -Value "x"; Rename-Item $t ("churn$i.dat"); Remove-Item (Join-Path $dl ("churn$i.dat"))
+            }
+          }
+          Wait-Job $conn, $files -Timeout 30 | Out-Null
+          Wait-Job $lst -Timeout 25 | Out-Null
+          Receive-Job $conn, $files -ErrorAction SilentlyContinue | Out-Null
+          Wait-Process -Id $dl1.Id -Timeout 30 -ErrorAction SilentlyContinue
+          "=== P8 download ==="; Get-Content p8.txt -ErrorAction SilentlyContinue; Get-Content p8.err -ErrorAction SilentlyContinue
+
+          Wait-Process -Id $p.Id -Timeout 60 -ErrorAction SilentlyContinue
+          if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+          & reg.exe delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v sfpoc /f | Out-Null
+          [Environment]::OSVersion.VersionString | Set-Content osver.txt
+          (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").DisplayVersion + " build " + (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentBuild | Add-Content osver.txt
+          "=== OS ==="; Get-Content osver.txt
+          "=== STDOUT ==="; Get-Content run.out
+          "=== STDERR (first 200 lines) ==="; Get-Content run.err -TotalCount 200
+
+      - name: Assert expected outcomes
+        if: always()
+        shell: pwsh
+        run: |
+          # clock jump check: whoami start (ETW) vs wall time written right before it (both after the -150 s jump)
+          $py = @'
+          import sqlite3, json, sys
+          mark = int(open("clockmark.txt").read().strip())
+          c = sqlite3.connect("collector.db")
+          best = None
+          for (p,) in c.execute("SELECT payload_json FROM raw_events WHERE source = 'etw:process'"):
+              e = json.loads(p)
+              if str(e.get("image", "")).lower().endswith("\\whoami.exe"):
+                  d = (e["ts"] - mark) / 10000
+                  if best is None or abs(d) < abs(best):
+                      best = d
+          print("CLOCKJUMP: whoami_etw_minus_wall_ms=%s %s" % (best, "ok" if best is not None and -500 <= best <= 3000 else "bad"))
+          '@
+          $py += @'
+
+          cmds = []
+          # run-84: the command line arrives from the kernel session (source etw:kernel-process); the direct-read fallback uses etw:process
+          for (p,) in c.execute("SELECT payload_json FROM raw_events WHERE source IN ('etw:process', 'etw:kernel-process')"):
+              e = json.loads(p)
+              if e.get("kind") == "process_command":
+                  cmds.append(e.get("cmdline", ""))
+          tools = [e2.get("tool") for e2 in [json.loads(p) for (p,) in c.execute("SELECT payload_json FROM raw_events WHERE source IN ('etw:process', 'etw:kernel-process')")] if e2.get("kind") == "process_command"]
+          renamed = [t for t in tools if t]
+          print("CMDLINE: renamed_tool=%d %s" % (len(renamed), renamed[:3]))
+          vss = [x for x in cmds if "vssadmin" in x.lower() and "list shadows" in x.lower()]
+          bcd = [x for x in cmds if "bcdedit" in x.lower() and "/enum" in x.lower()]
+          print("CMDLINE: total=%d vssadmin_list=%d bcdedit_enum=%d %s" % (len(cmds), len(vss), len(bcd), "ok" if vss and bcd else "bad"))
+          for x in cmds[:5]:
+              print("CMDLINE: line=%r" % x)
+          '@
+          $py | Set-Content clockcheck.py -Encoding ascii
+          python clockcheck.py 2>&1 | Add-Content run.out
+          Get-Content run.out | Select-String "CLOCKJUMP|clock:|CMDLINE:"
+          if (Test-Path cfa.txt) { Get-Content cfa.txt | Add-Content run.out }
+          $log = Get-Content run.out -Raw -ErrorAction SilentlyContinue
+          $expect = @(
+            'events_ingested=[1-9]\d* edges_created=[1-9]\d*'
+            'dropped=0 rate_limited=0 missing_fields=0'
+            'curl\.exe -> [\w.:-]+:443 :: remote:'
+            '"sig_status":"valid","signer":"Microsoft'
+            'A20: hashes=[1-9]\d* store_failed=0'
+            'hash: payload\.exe sha256=[0-9a-f]{64} motw=true'
+            'A30: process_sessions=[1-9]\d*/\d+ etw_session_events=[1-9]\d*'
+            'B2fix: inbound_lport_47555=[1-9]\d* inbound_rport_47555=0'
+            'clock: jumps=[1-9]\d* max_jump_ms=(1[4-9]\d{4}|[2-9]\d{5})'
+            'CLOCKJUMP: whoami_etw_minus_wall_ms=\S+ ok'
+            'CMDLINE: total=\d+ vssadmin_list=[1-9]\d* bcdedit_enum=[1-9]\d* ok'
+            'CMDLINE: renamed_tool=[1-9]'
+            'CFA: .*match=(True|na)'
+            'PROBE (events=\d+|read error)'
+          )
+          $bad = 0
+          foreach ($p in $expect) {
+            if ($log -match $p) { "PASS  $p" } else { "FAIL  $p"; $bad++ }
+          }
+          "assert: $bad failed of $($expect.Count)" | Tee-Object -FilePath assert.txt
+          if ($bad -gt 0) { exit 1 }
+
+      - name: Publish logs to ci-logs branch
+        if: always()
+        shell: pwsh
+        run: |
+          $dst = Join-Path $env:RUNNER_TEMP "ci-logs"
+          git clone --quiet --branch ci-logs --single-branch "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" $dst 2>$null
+          if (-not (Test-Path $dst)) {
+            New-Item -ItemType Directory -Path $dst | Out-Null
+            git -C $dst init --quiet
+            git -C $dst checkout --quiet --orphan ci-logs
+            git -C $dst remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}"
+          }
+          $run = Join-Path $dst "poc3/run-${{ github.run_number }}/${{ matrix.os }}"
+          New-Item -ItemType Directory -Path $run -Force | Out-Null
+          Copy-Item assert.txt, build.log, test.log, run.out, run.err, osver.txt, p8.txt, p8.err, cfa.txt $run -ErrorAction SilentlyContinue
+          "${{ github.sha }}" | Set-Content (Join-Path $run "commit.txt")
+          git -C $dst config user.name "github-actions"
+          git -C $dst config user.email "actions@github.com"
+          Get-ChildItem (Join-Path $dst "poc3") -Directory -ErrorAction SilentlyContinue | Sort-Object { [int]($_.Name -replace 'run-','') } -Descending | Select-Object -Skip 10 | Remove-Item -Recurse -Force
+          git -C $dst add -A
+          git -C $dst commit --quiet -m "poc3 run ${{ github.run_number }} ${{ matrix.os }} (${{ job.status }})" 2>$null
+          # 두 OS job 과 다른 poc 가 같은 브랜치에 동시에 밀어 넣으므로 충돌 시 재시도 (백오프 + 지터)
+          $pushed = $false
+          for ($i = 0; $i -lt 10; $i++) {
+            git -C $dst fetch --quiet origin ci-logs 2>$null
+            git -C $dst rebase --quiet origin/ci-logs 2>$null
+            if ($LASTEXITCODE -ne 0) { git -C $dst rebase --abort 2>$null; git -C $dst reset --quiet --hard origin/ci-logs; git -C $dst add -A; git -C $dst commit --quiet -m "poc run ${{ github.run_number }} ${{ matrix.os }} (${{ job.status }}) retry" 2>$null }
+            git -C $dst push --quiet origin ci-logs 2>$null
+            if ($LASTEXITCODE -eq 0) { $pushed = $true; break }
+            Start-Sleep -Seconds (2 * ($i + 1) + (Get-Random -Maximum 5))
+          }
+          if (-not $pushed) { "ci-logs push failed after retries"; exit 1 }

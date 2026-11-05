@@ -1,0 +1,219 @@
+import { mutation, rpc, uuid } from "../rpc";
+import { approvalBox, countdown, type ApplyReply } from "../confirm";
+import { el, ext, button, clear, errorBox, fmtShort, extPath } from "../ui";
+import { failBox } from "../list-state";
+import { state } from "../state";
+
+interface Validation {
+  errors: string[];
+  warnings: string[];
+  needs_ack: [string, string][];
+}
+interface AddressBlock {
+  filter_id: number;
+  policy_id: number;
+  policy_name: string;
+  address: string;
+  expires_at: number | null;
+}
+interface PolicyRow {
+  id: number;
+  name: string;
+  state: string;
+  version: number;
+  state_ko?: string;
+  state_tip?: string;
+  summary?: string;
+  expires?: string | null;
+  created_ts?: number | null;
+  origin?: { kind: "story"; root: number; label: string } | { kind: "manual" } | { kind: "first_run_watch" };
+  confirm_deadline?: number | null;
+  /// 첫 실행 관찰실 우산 정책 아래 지금 걸린 기한부 실행 파일 차단
+  child_blocks?: { filter_id: number; path: string | null; expires_at: number | null }[];
+}
+/// 상태 칩 색(D006-4): 적용 중 초록, 확인 대기·일시 중지 주황, 만료·되돌림 회색
+const STATE_CLS: Record<string, string> = { Confirmed: "ok", Applied: "warn", Paused: "warn", Expired: "muted", RolledBack: "muted" };
+
+const SAMPLE = `- name: block-updater
+  action: block
+  match:
+    direction: out
+    process: ['C:/Users/pjg/AppData/Local/Temp/payload.exe']
+`;
+
+const ACK_TEXT: Record<string, string> = {
+  self: "이 정책은 Story Firewall 자신의 통신을 막을 수 있습니다.",
+  wide: "이 정책은 매우 넓은 범위(전체 또는 대부분의 통신)를 막습니다.",
+  svchost: "이 정책은 시스템 서비스 호스트(svchost)의 통신을 막습니다.",
+};
+
+/// 정책: YAML 편집 → 검증 → 적용(needs_ack 확인 대화상자) → 60초 확인 카운트다운 → 롤백·일시 중지.
+/// 승인 상태는 서비스가 든다: 60초 안에 confirm 을 못 보내면 서비스가 되돌린다 (10차).
+export function policy(): HTMLElement {
+  const root = el("section", "screen");
+  root.append(el("h1", undefined, "정책"));
+  const ta = el("textarea", "yaml");
+  ta.value = SAMPLE;
+  ta.spellcheck = false;
+  const out = el("div", "out");
+  const pending = el("div", "pending");
+  const list = el("div", "list");
+
+  const showValidation = (v: Validation) => {
+    clear(out);
+    for (const e of v.errors) out.append(el("div", "error", ext("span", e)));
+    for (const w of v.warnings) out.append(el("div", "warn", ext("span", w)));
+    if (!v.errors.length && !v.warnings.length) out.append(el("div", "ok", "문제 없음"));
+    for (const [name, kind] of v.needs_ack) out.append(el("div", "warn", `확인 필요: `, ext("span", name), ` — ${ACK_TEXT[kind] ?? kind}`));
+  };
+
+  const validate = async () => {
+    const r = await rpc<Validation>("policy.validate", { yaml: ta.value });
+    if (!r.ok) return out.replaceChildren(errorBox(r.error.message));
+    showValidation(r.result);
+  };
+
+  /// needs_ack 대화상자: 사용자가 항목마다 확인해야 적용으로 간다
+  const askAck = (items: [string, string][]): Promise<boolean> =>
+    new Promise((resolve) => {
+      const dlg = el("dialog", "ack");
+      dlg.append(el("h3", undefined, "적용 전에 확인해 주세요"));
+      for (const [name, kind] of items) dlg.append(el("p", undefined, ext("b", name), ` — ${ACK_TEXT[kind] ?? kind}`));
+      const yes = button("확인하고 적용", () => { dlg.close(); resolve(true); }, "btn danger");
+      const no = button("취소", () => { dlg.close(); resolve(false); });
+      dlg.append(el("div", "actions", no, yes));
+      document.body.append(dlg);
+      dlg.showModal();
+      dlg.addEventListener("close", () => dlg.remove());
+    });
+
+  const apply = async () => {
+    const requestId = uuid(); // 재시도해도 같은 id (멱등)
+    let r = await mutation("policy.apply", { yaml: ta.value }, requestId);
+    if (!r.ok && r.error.code === -32003) {
+      const items = ((r.error.data as { items?: [string, string][] } | undefined)?.items) ?? [];
+      if (!(await askAck(items))) return;
+      r = await mutation("policy.apply", { yaml: ta.value, acknowledge: items }, requestId);
+    }
+    if (!r.ok) return out.replaceChildren(errorBox(`적용 실패: ${r.error.message}`));
+    const a = r.result as ApplyReply;
+    showValidation({ errors: [], warnings: a.warnings, needs_ack: [] });
+    if (a.address_block_notice) out.append(el("div", "warn", ext("span", a.address_block_notice)));
+    if (r.approval) {
+      clear(pending);
+      pending.append(approvalBox(r.approval));
+    } else startCountdown(a);
+    void refreshList();
+  };
+
+  const startCountdown = (a: ApplyReply) => {
+    clear(pending);
+    pending.append(countdown(a, root, () => void refreshList()));
+  };
+
+  const refreshList = async () => {
+    const r = await rpc<{ items: PolicyRow[]; address_blocks?: number; address_block_items?: AddressBlock[] }>("policy.list", {});
+    clear(list);
+    if (!r.ok) return list.append(failBox(r.error, () => void refreshList(), "정책 목록"));
+    // D032-3: 비어 있음(2-5)
+    if (!r.result.items.length) list.append(el("p", "muted", "아직 만든 정책이 없습니다. 이야기 카드의 '여기서부터 끊기…' 또는 아래 '고급'에서 만들 수 있습니다."));
+    for (const p of r.result.items) {
+      // D006-4: [상태 칩] 이름 · 한국어 요약 · 만료 · 만든 곳 · (오른쪽) 일시 중지 / 되돌리기. 영어 상태 문자열을 보이지 않는다
+      const chip = el("span", `chip state ${STATE_CLS[p.state] ?? "muted"}`, p.state_ko ?? "알 수 없음");
+      if (p.state_tip) chip.title = p.state_tip;
+      const name = ext("span", p.name, "title");
+      const ver = el("span", "muted", `판 ${p.version}`);
+      ver.title = `정책 번호 #${p.id}`;
+      const meta = el("div", "policy-meta");
+      if (p.summary) meta.append(extPath("span", p.summary, "summary"));
+      if (p.expires) meta.append(el("span", "muted", ` · 만료 ${p.expires}`));
+      if (p.origin?.kind === "story") {
+        const o = p.origin;
+        const when = p.created_ts ? `, ${fmtShort(p.created_ts)}` : "";
+        const link = el("a", "origin", `이야기에서(${o.label}${when})`);
+        link.href = "#";
+        link.addEventListener("click", (e) => { e.preventDefault(); state.go("story", { root: o.root }); });
+        meta.append(el("span", "muted", " · "), link);
+      } else if (p.origin?.kind === "first_run_watch") {
+        meta.append(el("span", "muted", " · 설정에서(첫 실행 관찰실)"));
+      } else {
+        meta.append(el("span", "muted", " · 직접 작성"));
+      }
+      const row = el("div", "row policy-row", el("div", "policy-main", el("div", "policy-head", chip, " ", name, " ", ver), meta), el("span", "spacer"));
+      // D007-1: 확인 대기 — 남은 시간(1초 갱신, 주황) + 주 단추 "유지(확인)". 확인은 기존 경로(mutation: 보기 모드면 승인 창)
+      if (p.state === "Applied" && p.confirm_deadline) {
+        const left = el("span", "warn countdown-inline");
+        const tick = () => {
+          const s = p.confirm_deadline! - Math.floor(Date.now() / 1000);
+          left.textContent = s > 0 ? `자동 되돌림까지 ${s}초` : "기한 지남 — 새로 고침";
+          if (s <= 0) window.clearInterval(t);
+        };
+        const t = window.setInterval(tick, 1000);
+        tick();
+        root.addEventListener("screen-leave", () => window.clearInterval(t));
+        row.append(left, button("유지(확인)", async () => {
+          const r2 = await mutation("policy.confirm", { policy_id: p.id, version: p.version });
+          if (!r2.ok) out.replaceChildren(errorBox(`확인 실패: ${r2.error.message}`));
+          void refreshList();
+        }, "btn small primary"));
+      }
+      row.append(
+        button("일시 중지", async () => { await mutation("policy.pause", { policy_id: p.id }); void refreshList(); }, "btn small"),
+        button("되돌리기", async () => { await mutation("policy.rollback", { policy_id: p.id }); void refreshList(); }, "btn small"),
+      );
+      list.append(row);
+      // 우산 아래 자동 차단: 실행 파일 · 만료 · 줄마다 해제(같은 필터 해제 경로)
+      for (const c of p.child_blocks ?? []) {
+        const crow = el("div", "row ab-row", el("span", "muted", "└ 자동 차단 "), extPath("span", c.path ?? "", "mono"), el("span", "muted", ` · ${expiryText(c.expires_at)}`), el("span", "spacer"));
+        crow.append(button("해제", async () => { await mutation("policy.release_address_blocks", { policy_id: p.id, filter_id: c.filter_id }); void refreshList(); }, "btn small"));
+        list.append(crow);
+      }
+    }
+    // D036: 해제될 주소 차단이 무엇인지 — "주소 차단 (N)" 소단락: 주소 · 만든 곳 · 만료 · 줄마다 해제. 모두 해제는 그 끝(빨간 테두리)
+    const nBlocks = r.result.address_blocks;
+    const items = r.result.address_block_items ?? [];
+    if (items.length) {
+      const sec = el("div", "address-blocks", el("h3", undefined, `주소 차단 (${items.length})`));
+      for (const b of items) {
+        const pol = r.result.items.find((p) => p.id === b.policy_id);
+        const from = pol?.origin?.kind === "story" ? `이야기에서(${pol.origin.label}${pol.created_ts ? `, ${fmtShort(pol.created_ts)}` : ""})` : "직접 작성";
+        const row = el("div", "row ab-row", ext("span", b.address, "mono"), el("span", "muted", " · "), ext("span", from, "muted"), el("span", "muted", ` · ${expiryText(b.expires_at)}`), el("span", "spacer"));
+        row.append(button("해제", async () => { await mutation("policy.release_address_blocks", { policy_id: b.policy_id, filter_id: b.filter_id }); void refreshList(); }, "btn small"));
+        sec.append(row);
+      }
+      list.append(sec);
+    }
+    // 파괴적 동작: 소단락 끝 오른쪽, 빨간 테두리(승인 창 경유는 그대로, 승인 창에도 주소 목록). D032-3: 지울 것이 있을 때만(예전 서비스면 수를 몰라 보인다)
+    if (showReleaseAll(nBlocks)) {
+      const rel = button(nBlocks ? `주소 차단 ${nBlocks}건 모두 해제` : "주소 차단 모두 해제", async () => { await mutation("policy.release_address_blocks", { policy_id: 0 }); void refreshList(); }, "btn small danger-outline");
+      list.append(el("div", "actions", el("span", "spacer"), rel));
+    }
+  };
+
+  // 고급 — YAML 직접 편집(기본 닫힘)
+  const adv = el("details", "advanced");
+  adv.append(
+    el("summary", undefined, "고급 — YAML 직접 편집"),
+    el("div", "editor", ta, el("div", "actions", button("검증", () => void validate()), button("적용", () => void apply(), "btn primary"))),
+  );
+  root.append(list, pending, adv, out);
+  void refreshList();
+  state.onNotify(root, (n) => {
+    const k = String(n.params["kind"] ?? "");
+    if (k.startsWith("policy_") || k === "auto_rollback") void refreshList();
+  });
+  return root;
+}
+
+/// D032-3: "주소 차단 모두 해제"는 지울 것이 있을 때만. 수를 모르면(예전 서비스) 보인다
+export function showReleaseAll(n: number | undefined): boolean {
+  return n == null || n > 0;
+}
+
+/// D036: 만료 — "오늘 오후 11:59까지" 꼴(fmtShort 가 오늘·날짜를 정한다), 없으면 "기한 없음"
+export function expiryText(at: number | null | undefined, now: Date = new Date()): string {
+  if (!at) return "기한 없음";
+  const d = new Date(at * 1000);
+  const today = d.toDateString() === now.toDateString();
+  return `${today ? "오늘 " : ""}${fmtShort(at, now)}까지`;
+}

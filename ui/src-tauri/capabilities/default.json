@@ -1,0 +1,7 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "default",
+  "description": "메인 창: 코어의 기본 권한 + 우리 명령(connect, rpc, endpoint)만. 파일·셸·네트워크 플러그인 없음 (14차 Q4)",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

@@ -1,0 +1,314 @@
+//! 구조 개선 C(2026-11-03): 무거운 읽기 조회(story.today·connections.list)를 엔진 스레드 밖의 읽기 작업자에서.
+//! 작업자는 읽기 전용 SQLite 연결(query_only)을 따로 가지고, 엔진은 현재 시각만 붙여 넘긴 뒤 응답을 기다리지 않는다.
+//! 메모리 DB(테스트)·작업자 시작 실패면 엔진이 같은 함수를 직접 부른다(같은 코드 경로).
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
+
+use api::rpc::Id;
+use api::{ErrorCode, Method, Response, RpcError};
+use graph::store::Store;
+
+use crate::dispatch::{internal, voice_of, Caller, Scope, CACHE_SECS, TODAY_MAX_EDGES};
+
+/// 읽기 조회의 캐시 (작업자 또는 엔진이 가진다)
+#[derive(Default)]
+pub struct ReadState {
+    /// L030: 오늘 한 일 캐시 (계산 시각 wall, since 분, voice, 문장, 잘림)
+    pub today_cache: Option<(i64, i64, String, Arc<Vec<story::render::Sentence>>, bool)>,
+    /// "오늘 처음"(A2): 하루 전까지 30일 안에 본 ASN·국가 (계산 시각, ASN, 국가) — 10분마다
+    pub seen_before: Option<(
+        i64,
+        std::collections::HashSet<u32>,
+        std::collections::HashSet<String>,
+    )>,
+    /// 엔진이 캐시를 버리라고 올린 세대(수집·판정·변경 요청). 다르면 today_cache 를 버린다
+    gen: u64,
+}
+
+/// 작업자에게 넘기는 조회 한 건
+pub struct ReadJob {
+    pub id: Id,
+    pub method: Method,
+    pub params: serde_json::Value,
+    pub caller: Caller,
+    /// 엔진 시계의 벽시각(unix 초) — 시험 시계·시계 변경과 같은 기준을 쓰도록 엔진이 붙인다
+    pub now: i64,
+    /// 엔진이 넘긴 순간 — 대기열에서 너무 오래 기다린 요청은 버린다(27차 Gemini Q4)
+    pub enqueued: std::time::Instant,
+    pub reply: Sender<Response>,
+}
+
+/// 작업자가 맡는 메서드
+pub fn is_heavy_read(m: Method) -> bool {
+    matches!(m, Method::StoryToday | Method::ConnectionsList)
+}
+
+/// 읽기 작업자를 띄운다. 파일 DB 가 아니거나 열기에 실패하면 None (엔진이 직접 처리)
+pub fn spawn(path: &str, gen: Arc<AtomicU64>) -> Option<Sender<ReadJob>> {
+    if path.is_empty() || path == ":memory:" {
+        return None;
+    }
+    let store = Store::open_read_only(path).ok()?;
+    let (tx, rx) = mpsc::channel::<ReadJob>();
+    std::thread::Builder::new()
+        .name("reader".into())
+        .spawn(move || run(store, rx, gen))
+        .ok()?;
+    Some(tx)
+}
+
+/// 27차 Gemini Q4: 대기열에서 이보다 오래 기다린 요청은 처리하지 않고 busy 로 돌려준다(오래된 now 로 엉뚱한 범위를 보이지 않게)
+pub const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(8);
+/// 27차 Gemini Q5: 읽기 질의 하나가 이보다 오래 걸리면 끊는다(긴 읽기 트랜잭션이 WAL 체크포인트를 막지 않게)
+pub const QUERY_LIMIT: std::time::Duration = std::time::Duration::from_secs(6);
+
+fn run(store: Store, rx: Receiver<ReadJob>, gen: Arc<AtomicU64>) {
+    let mut rs = ReadState::default();
+    // 감시 스레드: 질의 마감(t0 기준 ms, 0 = 없음)이 지나면 sqlite3_interrupt — hooks 기능 없이 InterruptHandle 로
+    let deadline = Arc::new(AtomicU64::new(0));
+    let t0 = std::time::Instant::now();
+    {
+        let h = store.conn().get_interrupt_handle();
+        let d = deadline.clone();
+        let _ = std::thread::Builder::new()
+            .name("reader-watchdog".into())
+            .spawn(move || loop {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                let dl = d.load(Ordering::SeqCst);
+                if dl != 0 && (t0.elapsed().as_millis() as u64) > dl {
+                    h.interrupt();
+                    d.store(0, Ordering::SeqCst);
+                }
+            });
+    }
+    for job in rx {
+        if job.enqueued.elapsed() > STALE_AFTER {
+            let _ = job.reply.send(Response::err(
+                Some(job.id),
+                RpcError::with(ErrorCode::Busy, "읽기 대기열에서 너무 오래 기다림"),
+            ));
+            continue;
+        }
+        deadline.store(
+            t0.elapsed().as_millis() as u64 + QUERY_LIMIT.as_millis() as u64,
+            Ordering::SeqCst,
+        );
+        let g = gen.load(Ordering::SeqCst);
+        if g != rs.gen {
+            rs.today_cache = None;
+            rs.gen = g;
+        }
+        let r = match job.method {
+            Method::StoryToday => story_today(&store, &mut rs, job.now, job.params, &job.caller),
+            Method::ConnectionsList => {
+                connections_list(&store, &mut rs, job.now, job.params, &job.caller)
+            }
+            _ => Err(RpcError::with(
+                ErrorCode::Internal,
+                "읽기 작업자가 맡지 않는 메서드",
+            )),
+        };
+        deadline.store(0, Ordering::SeqCst);
+        // 끊긴 질의(interrupted)는 일시 상태로 — 화면은 busy 처럼 다시 부른다
+        let r = r.map_err(|e| {
+            if e.message.contains("interrupt") {
+                RpcError::with(ErrorCode::Busy, "읽기 질의가 너무 오래 걸려 끊음")
+            } else {
+                e
+            }
+        });
+        let resp = match r {
+            Ok(v) => Response::ok(job.id, v),
+            Err(e) => Response::err(Some(job.id), e),
+        };
+        let _ = job.reply.send(resp);
+    }
+}
+
+/// story.today
+pub fn story_today(
+    g: &Store,
+    rs: &mut ReadState,
+    now: i64,
+    p: serde_json::Value,
+    caller: &Caller,
+) -> Result<serde_json::Value, RpcError> {
+    use api::methods::StoryTodayParams;
+
+    let v: StoryTodayParams = serde_json::from_value(p)
+        .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+    let scope = caller.scope();
+    // L030(노트북): 전에는 DB 전체(7일)를 매번 문장으로 만들었다(24h 만으로 237초·문장 3만 8천).
+    // 범위(기본 24시간) + 가장 늦은 선 TODAY_MAX_EDGES 개 + 30초 캐시
+    let now_ft = crate::runtime::unix_to_filetime(now);
+    let since = v
+        .since_ts
+        .unwrap_or(now_ft - 86_400 * 10_000_000)
+        .max(now_ft - 8 * 86_400 * 10_000_000);
+    // 캐시 열쇠의 since 는 분 단위로 — 화면이 "지금-24h"를 매번 조금씩 다르게 보내도 같은 계산으로
+    let since_key = since / (60 * 10_000_000);
+    let (all, truncated) = match &rs.today_cache {
+        Some((t, k, voice, s, tr))
+            if *k == since_key && *voice == v.voice && now - *t < CACHE_SECS =>
+        {
+            (s.clone(), *tr)
+        }
+        _ => {
+            let (s, tr) =
+                story::tell_recent(g, since, i64::MAX, voice_of(&v.voice), TODAY_MAX_EDGES)
+                    .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
+            let s = std::sync::Arc::new(s);
+            rs.today_cache = Some((now, since_key, v.voice.clone(), s.clone(), tr));
+            (s, tr)
+        }
+    };
+    // A30 범위: 같은 노드를 몇 번이고 다시 묻지 않게 기억
+    let mut vis: std::collections::HashMap<i64, bool> = std::collections::HashMap::new();
+    let mut node_ok = |id: i64| {
+        *vis.entry(id)
+            .or_insert_with(|| scope.process_visible(g, id))
+    };
+    let mut sentences: Vec<&story::render::Sentence> = Vec::with_capacity(all.len());
+    for st in all.iter() {
+        if scope == Scope::All {
+            sentences.push(st);
+            continue;
+        }
+        let edges_ok = st.edge_ids.iter().all(|e| match g.edge(*e) {
+            Ok(ed) => node_ok(ed.src) && node_ok(ed.dst),
+            Err(_) => true,
+        });
+        if node_ok(st.actor_id) && edges_ok {
+            sentences.push(st);
+        }
+    }
+    let gaps = graph::views::gaps_between(g, since, i64::MAX).unwrap_or_default();
+    Ok(
+        serde_json::json!({ "sentences": sentences, "gaps": gaps, "truncated": truncated, "since_ts": since }),
+    )
+}
+
+/// connections.list
+pub fn connections_list(
+    g: &Store,
+    rs: &mut ReadState,
+    now: i64,
+    p: serde_json::Value,
+    caller: &Caller,
+) -> Result<serde_json::Value, RpcError> {
+    // 시각: 그래프 사실은 FILETIME(100ns) — 응답 필드 이름에 _ft 를 붙인다 (정책·엔진은 unix 초)
+    let since_secs = p
+        .get("since_secs")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(300)
+        .clamp(1, 7 * 86_400);
+    let cur: api::page::Cursor = p
+        .get("cursor")
+        .cloned()
+        .map(serde_json::from_value::<api::page::Cursor>)
+        .transpose()
+        .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?
+        .unwrap_or_default()
+        .normalized();
+    let now_ft = crate::runtime::unix_to_filetime(now);
+    let scope = caller.scope();
+    let rows: Vec<_> = graph::views::connections(g, now_ft - since_secs * 10_000_000, cur.limit)
+        .map_err(internal)?
+        .into_iter()
+        .filter(|r| scope.process_visible(g, r.process_id))
+        .collect();
+    let items: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| serde_json::json!({
+            "process_id": r.process_id, "pid": r.pid, "image": r.image, "remote_id": r.remote_id,
+            "raddr": r.raddr, "rport": r.rport, "proto": r.proto, "domain": r.domain, "direction": r.direction,
+            "count": r.count, "first_ft": r.first_ts, "last_ft": r.last_ts, "sent": r.sent, "recv": r.recv, "proxied_for": r.proxied_for,
+            // 등록 국가·ASN·주소 종류 (오프라인 DB-IP Lite, 등록 국가이지 서버 위치가 아님)
+            "where": geo::global().lookup_str(&r.raddr),
+        }))
+        .collect();
+    // A2 "오늘 처음": 하루 전까지 30일 안에 한 번도 본 적 없는 ASN·등록 국가. 기록이 하루치도 없으면 표시하지 않는다
+    let (new_asn, new_cc) = new_today(g, rs, now, &items);
+    let items: Vec<serde_json::Value> = items
+        .into_iter()
+        .map(|mut it| {
+            let asn = it["where"]["asn"].as_u64().map(|a| a as u32);
+            let cc = it["where"]["cc"].as_str().map(|s| s.to_string());
+            it["new_asn"] = serde_json::json!(asn.is_some_and(|a| new_asn.contains(&a)));
+            it["new_cc"] = serde_json::json!(cc.is_some_and(|c| new_cc.contains(&c)));
+            it
+        })
+        .collect();
+    let g = geo::global();
+    Ok(
+        serde_json::json!({ "items": items, "since_secs": since_secs, "geo": { "country_db": g.has_country(), "built": g.country_built, "source": "DB-IP Lite (CC BY 4.0) https://db-ip.com" } }),
+    )
+}
+
+pub(crate) fn new_today(
+    g: &Store,
+    rs: &mut ReadState,
+    now: i64,
+    items: &[serde_json::Value],
+) -> (
+    std::collections::HashSet<u32>,
+    std::collections::HashSet<String>,
+) {
+    use std::collections::HashSet;
+    let stale = rs
+        .seen_before
+        .as_ref()
+        .is_none_or(|(t, _, _)| now - *t > 600);
+    if stale {
+        let now_ft = crate::runtime::unix_to_filetime(now);
+        let day = 86_400 * 10_000_000i64;
+        let mut asn = HashSet::new();
+        let mut cc = HashSet::new();
+        if let Ok(mut st) = g.conn().prepare(
+            "SELECT attrs_json FROM nodes WHERE kind = 'remote' AND first_ts < ?1 AND last_ts >= ?2 LIMIT 50000",
+        ) {
+            let rows = st
+                .query_map(rusqlite::params![now_ft - day, now_ft - 30 * day], |r| r.get::<_, Option<String>>(0))
+                .map(|it| it.filter_map(|x| x.ok().flatten()).collect::<Vec<_>>())
+                .unwrap_or_default();
+            for a in rows {
+                let ip = serde_json::from_str::<serde_json::Value>(&a)
+                    .ok()
+                    .and_then(|v| v.get("ip").and_then(|x| x.as_str()).map(|s| s.to_string()));
+                if let Some(w) = ip.and_then(|ip| geo::global().lookup_str(&ip)) {
+                    if let Some(n) = w.asn {
+                        asn.insert(n);
+                    }
+                    if let Some(c) = w.cc {
+                        cc.insert(c);
+                    }
+                }
+            }
+        }
+        rs.seen_before = Some((now, asn, cc));
+    }
+    let (_, seen_asn, seen_cc) = rs.seen_before.as_ref().unwrap();
+    // 기록이 하루치도 없는 새 설치: 모든 것이 "처음"이 되므로 표시하지 않는다
+    if seen_asn.is_empty() && seen_cc.is_empty() {
+        return (HashSet::new(), HashSet::new());
+    }
+    let mut na = HashSet::new();
+    let mut nc = HashSet::new();
+    for it in items {
+        if it["where"]["scope"].as_str() != Some("public") {
+            continue;
+        }
+        if let Some(a) = it["where"]["asn"].as_u64().map(|a| a as u32) {
+            if !seen_asn.contains(&a) {
+                na.insert(a);
+            }
+        }
+        if let Some(c) = it["where"]["cc"].as_str() {
+            if !seen_cc.contains(c) {
+                nc.insert(c.to_string());
+            }
+        }
+    }
+    (na, nc)
+}

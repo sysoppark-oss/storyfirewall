@@ -1,0 +1,11 @@
+[package]
+name = "api"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "서비스 ↔ UI JSON-RPC 2.0 메시지 규격: 타입·직렬화·검증·오류 코드·페이지·판 협상. 전송(파이프)·인증·디스패처는 여기 없음"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

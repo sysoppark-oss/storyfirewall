@@ -1,0 +1,44 @@
+[package]
+name = "collector"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "A3: ETW·스냅샷·SCM·연결 테이블 → 정규화 Event → graph 저장 (Windows 전용)"
+
+[features]
+# Linux 작업 환경에서 cargo check 만 하기 위한 스위치. 링크는 하지 않으므로 Windows 심볼이 없어도 된다.
+# CI 의 Linux 테스트는 이 기능 없이 돌리므로 collector 는 빈 크레이트로 컴파일된다.
+host-check = []
+
+[dependencies]
+graph = { path = "../graph" }
+serde_json.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+# ferrisetw: ETW 소비자 안전 래퍼 (MIT/Apache-2.0). 워크스페이스가 third_party 패치판으로 바꿔 쓴다(RAW_TIMESTAMP)
+ferrisetw = { version = "1.2", features = ["serde"] }
+# windows-sys: 원시 FFI (MIT/Apache-2.0)
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_Etw",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_Security_Cryptography_Catalog",
+    "Win32_Security_Cryptography_Sip",
+    "Win32_Security_WinTrust",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Services",
+    "Win32_System_Threading",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Performance",
+    "Win32_System_SystemInformation",
+    # 10판 5-9: NtQueryInformationProcess(ProcessCommandLineInformation)
+    "Wdk_System_Threading",
+] }
+
+[[bin]]
+name = "collector-poc"
+path = "src/bin/collector-poc.rs"

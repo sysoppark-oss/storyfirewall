@@ -1,0 +1,16 @@
+[package]
+name = "b2"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "B2: 자체 ETW 수집 기록(collector.db) vs Sysmon 기록 누락률 비교 (개발 측정 도구, 제품에 넣지 않음)"
+
+[dependencies]
+graph = { path = "../graph" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[[bin]]
+name = "b2-compare"
+path = "src/bin/b2-compare.rs"

@@ -1,0 +1,327 @@
+name: A17 svc pipe/auth PoC
+
+# A17: 네임드 파이프 서버·클라이언트, 클라이언트 PID·이미지, 서명 검사(자체 서명 테스트 인증서), 관리자 검사, 시각대.
+# 서명 실패 클라이언트(서명 안 한 복사본)는 조회도 없이 끊겨야 한다 (10차 Q5).
+on:
+  push:
+    paths:
+      - "crates/svc/**"
+      - "crates/api/**"
+      - "crates/engine/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/poc4-svc-windows.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "41 18 * * 0"
+
+permissions:
+  contents: write
+
+# 같은 브랜치에 새로 올리면 앞서 돌던 실행은 취소(비용)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-run:
+    strategy:
+      fail-fast: false
+      matrix:
+        # 비용(Actions 사용량): push 는 한 버전만, 두 버전 묶음은 수동·주 1회
+        os: ${{ github.event_name == 'push' && fromJSON('["windows-2025"]') || fromJSON('["windows-2022","windows-2025"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: a17-${{ matrix.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Unit tests on Windows (svc, api, engine, graph)
+        shell: pwsh
+        # graph 포함: 동시 쓰기 기아 측정(rare_writer_is_not_starved_by_busy_writer)을 Windows 잠금(LockFileEx)에서도 본다
+        run: |
+          cargo test --release --locked -p svc -p api -p engine -p graph -- --nocapture 2>&1 | Tee-Object -FilePath test.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # 주의: cargo test 가 bin 을 feature 없이 다시 빌드해 svc-poc.exe 를 덮어쓴다. 그래서 빌드는 테스트 뒤에 한다.
+      - name: Build svc-poc
+        shell: pwsh
+        run: cargo build --release --locked -p svc --features test-signer --bin svc-poc --bin story-firewall-svc 2>&1 | Tee-Object -FilePath build.log
+
+      - name: Sign with a self-signed test certificate
+        shell: pwsh
+        run: |
+          $exe = ".\target\release\svc-poc.exe"
+          Copy-Item $exe ".\target\release\svc-poc-unsigned.exe"
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=StoryFirewall Test" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(2)
+          $pfx = Join-Path $env:RUNNER_TEMP "test.cer"
+          Export-Certificate -Cert $cert -FilePath $pfx | Out-Null
+          # 자체 서명 루트를 신뢰 저장소에 넣어야 WinVerifyTrust(오프라인) 가 valid 를 돌려준다
+          Import-Certificate -FilePath $pfx -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          Import-Certificate -FilePath $pfx -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
+          $r = Set-AuthenticodeSignature -FilePath $exe -Certificate $cert -HashAlgorithm SHA256
+          "sign status: $($r.Status) $($r.StatusMessage)"
+          (Get-AuthenticodeSignature $exe).Status
+
+      - name: Run scenario
+        shell: pwsh
+        run: |
+          $exe = ".\target\release\svc-poc.exe"
+          $unsigned = ".\target\release\svc-poc-unsigned.exe"
+          $log = "run.out"
+          function Log($s) { $s | Tee-Object -FilePath $log -Append }
+
+          Log "=== 0. timezone ==="
+          & $exe tz 2>&1 | Tee-Object -FilePath $log -Append
+
+          # 비관리자 클라이언트용 표준 사용자 (제안 2 수용: Unauthorized 경로를 실제 토큰으로 실측)
+          $pw = "Sf-Poc-" + [guid]::NewGuid().ToString("N").Substring(0, 12) + "!"
+          net user sfpocuser $pw /add /y | Out-Null
+          $cred = New-Object System.Management.Automation.PSCredential("sfpocuser", (ConvertTo-SecureString $pw -AsPlainText -Force))
+          # 표준 사용자가 실행 파일을 읽을 수 있게
+          icacls (Split-Path (Resolve-Path $exe)) /grant "sfpocuser:(OI)(CI)RX" /T | Out-Null
+
+          Log "=== 1. server (expects 3 connections) ==="
+          $srv = Start-Process -FilePath $exe -ArgumentList 'server','"StoryFirewall Test"','3'  -RedirectStandardOutput server.out -RedirectStandardError server.err -PassThru
+          Start-Sleep -Seconds 3
+
+          Log "=== 2. signed client: hello -> policy.list -> settings.set (admin) ==="
+          & $exe client 2>&1 | Tee-Object -FilePath $log -Append
+          Start-Sleep -Seconds 1
+
+          Log "=== 3. unsigned client: must be rejected before hello ==="
+          & $unsigned client 2>&1 | Tee-Object -FilePath $log -Append
+          Start-Sleep -Seconds 1
+
+          Log "=== 4. signed client as standard user: settings.set must be Unauthorized (-32001) ==="
+          $abs = (Resolve-Path $exe).Path
+          $na = Start-Process -FilePath $abs -ArgumentList 'client' -Credential $cred -WorkingDirectory (Split-Path $abs) -RedirectStandardOutput nonadmin.out -RedirectStandardError nonadmin.err -PassThru
+          Wait-Process -Id $na.Id -Timeout 30 -ErrorAction SilentlyContinue
+          Get-Content nonadmin.out -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+          Get-Content nonadmin.err -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+
+          Wait-Process -Id $srv.Id -Timeout 30 -ErrorAction SilentlyContinue
+          if (-not $srv.HasExited) { Stop-Process -Id $srv.Id -Force; Log "server killed (timeout)" }
+          Log "--- server.out ---"; Get-Content server.out | Tee-Object -FilePath $log -Append
+          Log "--- server.err ---"; Get-Content server.err -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+          function AsUser($argList, $tag) {
+            $p = Start-Process -FilePath $abs -ArgumentList $argList -Credential $cred -WorkingDirectory (Split-Path $abs) -RedirectStandardOutput "$tag.out" -RedirectStandardError "$tag.err" -PassThru
+            Wait-Process -Id $p.Id -Timeout 30 -ErrorAction SilentlyContinue
+            Get-Content "$tag.out" -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+            Get-Content "$tag.err" -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+          }
+          Log "=== 11. A25: pipe DACL - can a standard user add a server instance? (legacy GRGW vs fixed) ==="
+          $demo = Start-Process -FilePath $exe -ArgumentList 'sddl-demo','25' -RedirectStandardOutput demo.out -PassThru
+          Start-Sleep -Seconds 2
+          Get-Content demo.out -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+          AsUser @('squat-instance','\\.\pipe\sf-demo-legacy') 'sq-legacy'
+          AsUser @('squat-instance','\\.\pipe\sf-demo-fixed') 'sq-fixed'
+          Stop-Process -Id $demo.Id -Force -ErrorAction SilentlyContinue
+
+          Log "=== 12. A25: standard user squats the fixed pipe name before the service starts ==="
+          $squat = Start-Process -FilePath $abs -ArgumentList 'squat-hold','\\.\pipe\story-firewall','60' -Credential $cred -WorkingDirectory (Split-Path $abs) -RedirectStandardOutput squat.out -RedirectStandardError squat.err -PassThru
+          Start-Sleep -Seconds 3
+          Get-Content squat.out -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+
+          Log "=== 5. SCM: install -> start -> time change -> stop -> uninstall ==="
+          $svclog = Join-Path (Get-Location) "service.log"
+          & $exe install $svclog "StoryFirewall Test" 2>&1 | Tee-Object -FilePath $log -Append
+          & $exe sc-start 2>&1 | Tee-Object -FilePath $log -Append
+          Start-Sleep -Seconds 3
+          & $exe sc-state 2>&1 | Tee-Object -FilePath $log -Append
+          Log "=== 13. A25: clients reach the LocalSystem service through the published random name ==="
+          & $exe client 2>&1 | Tee-Object -FilePath $log -Append
+          AsUser @('probe') 'probe'
+          $pub = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\StoryFirewall' -Name PipeName -ErrorAction SilentlyContinue).PipeName
+          Log "published=$pub"
+          if ($pub) { AsUser @('squat-instance', $pub) 'sq-live' }
+          # 시스템 시각을 2분 앞당겼다가 되돌린다 -> SERVICE_CONTROL_TIMECHANGE 두 번 기대
+          Set-Date -Adjust (New-TimeSpan -Minutes 2) | Out-Null
+          Start-Sleep -Seconds 2
+          Set-Date -Adjust (New-TimeSpan -Minutes -2) | Out-Null
+          Start-Sleep -Seconds 2
+          & $exe sc-stop 2>&1 | Tee-Object -FilePath $log -Append
+          Start-Sleep -Seconds 3
+          & $exe sc-state 2>&1 | Tee-Object -FilePath $log -Append
+          & $exe uninstall 2>&1 | Tee-Object -FilePath $log -Append
+          $after = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\StoryFirewall' -Name PipeName -ErrorAction SilentlyContinue).PipeName
+          Log "published_after_stop=[$after]"
+          Stop-Process -Id $squat.Id -Force -ErrorAction SilentlyContinue
+          Log "--- service.log ---"; Get-Content $svclog -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+
+          Log "=== 14. A26: product service story-firewall-svc (real WFP, data dir, published pipe) ==="
+          $prod = ".\target\release\story-firewall-svc.exe"
+          # 21st review: old moved-aside folders are capped at 5 (7 pre-made + 1 new -> 5)
+          1..7 | ForEach-Object { New-Item -ItemType Directory -Path ("C:\ProgramData\StoryFirewall.untrusted-" + $_) -Force | Out-Null }
+          # a standard user pre-creates the data folder with a planted policy DB
+          AsUser @('plant','C:\ProgramData\StoryFirewall') 'plant'
+          & $prod install --test-signer "StoryFirewall Test" 2>&1 | Tee-Object -FilePath $log -Append
+          & $prod start 2>&1 | Tee-Object -FilePath $log -Append
+          Start-Sleep -Seconds 6
+          & $prod status 2>&1 | Tee-Object -FilePath $log -Append
+          Log "--- 14b. clients ---"
+          & $exe client 2>&1 | Tee-Object -FilePath $log -Append
+          & $exe wfp-roundtrip 2>&1 | Tee-Object -FilePath $log -Append
+          AsUser @('probe') 'probe2'
+          & $prod stop 2>&1 | Tee-Object -FilePath $log -Append
+          Log "--- product service.log ---"
+          Get-Content 'C:\ProgramData\StoryFirewall\service.log' -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+          Get-ChildItem 'C:\ProgramData' -Filter 'StoryFirewall*' | ForEach-Object { Log ("data dir entry: " + $_.Name) }
+          & $prod uninstall 2>&1 | Tee-Object -FilePath $log -Append
+          Log "--- after uninstall ---"
+          & $prod status 2>&1 | Tee-Object -FilePath $log -Append
+          $kept = (Get-ChildItem 'C:\ProgramData' -Filter 'StoryFirewall.untrusted-*').Count
+          Log "untrusted folders kept=$kept"
+
+          Log "=== 15. A26/21st: standard user holds the planted data folder (no share-delete) -> fallback folder ==="
+          $hold = Start-Process -FilePath $abs -ArgumentList 'plant-hold','C:\ProgramData\SFHoldBase','40' -Credential $cred -WorkingDirectory (Split-Path $abs) -RedirectStandardOutput hold.out -RedirectStandardError hold.err -PassThru
+          Start-Sleep -Seconds 3
+          Get-Content hold.out -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+          & $prod console 8 --test-signer "StoryFirewall Test" --data-base 'C:\ProgramData\SFHoldBase' 2>&1 | Tee-Object -FilePath $log -Append
+          $fb = Get-ChildItem 'C:\ProgramData' -Filter 'SFHoldBase.*' | Where-Object { $_.Name -match '^SFHoldBase\.[0-9a-f]{16}$' } | Select-Object -First 1
+          Log ("fallback folder: " + $(if ($fb) { $fb.Name } else { "none" }))
+          if ($fb) { Get-Content (Join-Path $fb.FullName 'service.log') -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append }
+          Stop-Process -Id $hold.Id -Force -ErrorAction SilentlyContinue
+
+          Log "=== 6. TerminateProcess with create-time check ==="
+          $victim = Start-Process -FilePath "$env:SystemRoot\System32\ping.exe" -ArgumentList "-t","127.0.0.1" -WindowStyle Hidden -PassThru
+          Start-Sleep -Seconds 1
+          $ct = (& $exe create-time $victim.Id) -replace '.*Some\((\d+)\).*','$1'
+          Log "victim pid=$($victim.Id) create_time=$ct"
+          & $exe kill $victim.Id ($([int64]$ct) + 1) 2>&1 | Tee-Object -FilePath $log -Append
+          Log ("victim alive after mismatch kill (expect True): " + (-not $victim.HasExited))
+          & $exe kill $victim.Id $ct 2>&1 | Tee-Object -FilePath $log -Append
+          Start-Sleep -Milliseconds 500
+          $victim.Refresh()
+          Log ("victim alive after matching kill (expect False): " + (-not $victim.HasExited))
+
+          Log "=== 8. A19: listeners (GetExtendedTcpTable LISTEN + GetExtendedUdpTable) ==="
+          & $exe listeners 2>&1 | Tee-Object -FilePath $log -Append
+
+          Log "=== 7. A18: collector session + engine (sink batches reach the engine) ==="
+          $col = Start-Process -FilePath $exe -ArgumentList 'collect','12','svc-collect.db' -RedirectStandardOutput collect.out -RedirectStandardError collect.err -PassThru
+          Start-Sleep -Seconds 4
+          # 세션 중에 새 프로세스·연결을 만든다
+          & "$env:SystemRoot\System32\curl.exe" -s -o NUL https://www.rust-lang.org/ 2>$null
+          & "$env:SystemRoot\System32\where.exe" cmd 2>$null | Out-Null
+          Wait-Process -Id $col.Id -Timeout 60 -ErrorAction SilentlyContinue
+          Get-Content collect.out -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+          Get-Content collect.err -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+
+          Log "=== 10. A24: pipe read race (requests at 200ms slice boundaries) ==="
+          $ss = Start-Process -FilePath $exe -ArgumentList 'server','"StoryFirewall Test"','1' -RedirectStandardOutput stress-server.out -RedirectStandardError stress-server.err -PassThru
+          Start-Sleep -Seconds 3
+          & $exe stress 300 2>&1 | Tee-Object -FilePath $log -Append
+          Wait-Process -Id $ss.Id -Timeout 15 -ErrorAction SilentlyContinue
+          if (-not $ss.HasExited) { Stop-Process -Id $ss.Id -Force }
+
+          Log "=== 9. graph lock fairness on Windows ==="
+          Get-Content test.log | Select-String "busy batches=" | ForEach-Object { Log $_.Line }
+          Log "END"
+          net user sfpocuser /delete | Out-Null
+
+      - name: Assert expected outcomes
+        if: always()
+        shell: pwsh
+        run: |
+          $log = Get-Content run.out -Raw -ErrorAction SilentlyContinue
+          $expect = @(
+            'local_offset_minutes=-?\d+'
+            'wall_is_utc=true'
+            '=== 2\..*\r?\n(.*\r?\n)*?client: \{"jsonrpc":"2\.0","id":1,"result":\{"api":\[1,0\]'
+            'client: \{"jsonrpc":"2\.0","id":2,"result":\{"items":\[\]\}\}'
+            'client: \{"jsonrpc":"2\.0","id":3,"result":\{"ok":true\}\}'
+            '=== 3\..*\r?\n(.*\r?\n)*?client: closed by server'
+            '=== 4\..*\r?\n(.*\r?\n)*?client: \{"jsonrpc":"2\.0","id":3,"error":\{"code":-32001'
+            'signature_ok=true \(.*svc-poc\.exe: status=valid signer=Some\("StoryFirewall Test"\)'
+            'authn: admin=true'
+            'authn: admin=false'
+            'svc-poc-unsigned\.exe: status=nosignature.*\r?\n.*closed: signature_failed'
+            'install: ok'
+            '=== 5\..*\r?\n(.*\r?\n)*?state=4'
+            '=== 5\..*\r?\n(.*\r?\n)*?state=1'
+            'uninstall: ok'
+            'service: running'
+            'event: TimeChanged(.*\r?\n)*?.*event: TimeChanged'
+            'event: Stop'
+            'service: stopped'
+            'CreateTimeMismatch'
+            'victim alive after mismatch kill \(expect True\): True'
+            '-> Terminated'
+            'victim alive after matching kill \(expect False\): False'
+            'collect: ingested=[1-9]\d* edges=[1-9]\d* dropped=0 lost=Some\(0\)'
+            'collect: sink batches=[1-9]\d* events=[1-9]\d* process_starts=[1-9]\d*'
+            'collect: process_nodes=[1-9]\d*'
+            'listeners: tcp=[1-9]\d* udp=[1-9]\d*'
+            'busy batches=\d+ worst engine wait='
+            'listener: tcp 0\.0\.0\.0:135 pid=\d+ any=true'
+            'stress: done n=300 lost=0'
+            'squat-instance: \\\\\.\\pipe\\sf-demo-legacy created \(VULNERABLE\)'
+            'squat-instance: \\\\\.\\pipe\\sf-demo-fixed denied'
+            'squat-hold: holding'
+            'squat: fixed pipe name held by pid=[1-9]\d*'
+            'pipe: published \\\\\.\\pipe\\story-firewall-[0-9a-f]{32}'
+            '=== 13\..*\r?\n(.*\r?\n)*?client: pipe=\\\\\.\\pipe\\story-firewall-[0-9a-f]{32}(.*\r?\n)*?client: \{"jsonrpc":"2\.0","id":3,"result":\{"ok":true\}\}'
+            'probe: name=\\\\\.\\pipe\\story-firewall-[0-9a-f]{32} valid=true server_pid=[1-9]\d* session=0'
+            'probe: hello ok'
+            'squat-instance: \\\\\.\\pipe\\story-firewall-[0-9a-f]{32} denied'
+            'pipe: unpublished'
+            'published_after_stop=\[\]'
+            'plant: created'
+            'install: ok \(".*story-firewall-svc\.exe" run --test-signer'
+            'start: ok state=Some\(4\)'
+            'status: state=4 published=\\\\\.\\pipe\\story-firewall-[0-9a-f]{32} wfp_filters=\d+ data_dir=.*StoryFirewall owner_trusted=true'
+            '--- 14b\..*\r?\n(.*\r?\n)*?client: \{"jsonrpc":"2\.0","id":3,"result":\{"ok":true\}\}'
+            'roundtrip: baseline=0 blocked=[1-9]\d* filters=2 after=0 confirm_ok=true rollback_ok=true'
+            'data_dir: untrusted folder moved aside'
+            'collector: started'
+            'service: stopped'
+            'data dir entry: StoryFirewall\.untrusted-\d+'
+            'uninstall: wfp filters removed=\d+'
+            '--- after uninstall ---\r?\n.*status: state=\(.*\) published=- wfp_filters=0'
+            'data_dir: pruned \d+ old untrusted folders \(keep 5\)'
+            'untrusted folders kept=5'
+            'plant-hold: holding'
+            'fallback folder: SFHoldBase\.[0-9a-f]{16}'
+            'data_dir: fallback \(could not move untrusted base: .*\) -> .*SFHoldBase\.[0-9a-f]{16}'
+            'console: done'
+          )
+          $bad = 0
+          foreach ($p in $expect) {
+            if ($log -match $p) { "PASS  $p" } else { "FAIL  $p"; $bad++ }
+          }
+          "assert: $bad failed of $($expect.Count)" | Tee-Object -FilePath assert.txt
+          if ($bad -gt 0) { exit 1 }
+
+      - name: Publish logs to ci-logs branch
+        if: always()
+        shell: pwsh
+        run: |
+          $dst = Join-Path $env:RUNNER_TEMP "ci-logs"
+          git clone --quiet --branch ci-logs --single-branch "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" $dst 2>$null
+          $run = Join-Path $dst "poc4/run-${{ github.run_number }}/${{ matrix.os }}"
+          New-Item -ItemType Directory -Path $run -Force | Out-Null
+          Copy-Item assert.txt, build.log, test.log, run.out, server.out, server.err, service.log, collect.out, collect.err, probe.out, squat.out $run -ErrorAction SilentlyContinue
+          "${{ github.sha }}" | Set-Content (Join-Path $run "commit.txt")
+          git -C $dst config user.name "github-actions"
+          git -C $dst config user.email "actions@github.com"
+          Get-ChildItem (Join-Path $dst "poc4") -Directory -ErrorAction SilentlyContinue | Sort-Object { [int]($_.Name -replace 'run-','') } -Descending | Select-Object -Skip 10 | Remove-Item -Recurse -Force
+          git -C $dst add -A
+          git -C $dst commit --quiet -m "poc4 run ${{ github.run_number }} ${{ matrix.os }} (${{ job.status }})" 2>$null
+          # 두 OS job 과 다른 poc 가 같은 브랜치에 동시에 밀어 넣으므로 충돌 시 재시도 (백오프 + 지터)
+          $pushed = $false
+          for ($i = 0; $i -lt 10; $i++) {
+            git -C $dst fetch --quiet origin ci-logs 2>$null
+            git -C $dst rebase --quiet origin/ci-logs 2>$null
+            if ($LASTEXITCODE -ne 0) { git -C $dst rebase --abort 2>$null; git -C $dst reset --quiet --hard origin/ci-logs; git -C $dst add -A; git -C $dst commit --quiet -m "poc run ${{ github.run_number }} ${{ matrix.os }} (${{ job.status }}) retry" 2>$null }
+            git -C $dst push --quiet origin ci-logs 2>$null
+            if ($LASTEXITCODE -eq 0) { $pushed = $true; break }
+            Start-Sleep -Seconds (2 * ($i + 1) + (Get-Random -Maximum 5))
+          }
+          if (-not $pushed) { "ci-logs push failed after retries"; exit 1 }

@@ -1,0 +1,65 @@
+[package]
+name = "svc"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "서비스 골격: 엔진 스레드(명령 큐) + 저장 스레드 + 연결 핸들러(디스패처). 파이프·토큰·서명·SCM 은 Windows 단계"
+
+[features]
+# Linux 에서 Windows 부분을 cargo check 만 (collector·policy 와 같은 방식)
+host-check = ["collector/host-check", "policy/host-check"]
+# 테스트 인증서 CN 을 실행 인자로 받는 경로를 연다. PoC·개발 VM 전용. 배포 빌드에서는 절대 켜지 않는다(제안 3).
+test-signer = []
+
+[dependencies]
+# 미끼 폴더 찾기(읽기만, L061)
+decoy = { path = "../decoy" }
+collector = { path = "../collector" }
+api = { path = "../api" }
+engine = { path = "../engine" }
+dsl = { path = "../dsl" }
+judge = { path = "../judge" }
+story = { path = "../story" }
+graph = { path = "../graph" }
+policy = { path = "../policy" }
+geo = { path = "../geo" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+# getrandom: MIT OR Apache-2.0. 맡긴 변경 id (OS 난수: Windows BCryptGenRandom/ProcessPrng, Linux getrandom(2))
+getrandom = "0.2"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_EventLog",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Registry",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Services",
+    "Win32_System_Threading",
+    "Win32_System_Time",
+] }
+
+[[bin]]
+name = "svc-poc"
+path = "src/bin/svc-poc.rs"
+
+# 개발용 가짜 서비스 (TCP 루프백). UI 개발·시연 전용
+# 제품 서비스 본체 (A26)
+[[bin]]
+name = "story-firewall-svc"
+path = "src/bin/story-firewall-svc.rs"
+
+# 개발·시험 도구: Defender CFA 기록 읽기 확인(poc3). 제품 설치기에 넣지 않는다
+[[bin]]
+name = "defender-probe"
+path = "src/bin/defender-probe.rs"
+
+[[bin]]
+name = "svc-dev"
+path = "src/bin/svc-dev.rs"

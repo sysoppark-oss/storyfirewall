@@ -1,0 +1,13 @@
+[package]
+name = "poc1b-etw"
+version = "0.1.0"
+edition = "2021"
+description = "PoC 1-b: ETW로 프로세스 생성·네트워크 연결·DNS 조회를 받아 PID에 귀속 (자체 수집기 검증)"
+
+[dependencies]
+# ferrisetw: ETW 소비자 안전 래퍼 (MIT/Apache-2.0). serde 기능으로 이벤트 전체를 JSON으로 덤프한다.
+ferrisetw = { version = "1.2", features = ["serde"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 2

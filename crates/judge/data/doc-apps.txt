@@ -1,0 +1,11 @@
+winword.exe
+excel.exe
+powerpnt.exe
+outlook.exe
+acrord32.exe
+acrobat.exe
+hwp.exe
+chrome.exe
+msedge.exe
+firefox.exe
+thunderbird.exe

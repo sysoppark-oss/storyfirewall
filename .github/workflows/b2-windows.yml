@@ -1,0 +1,106 @@
+name: B2 sysmon miss-rate script check
+
+# 노트북에서 돌릴 poc/b2/b2-run.ps1 을 러너에서 먼저 돌려 스크립트·Sysmon 설정(sysmon-b2.xml)·비교기(b2-compare)를 검증한다.
+# 실제 누락률 측정은 실기기(노트북)에서 한다 — 러너는 짧은 시간·인위적 부하라 기준값이 아니다.
+on:
+  push:
+    paths:
+      - "crates/b2/**"
+      - "poc/b2/**"
+      - ".github/workflows/b2-windows.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "41 18 * * 0"
+
+permissions:
+  contents: write
+
+# 같은 브랜치에 새로 올리면 앞서 돌던 실행은 취소(비용)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  b2:
+    strategy:
+      fail-fast: false
+      matrix:
+        # 비용(Actions 사용량): push 는 한 버전만, 두 버전 묶음은 수동·주 1회
+        os: ${{ github.event_name == 'push' && fromJSON('["windows-2025"]') || fromJSON('["windows-2022","windows-2025"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: story-firewall
+
+      - name: Rust toolchain (stable-msvc)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            story-firewall/target
+          key: b2-${{ matrix.os }}-${{ hashFiles('story-firewall/Cargo.lock') }}
+
+      - name: Run b2-run.ps1 (Windows PowerShell 5.1, same as the laptop)
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy Bypass -File story-firewall\poc\b2\b2-run.ps1 -InstallSysmon -Seconds 90 -Root $env:GITHUB_WORKSPACE
+          "exit=$LASTEXITCODE"
+
+      - name: Assert
+        if: always()
+        shell: pwsh
+        run: |
+          $d = Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE "logs") -Directory -Filter "b2-*" | Sort-Object Name | Select-Object -Last 1
+          $bad = 0
+          function Check($ok, $msg) { if ($ok) { "PASS  $msg" } else { "FAIL  $msg"; $script:bad++ } }
+          Check ($null -ne $d) "log dir exists"
+          if ($d) {
+            Get-Content (Join-Path $d.FullName "summary.txt") -ErrorAction SilentlyContinue
+            $r = Get-Content (Join-Path $d.FullName "report-2s.txt") -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+            $r
+            Check ($r -match 'process_start\(1\)\s+[1-9]\d*\s+[1-9]\d*') "process_start compared and matched > 0"
+            Check ($r -match 'network_out\(3\)\s+[1-9]\d*') "network_out compared"
+            Check ($r -match 'dns\(22\)\s+[1-9]\d*') "dns compared"
+            Check ($r -match 'sysmon_bad=0') "all sysmon lines parsed"
+            $out = Get-Content (Join-Path $d.FullName "collector.out") -Raw -ErrorAction SilentlyContinue
+            Check ($out -match 'dropped=0') "collector dropped=0"
+            Check (-not (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name sf_b2_test -ErrorAction SilentlyContinue)) "Run key cleaned up"
+            Copy-Item -Recurse $d.FullName (Join-Path $env:GITHUB_WORKSPACE "b2out")
+          }
+          "assert: $bad failed" | Tee-Object -FilePath (Join-Path $env:GITHUB_WORKSPACE "assert.txt")
+          if ($bad -gt 0) { exit 1 }
+
+      - name: Publish logs to ci-logs branch
+        if: always()
+        shell: pwsh
+        run: |
+          $dst = Join-Path $env:RUNNER_TEMP "ci-logs"
+          git clone --quiet --branch ci-logs --single-branch "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" $dst 2>$null
+          $run = Join-Path $dst "b2/run-${{ github.run_number }}/${{ matrix.os }}"
+          New-Item -ItemType Directory -Path $run -Force | Out-Null
+          $src = Join-Path $env:GITHUB_WORKSPACE "b2out"
+          if (Test-Path $src) {
+            Get-ChildItem $src -File | Where-Object { $_.Name -notin @("collector.db", "sysmon.jsonl") } | Copy-Item -Destination $run
+          }
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE "assert.txt") $run -ErrorAction SilentlyContinue
+          "${{ github.sha }}" | Set-Content (Join-Path $run "commit.txt")
+          git -C $dst config user.name "github-actions"
+          git -C $dst config user.email "actions@github.com"
+          Get-ChildItem (Join-Path $dst "b2") -Directory -ErrorAction SilentlyContinue | Sort-Object { [int]($_.Name -replace 'run-','') } -Descending | Select-Object -Skip 10 | Remove-Item -Recurse -Force
+          git -C $dst add -A
+          git -C $dst commit --quiet -m "b2 run ${{ github.run_number }} ${{ matrix.os }} (${{ job.status }})" 2>$null
+          $pushed = $false
+          for ($i = 0; $i -lt 10; $i++) {
+            git -C $dst fetch --quiet origin ci-logs 2>$null
+            git -C $dst rebase --quiet origin/ci-logs 2>$null
+            if ($LASTEXITCODE -ne 0) { git -C $dst rebase --abort 2>$null; git -C $dst reset --quiet --hard origin/ci-logs; git -C $dst add -A; git -C $dst commit --quiet -m "b2 run ${{ github.run_number }} ${{ matrix.os }} retry" 2>$null }
+            git -C $dst push --quiet origin ci-logs 2>$null
+            if ($LASTEXITCODE -eq 0) { $pushed = $true; break }
+            Start-Sleep -Seconds (2 * ($i + 1) + (Get-Random -Maximum 5))
+          }
+          if (-not $pushed) { "ci-logs push failed after retries"; exit 1 }

@@ -1,0 +1,15 @@
+[package]
+name = "board"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+description = "sf-board: 개발·노트북·디자인 세션과 Azure 의 움직임을 한 화면에 보는 터미널 보드(개발 도구, 제품에 들어가지 않음)"
+publish = false
+
+[[bin]]
+name = "sf-board"
+path = "src/main.rs"
+
+[dependencies]
+# MIT — 상용 배포 가능(제품에는 들어가지 않는 개발 도구)
+ratatui = "0.29"

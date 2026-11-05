@@ -1,0 +1,18 @@
+[package]
+name = "graph"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "출처 그래프 엔진: 이벤트를 nodes/edges 로 저장하고 되감기·투영 질의를 제공"
+
+[dependencies]
+# 미끼 후보 목록(UI 와 공유, 의존성 없는 우리 크레이트)
+decoy = { path = "../decoy" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

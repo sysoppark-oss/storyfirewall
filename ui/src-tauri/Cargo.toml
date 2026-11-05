@@ -1,0 +1,39 @@
+[package]
+name = "story-firewall-ui"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "이야기형 AI 방화벽 UI (Tauri 2). 서비스와 네임드 파이프(개발: TCP 루프백)로 JSON-RPC 통신"
+
+# 루트 워크스페이스와 분리: Linux CI 는 webkit2gtk 가 없어 이 크레이트를 빌드하지 않는다 (Windows 러너 poc5).
+[workspace]
+
+[lib]
+# bin 과 pdb 이름이 겹치지 않게 lib 이름을 따로 둔다 (Tauri 템플릿 관례)
+name = "story_firewall_ui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# 시험 빌드 전용: WebView2 원격 디버깅 환경 변수를 남겨 CDP 로 붙게 한다 (poc5). 배포 빌드에서는 켜지 않는다.
+e2e-cdp = []
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+# tauri: MIT/Apache-2.0
+tauri = { version = "2.12", features = ["tray-icon"] }
+# tauri-plugin-notification: MIT/Apache-2.0. 서비스 끊김 알림 (A28)
+tauri-plugin-notification = "2"
+# tauri-plugin-single-instance: MIT OR Apache-2.0 (tauri-apps/plugins-workspace). 두 번째 실행은 기존 창을 띄우고 끝난다
+# (HKLM Run --tray + 사용자의 바로가기 실행이 겹쳐 트레이·연결이 두 개 생기던 것, L013 R1)
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# getrandom: MIT OR Apache-2.0. 승인 도우미의 멱등 키
+getrandom = "0.2"
+# 미끼 폴더 만들기(사용자 권한에서만, L061). 우리 크레이트, 의존성 없음
+decoy = { path = "../../crates/decoy" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_IO", "Win32_System_Threading", "Win32_UI_Shell", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging", "Win32_System_RemoteDesktop", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_System_LibraryLoader", "Win32_UI_Input_KeyboardAndMouse"] }

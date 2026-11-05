@@ -1,0 +1,67 @@
+name: Geo data (DB-IP Lite country + ASN)
+
+# 2026-11-03: GitHub Actions is stopped by the billing limit. The monthly refresh now runs as the `geo` job in
+# .azure/win-tests.yml (first Saturday of the month, manual runs, or [geo] in the commit message). Kept for reference.
+
+# Monthly: downloads DB-IP "IP to Country Lite" and "IP to ASN Lite" (CC BY 4.0, attribution in the app's settings
+# screen), checks they load and answer known addresses, and publishes them to the orphan branch `geo-data`
+# (one commit, force-pushed). Installer builds copy them to <install dir>\geo. The app never downloads anything itself.
+
+on:
+  schedule:
+    - cron: "17 3 3 * *"
+  push:
+    branches: [main]
+    paths: [".github/workflows/geo-data.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  geo:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download (this month, else last month)
+        run: |
+          set -e
+          mkdir -p out
+          for kind in country asn; do
+            ok=""
+            for m in "$(date -u +%Y-%m)" "$(date -u -d "$(date -u +%Y-%m-15) -1 month" +%Y-%m)"; do
+              url="https://download.db-ip.com/free/dbip-${kind}-lite-${m}.mmdb.gz"
+              if curl -fsSL -o "out/${kind}.gz" "$url"; then ok="$m"; break; fi
+            done
+            [ -n "$ok" ] || { echo "no $kind db"; exit 1; }
+            gunzip -c "out/${kind}.gz" > "out/dbip-${kind}-lite.mmdb"
+            rm "out/${kind}.gz"
+            echo "${kind}_month=$ok" >> out/manifest.txt
+          done
+          ls -la out
+
+      - name: Check the databases answer known addresses
+        run: |
+          python3 -m pip install --quiet maxminddb==2.6.2
+          python3 - <<'PY'
+          import maxminddb
+          c = maxminddb.open_database("out/dbip-country-lite.mmdb")
+          a = maxminddb.open_database("out/dbip-asn-lite.mmdb")
+          kr = c.get("168.126.63.1")["country"]["iso_code"]
+          g = a.get("8.8.8.8")
+          print("168.126.63.1 ->", kr, " 8.8.8.8 ->", g)
+          assert kr == "KR", kr
+          assert g["autonomous_system_number"] == 15169, g
+          PY
+
+      - name: Publish to geo-data branch
+        run: |
+          set -e
+          cd out
+          for f in dbip-country-lite.mmdb dbip-asn-lite.mmdb; do echo "$f sha256=$(sha256sum $f | cut -d' ' -f1)" >> manifest.txt; done
+          echo "source=DB-IP.com IP to Country Lite / IP to ASN Lite, CC BY 4.0, https://db-ip.com" >> manifest.txt
+          cat manifest.txt
+          git init -q
+          git checkout -q --orphan geo-data
+          git add -A
+          git -c user.name=geo-data -c user.email=geo-data@users.noreply.github.com commit -q -m "geo data $(date -u +%Y-%m-%d)"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" geo-data

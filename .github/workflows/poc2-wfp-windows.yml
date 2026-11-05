@@ -1,0 +1,199 @@
+name: A5 WFP block PoC
+
+# P2: 사용자 모드 WFP 차단 필터 PoC (명세 4판 2장, 5차 검증 의뢰서 2-6 시나리오).
+# 러너 에이전트는 가드에 하드코딩돼 막히지 않는다. 정리 단계는 always.
+on:
+  push:
+    paths:
+      - "crates/policy/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/poc2-wfp-windows.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "41 18 * * 0"
+
+permissions:
+  contents: write
+
+# 같은 브랜치에 새로 올리면 앞서 돌던 실행은 취소(비용)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-run:
+    strategy:
+      fail-fast: false
+      matrix:
+        # 비용(Actions 사용량): push 는 한 버전만, 두 버전 묶음은 수동·주 1회
+        os: ${{ github.event_name == 'push' && fromJSON('["windows-2025"]') || fromJSON('["windows-2022","windows-2025"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: a5-${{ matrix.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build policy-poc
+        shell: pwsh
+        run: cargo build --release --locked -p policy --bin policy-poc 2>&1 | Tee-Object -FilePath build.log
+
+      - name: Scenario
+        shell: pwsh
+        run: |
+          $exe = ".\target\release\policy-poc.exe"
+          $curl = "$env:SystemRoot\System32\curl.exe"
+          $log = "run.out"
+          function Log($s) { $s | Tee-Object -FilePath $log -Append }
+          function CurlCode() { & $curl -s -m 8 --output NUL https://www.rust-lang.org/; return $LASTEXITCODE }
+
+          Log "=== 0. baseline curl ==="
+          Log ("curl exit (expect 0): " + (CurlCode))
+
+          Log "=== 7. guard ==="
+          & $exe guardtest 2>&1 | Tee-Object -FilePath $log -Append
+
+          Log "=== 1. block curl.exe outbound (transaction) ==="
+          & $exe block $curl ids.json 2>&1 | Tee-Object -FilePath $log -Append
+          Start-Sleep -Milliseconds 500
+
+          Log "=== 2. curl must fail ==="
+          $c = CurlCode; Log "curl exit (expect !=0, 7/28/35): $c"
+
+          Log "=== 3. persistence proxy: new process lists our filters ==="
+          & $exe list 2>&1 | Tee-Object -FilePath $log -Append
+
+          Log "=== 4. watch 20s: external delete -> self-heal, drops ==="
+          $w = Start-Process -FilePath $exe -ArgumentList "watch","20","ids.json" -RedirectStandardOutput watch.out -RedirectStandardError watch.err -PassThru
+          Start-Sleep -Seconds 3
+          # 차단 이벤트 만들기
+          $c = CurlCode; Log "curl during watch exit: $c"
+          Start-Sleep -Seconds 2
+          # 공격자 역할: 필터 하나 삭제
+          $ids = (Get-Content ids.json | ConvertFrom-Json).PSObject.Properties.Name
+          Log ("deleting filter " + $ids[0])
+          & $exe delete $ids[0] 2>&1 | Tee-Object -FilePath $log -Append
+          Start-Sleep -Seconds 3
+          # 재등록 뒤에도 막히는지
+          $c = CurlCode; Log "curl after tamper+heal exit (expect !=0): $c"
+          Wait-Process -Id $w.Id -Timeout 40 -ErrorAction SilentlyContinue
+          Log "--- watch.out ---"; Get-Content watch.out | Tee-Object -FilePath $log -Append
+          Log "--- watch.err ---"; Get-Content watch.err -ErrorAction SilentlyContinue | Tee-Object -FilePath $log -Append
+
+          Log "=== 5. unblock -> curl ok ==="
+          & $exe unblock ids.json 2>&1 | Tee-Object -FilePath $log -Append
+          Start-Sleep -Milliseconds 500
+          $c = CurlCode; Log "curl exit after unblock (expect 0): $c"
+
+          Log "=== R. reauth test: block during an in-flight download ==="
+          $dl = Start-Process -FilePath $curl -ArgumentList '-sL','--limit-rate','1M','--output','NUL','-w','"dl_bytes=%{size_download} exit_time=%{time_total}"','"https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-64-bit.7z.exe"' -RedirectStandardOutput reauth.txt -PassThru
+          Start-Sleep -Seconds 4
+          & $exe block $curl ids2.json 2>&1 | Tee-Object -FilePath $log -Append
+          $t0 = Get-Date
+          Wait-Process -Id $dl.Id -Timeout 25 -ErrorAction SilentlyContinue
+          $alive = -not $dl.HasExited
+          if ($alive) { Stop-Process -Id $dl.Id -Force }
+          Log ("download still alive after 25s: " + $alive + " ; waited " + ((Get-Date) - $t0).TotalSeconds + "s ; curl exit=" + $dl.ExitCode)
+          Log ("reauth: " + (Get-Content reauth.txt -ErrorAction SilentlyContinue))
+          & $exe unblock ids2.json 2>&1 | Tee-Object -FilePath $log -Append
+
+          Log "=== 8. replace: old version -> new version in one transaction (11th review Q1) ==="
+          & $exe block $curl ids3.json 2>&1 | Tee-Object -FilePath $log -Append
+          Start-Sleep -Milliseconds 300
+          & $exe replace ids3.json $curl ids4.json fail 2>&1 | Tee-Object -FilePath $log -Append
+          $c = CurlCode; Log "curl after failed replace (expect !=0, old filters kept): $c"
+          & $exe replace ids3.json $curl ids4.json 2>&1 | Tee-Object -FilePath $log -Append
+          $c = CurlCode; Log "curl after replace (expect !=0, new filters): $c"
+          & $exe unblock ids4.json 2>&1 | Tee-Object -FilePath $log -Append
+          Start-Sleep -Milliseconds 300
+          $c = CurlCode; Log "curl after unblock new (expect 0): $c"
+
+          Log "=== B. BFE restart: do persistent filter ids survive? (28th review Q2, Gemini claim unverified) ==="
+          & $exe block $curl ids5.json 2>&1 | Tee-Object -FilePath $log -Append
+          $before = (Get-Content ids5.json | ConvertFrom-Json).PSObject.Properties.Name | Sort-Object
+          $deps = Get-Service BFE -DependentServices | Where-Object Status -eq Running
+          # run-76: Restart-Service failed ("Cannot open 'BFE' service") and the ids matched only because BFE never
+          # restarted. Record the hosting PID before/after so the result is labeled real or inconclusive.
+          $bfePid0 = (Get-CimInstance Win32_Service -Filter "Name='BFE'").ProcessId
+          Restart-Service BFE -Force -ErrorAction Continue 2>&1 | Tee-Object -FilePath $log -Append
+          foreach ($d in $deps) { Start-Service $d.Name -ErrorAction SilentlyContinue }
+          Start-Sleep -Seconds 3
+          $listed = & $exe list 2>&1
+          $listed | Tee-Object -FilePath $log -Append
+          $after = $listed | Where-Object { $_ -match '^\s+(\d+) ' } | ForEach-Object { ($_ -split '\s+')[1] } | Sort-Object
+          Log ("bfe ids before: " + ($before -join ","))
+          Log ("bfe ids after : " + ($after -join ","))
+          Log ("bfe ids same: " + ((Compare-Object $before $after) -eq $null))
+          $c = CurlCode; Log "curl after BFE restart (expect !=0, persistent): $c"
+          $bfePid1 = (Get-CimInstance Win32_Service -Filter "Name='BFE'").ProcessId
+          if ($bfePid1 -ne $bfePid0) { Log "BFE_RESTART: done pid $bfePid0 -> $bfePid1" } else { Log "BFE_RESTART: not_done pid $bfePid0 (result inconclusive, ids not compared across a restart)" }
+          & $exe cleanup 2>&1 | Tee-Object -FilePath $log -Append
+
+          Log "=== 6. cleanup ==="
+          & $exe cleanup 2>&1 | Tee-Object -FilePath $log -Append
+          & $exe list 2>&1 | Tee-Object -FilePath $log -Append
+          $c = CurlCode; Log "final curl exit (expect 0): $c"
+          Log "END"
+
+      - name: Safety cleanup
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path .\target\release\policy-poc.exe) { & .\target\release\policy-poc.exe cleanup }
+          & "$env:SystemRoot\System32\curl.exe" -s -m 8 --output NUL https://www.rust-lang.org/; "post-cleanup curl exit: $LASTEXITCODE"
+
+      - name: Assert expected outcomes
+        if: always()
+        shell: pwsh
+        run: |
+          $log = Get-Content run.out -Raw -ErrorAction SilentlyContinue
+          $expect = @(
+            'curl exit \(expect 0\): 0'
+            'curl exit \(expect !=0, 7/28/35\): (7|28|35)'
+            'curl after tamper\+heal exit \(expect !=0\): [1-9]'
+            'curl exit after unblock \(expect 0\): 0'
+            'curl after failed replace \(expect !=0, old filters kept\): [1-9]'
+            'curl after replace \(expect !=0, new filters\): [1-9]'
+            'curl after unblock new \(expect 0\): 0'
+            'curl after BFE restart \(expect !=0, persistent\): [1-9]'
+          )
+          $bad = 0
+          foreach ($p in $expect) {
+            if ($log -match $p) { "PASS  $p" } else { "FAIL  $p"; $bad++ }
+          }
+          "assert: $bad failed of $($expect.Count)" | Tee-Object -FilePath assert.txt
+          if ($bad -gt 0) { exit 1 }
+
+      - name: Publish logs to ci-logs branch
+        if: always()
+        shell: pwsh
+        run: |
+          $dst = Join-Path $env:RUNNER_TEMP "ci-logs"
+          git clone --quiet --branch ci-logs --single-branch "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" $dst 2>$null
+          $run = Join-Path $dst "poc2/run-${{ github.run_number }}/${{ matrix.os }}"
+          New-Item -ItemType Directory -Path $run -Force | Out-Null
+          Copy-Item assert.txt, build.log, run.out, watch.out, watch.err, reauth.txt, ids.json $run -ErrorAction SilentlyContinue
+          "${{ github.sha }}" | Set-Content (Join-Path $run "commit.txt")
+          git -C $dst config user.name "github-actions"
+          git -C $dst config user.email "actions@github.com"
+          # 제안 7: poc 별로 최근 10개 run 만 남긴다
+          Get-ChildItem (Join-Path $dst "poc2") -Directory -ErrorAction SilentlyContinue | Sort-Object { [int]($_.Name -replace 'run-','') } -Descending | Select-Object -Skip 10 | Remove-Item -Recurse -Force
+          git -C $dst add -A
+          git -C $dst commit --quiet -m "poc2 run ${{ github.run_number }} ${{ matrix.os }} (${{ job.status }})" 2>$null
+          # 두 OS job 과 다른 poc 가 같은 브랜치에 동시에 밀어 넣으므로 충돌 시 재시도 (백오프 + 지터)
+          $pushed = $false
+          for ($i = 0; $i -lt 10; $i++) {
+            git -C $dst fetch --quiet origin ci-logs 2>$null
+            git -C $dst rebase --quiet origin/ci-logs 2>$null
+            if ($LASTEXITCODE -ne 0) { git -C $dst rebase --abort 2>$null; git -C $dst reset --quiet --hard origin/ci-logs; git -C $dst add -A; git -C $dst commit --quiet -m "poc run ${{ github.run_number }} ${{ matrix.os }} (${{ job.status }}) retry" 2>$null }
+            git -C $dst push --quiet origin ci-logs 2>$null
+            if ($LASTEXITCODE -eq 0) { $pushed = $true; break }
+            Start-Sleep -Seconds (2 * ($i + 1) + (Get-Random -Maximum 5))
+          }
+          if (-not $pushed) { "ci-logs push failed after retries"; exit 1 }
