@@ -95,6 +95,6 @@ Windows 빌드·설치 파일 만들기는 `.github/workflows/` 를 참고하세
 
 ## 만든 사람
 
-박정근 ([@sysoppark-oss](https://github.com/sysoppark-oss)) — 고급 정보통신기사
+박정근 ([@sysoppark-oss](https://github.com/sysoppark-oss))
 
 Copyright (C) 2026 박정근. 이 프로그램은 AGPL-3.0 으로 배포됩니다. 문의는 GitHub 이슈로 남겨 주세요.
