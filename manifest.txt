@@ -1,0 +1,5 @@
+country_month=2026-11
+asn_month=2026-11
+dbip-country-lite.mmdb sha256=145ce5dfb812d8de28547e6289bb5c5f8b3df2f1dea21d324d5b575e0431311f
+dbip-asn-lite.mmdb sha256=81565a450281c949fc83745f5ec9cfea70b035163b1152b055645884765d153d
+source=DB-IP.com IP to Country Lite / IP to ASN Lite, CC BY 4.0, https://db-ip.com
