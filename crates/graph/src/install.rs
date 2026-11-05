@@ -379,11 +379,17 @@ mod tests {
         ));
         assert!(!is_installer_image(r"C:\Program Files\App\unins000.exe"));
         // L067: Windows 구성 요소는 설치가 아니다(msiexec 만 예외)
-        assert!(!is_installer_image(r"C:\Windows\servicing\TrustedInstaller.exe"));
-        assert!(!is_installer_image(r"C:\Windows\WinSxS\amd64_x\TrustedInstaller.exe"));
+        assert!(!is_installer_image(
+            r"C:\Windows\servicing\TrustedInstaller.exe"
+        ));
+        assert!(!is_installer_image(
+            r"C:\Windows\WinSxS\amd64_x\TrustedInstaller.exe"
+        ));
         assert!(!is_installer_image(r"C:\Windows\System32\oobe\Setup.exe"));
         assert!(!is_installer_image(r"D:\TrustedInstaller.exe"));
-        assert!(is_installer_image(r"C:\Users\u\Downloads\windows-setup.exe"));
+        assert!(is_installer_image(
+            r"C:\Users\u\Downloads\windows-setup.exe"
+        ));
         assert!(!is_installer_image(r"C:\Program Files\App\Uninstall.exe"));
         assert!(!is_installer_image(
             r"C:\Program Files\Google\Chrome\chrome.exe"

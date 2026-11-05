@@ -170,6 +170,11 @@ pub struct Target {
     pub sig: SigFact,
     /// 프로세스 로그온 세션 (A30: 다른 사용자 세션이면 일반 사용자에게 경로를 감춘다)
     pub session: Option<u64>,
+    /// L068(30차 Q6): 이 실행이 본 파일 내용의 판 — 마지막으로 내용이 쓰이거나 바뀐 시각(FILETIME, 모르면 0).
+    /// 같은 경로라도 내용이 바뀌면 다시 "처음 실행"이다
+    pub content_ts: i64,
+    /// 파일 내용 해시(수집기가 계산했으면)
+    pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -248,17 +253,22 @@ fn assess_file(
     if feedback.contains(&judge::baseline::root_key(file)) {
         return Assess::Skip("사용자가 정상으로 표시");
     }
-    // 처음 실행인가: 같은 파일에서 더 이른 실행 선이 있으면 아니다
+    // 처음 실행인가: 같은 파일의 같은 내용에서 더 이른 실행 선이 있으면 아니다.
+    // L068(30차 Q6): 같은 경로를 덮어쓴 뒤(쓰기 선, 또는 관찰 때와 해시가 다름)의 실행은 새 내용의 첫 실행이다 — 그 전 실행은 세지 않는다
+    let content_ts = content_since(g, file, exec_ts);
     let earlier: i64 = g
         .conn()
         .query_row(
             "SELECT COUNT(*) FROM edges WHERE src = ?1 AND rel = 'executed_as' AND dst != ?2
-               AND (ts < ?3 OR (ts = ?3 AND dst < ?2))",
-            rusqlite::params![file.id, p.id, exec_ts],
+               AND (ts < ?3 OR (ts = ?3 AND dst < ?2)) AND ts >= ?4",
+            rusqlite::params![file.id, p.id, exec_ts, content_ts],
             |r| r.get(0),
         )
         .unwrap_or(1);
-    if earlier > 0 {
+    let sha256 = file
+        .attr("sha256")
+        .and_then(|v| v.as_str().map(|s| s.to_string()));
+    if earlier > 0 && !watched_other_content(g, &file.key, sha256.as_deref()) {
         return Assess::Skip("전에 실행된 적 있음");
     }
     let host = file
@@ -283,7 +293,39 @@ fn assess_file(
         installer: graph::install::is_installer_image(&file.key),
         sig,
         session: p.attr("session").and_then(|v| v.as_u64()),
+        content_ts,
+        sha256,
     }))
+}
+
+/// 이 실행(`exec_ts`) 때 파일 내용의 판: 그 전 마지막 쓰기 선(Kernel-File, 쓴 시각)의 시각(FILETIME, 없으면 0).
+/// 내려받기 선은 출신 표시(MOTW)를 읽은 시각이라 실행보다 늦게 붙을 수 있어 경계로 쓰지 않는다.
+/// 해시가 바뀐 시각은 판의 경계로 쓰지 않는다 — 해시는 실행 뒤에 계산되기도 해서, 경계로 쓰면 같은 새 내용의 두 번째 실행도 "처음"이 된다.
+/// 해시는 대신 관찰 기록의 해시와 비교한다(`watched_other_content`)
+fn content_since(g: &Store, file: &Node, exec_ts: i64) -> i64 {
+    g.conn()
+        .query_row(
+            "SELECT COALESCE(MAX(ts), 0) FROM edges WHERE dst = ?1 AND rel = 'wrote' AND ts <= ?2",
+            rusqlite::params![file.id, exec_ts],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+}
+
+/// 이 경로를 전에 관찰했는데 그때 해시가 지금 해시와 다른가(둘 다 알 때만). 쓰기 선이 빠져도 내용 교체를 잡는다
+fn watched_other_content(g: &Store, path: &str, sha256: Option<&str>) -> bool {
+    let Some(now) = sha256 else {
+        return false;
+    };
+    g.conn()
+        .query_row(
+            "SELECT sha256 FROM first_run_watch WHERE file_key = ?1",
+            [path.to_ascii_lowercase()],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+        .is_some_and(|old| !old.eq_ignore_ascii_case(now))
 }
 
 /// 이야기 카드·사건 문장 (사실만). `blocked` = 실제로 나가는 연결을 막았을 때만 "(나가는 연결 차단)"
@@ -304,17 +346,24 @@ pub fn story_line(sig: SigFact, installer: bool, minutes: u32, blocked: bool) ->
     )
 }
 
-/// 표가 없으면 만든다 (엔진 시작 때 한 번)
+/// 표가 없으면 만든다 (엔진 시작 때 한 번). L068: 내용 판(content_ts)·해시 칸을 옛 표에 더한다(이미 있으면 오류 무시)
 pub fn ensure_table(g: &Store) {
     let _ = g.conn().execute_batch(DDL);
+    let _ = g.conn().execute_batch(
+        "ALTER TABLE first_run_watch ADD COLUMN content_ts INTEGER NOT NULL DEFAULT 0;",
+    );
+    let _ = g
+        .conn()
+        .execute_batch("ALTER TABLE first_run_watch ADD COLUMN sha256 TEXT;");
 }
 
-/// 이 파일을 이미 관찰했는가
-pub fn already_watched(g: &Store, path: &str) -> bool {
+/// 이 파일의 이 내용을 이미 관찰했는가 (같은 경로라도 내용 판이 더 새것이거나 해시가 다르면 아니다)
+pub fn already_watched(g: &Store, path: &str, content_ts: i64, sha256: Option<&str>) -> bool {
     g.conn()
         .query_row(
-            "SELECT 1 FROM first_run_watch WHERE file_key = ?1",
-            [path.to_ascii_lowercase()],
+            "SELECT 1 FROM first_run_watch WHERE file_key = ?1 AND content_ts >= ?2
+               AND NOT (?3 IS NOT NULL AND sha256 IS NOT NULL AND lower(sha256) != lower(?3))",
+            rusqlite::params![path.to_ascii_lowercase(), content_ts, sha256],
             |_| Ok(()),
         )
         .is_ok()
@@ -362,8 +411,15 @@ pub fn watch_of(g: &Store, path: &str) -> Option<Watch> {
 fn record_watch(g: &Store, t: &Target, s: Settings, blocked: bool) -> bool {
     g.conn()
         .execute(
-            "INSERT OR IGNORE INTO first_run_watch(file_key, file_node, proc_node, start_ts, until_ts, minutes, mode, blocked, installer, sig, host)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            // L068: 경로 하나에 기록 하나 — 내용 판이 더 새것일 때만 새 관찰로 바꿔 쓴다
+            "INSERT INTO first_run_watch(file_key, file_node, proc_node, start_ts, until_ts, minutes, mode, blocked, installer, sig, host, content_ts, sha256)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(file_key) DO UPDATE SET file_node = excluded.file_node, proc_node = excluded.proc_node,
+               start_ts = excluded.start_ts, until_ts = excluded.until_ts, minutes = excluded.minutes, mode = excluded.mode,
+               blocked = excluded.blocked, installer = excluded.installer, sig = excluded.sig, host = excluded.host,
+               content_ts = excluded.content_ts, sha256 = excluded.sha256
+             WHERE first_run_watch.content_ts < excluded.content_ts
+                OR (excluded.sha256 IS NOT NULL AND first_run_watch.sha256 IS NOT NULL AND lower(first_run_watch.sha256) != lower(excluded.sha256))",
             rusqlite::params![
                 t.path.to_ascii_lowercase(),
                 t.file_node,
@@ -375,7 +431,9 @@ fn record_watch(g: &Store, t: &Target, s: Settings, blocked: bool) -> bool {
                 blocked as i64,
                 t.installer as i64,
                 t.sig.as_str(),
-                t.host
+                t.host,
+                t.content_ts,
+                t.sha256
             ],
         )
         .map(|n| n == 1)
@@ -555,7 +613,7 @@ pub fn sweep(world: &mut crate::runtime::World) {
 
 /// 관찰 시작: 기록(같은 파일은 한 번만) + 서비스 사건(알림 대기열 경유)
 fn start_watch(world: &mut crate::runtime::World, t: &Target, s: Settings) {
-    if already_watched(&world.graph, &t.path) {
+    if already_watched(&world.graph, &t.path, t.content_ts, t.sha256.as_deref()) {
         return;
     }
     let until = t.start_ts + s.minutes as i64 * 60;

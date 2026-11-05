@@ -251,6 +251,8 @@ fn t_for(path: &str) -> Target {
         installer: graph::install::is_installer_image(path),
         sig: SigFact::None,
         session: None,
+        content_ts: 0,
+        sha256: None,
     }
 }
 
@@ -511,4 +513,102 @@ fn umbrella_child_filters_are_capped() {
         NOW + 1200
     )
     .is_ok());
+}
+
+fn write(pid: u32, path: &str, ts: i64) -> Event {
+    ev(
+        ts,
+        EventKind::FileWrite {
+            proc: graph::event::ProcRef::new(pid, None),
+            path: path.into(),
+        },
+    )
+}
+fn hash(path: &str, sha: &str, ts: i64) -> Event {
+    ev(
+        ts,
+        EventKind::FileHash {
+            path: path.into(),
+            sha256: Some(sha.into()),
+            size: 100,
+            note: None,
+        },
+    )
+}
+
+/// L068(30차 Q6): 같은 경로를 덮어쓰면 새 내용의 첫 실행으로 다시 본다. 같은 새 내용의 두 번째 실행은 아니다
+#[test]
+fn overwritten_same_path_is_first_run_again() {
+    let st = store();
+    let mut ing = Ingester::new(&st);
+    let none = HashSet::new();
+    let exe = r"C:\Users\u\Downloads\tool.exe";
+    ing.ingest_all(&[
+        start(20, exe, T + 1),
+        sig(exe, "nosignature", None),
+        motw(exe, 3),
+    ])
+    .unwrap();
+    assert!(matches!(
+        assess(&st, &none, proc_node(&st, 20, T + 1)),
+        Assess::Target(_)
+    ));
+    // 두 번째 실행(내용 그대로) → 아님
+    ing.ingest(&start(21, exe, T + 100)).unwrap();
+    assert_eq!(
+        assess(&st, &none, proc_node(&st, 21, T + 100)),
+        Assess::Skip("전에 실행된 적 있음")
+    );
+    // 다른 프로그램(pid 10 탐색기 아래)이 같은 경로를 덮어씀 → 그 뒤 실행은 다시 처음
+    ing.ingest(&write(10, exe, T + 200)).unwrap();
+    ing.ingest(&start(22, exe, T + 300)).unwrap();
+    let t = target(assess(&st, &none, proc_node(&st, 22, T + 300)));
+    assert_eq!(t.content_ts, T + 200, "내용 판 = 마지막 쓰기 시각");
+    // 같은 새 내용의 다음 실행 → 아님
+    ing.ingest(&start(23, exe, T + 400)).unwrap();
+    assert_eq!(
+        assess(&st, &none, proc_node(&st, 23, T + 400)),
+        Assess::Skip("전에 실행된 적 있음")
+    );
+}
+
+/// 쓰기 선이 빠져도(수집 손실) 관찰 때 해시와 지금 해시가 다르면 다시 대상이고, 이미 관찰한 것으로 치지 않는다
+#[test]
+fn hash_change_without_write_edge_is_first_run_again() {
+    let st = store();
+    svc::first_run::ensure_table(&st);
+    let mut ing = Ingester::new(&st);
+    let none = HashSet::new();
+    let exe = r"C:\Users\u\Downloads\tool2.exe";
+    ing.ingest_all(&[
+        start(30, exe, T + 1),
+        sig(exe, "nosignature", None),
+        motw(exe, 3),
+        hash(exe, "aaaa", T + 2),
+    ])
+    .unwrap();
+    let t1 = target(assess(&st, &none, proc_node(&st, 30, T + 1)));
+    assert_eq!(t1.sha256.as_deref(), Some("aaaa"));
+    // 관찰 기록(처음 내용)
+    st.conn()
+        .execute(
+            "INSERT INTO first_run_watch(file_key, file_node, proc_node, start_ts, until_ts, minutes, mode, blocked, installer, sig, host, content_ts, sha256)
+             VALUES (lower(?1), ?2, ?3, 0, 600, 10, 'notify', 0, 0, 'none', NULL, 0, 'aaaa')",
+            rusqlite::params![exe, t1.file_node, t1.proc_node],
+        )
+        .unwrap();
+    assert!(svc::first_run::already_watched(&st, exe, 0, Some("aaaa")));
+    // 내용이 바뀜(해시 다름, 쓰기 선 없음) → 다음 실행은 대상, 이미 관찰한 것 아님
+    ing.ingest(&hash(exe, "bbbb", T + 50)).unwrap();
+    ing.ingest(&start(31, exe, T + 100)).unwrap();
+    let t2 = target(assess(&st, &none, proc_node(&st, 31, T + 100)));
+    assert_eq!(t2.sha256.as_deref(), Some("bbbb"));
+    assert!(!svc::first_run::already_watched(
+        &st,
+        exe,
+        t2.content_ts,
+        Some("bbbb")
+    ));
+    // 해시를 모르면(계산 실패) 이미 관찰한 것으로 본다(알림 폭주 방지)
+    assert!(svc::first_run::already_watched(&st, exe, 0, None));
 }
