@@ -1,0 +1,2 @@
+Microsoft Windows NT 10.0.26100.0
+24H2 build 26100
