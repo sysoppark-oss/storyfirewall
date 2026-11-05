@@ -1,7 +1,7 @@
 name: Geo data (DB-IP Lite country + ASN)
 
-# 2026-11-03: GitHub Actions is stopped by the billing limit. The monthly refresh now runs as the `geo` job in
-# .azure/win-tests.yml (first Saturday of the month, manual runs, or [geo] in the commit message). Kept for reference.
+# 2026-11-06: public repository (storyfirewall) - standard GitHub-hosted runners are free again, so this
+# workflow is the monthly refresh here. (The private repo used the `geo` job in .azure/win-tests.yml.)
 
 # Monthly: downloads DB-IP "IP to Country Lite" and "IP to ASN Lite" (CC BY 4.0, attribution in the app's settings
 # screen), checks they load and answer known addresses, and publishes them to the orphan branch `geo-data`
