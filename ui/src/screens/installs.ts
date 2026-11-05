@@ -121,8 +121,9 @@ export function installs(): HTMLElement {
       cards.append(el("p", undefined, emptyText(days)), el("p", "muted small", HOW_FOUND));
       return;
     }
-    for (const run of sortInstalls(r.result.items)) cards.append(buildCard(run));
+    // 31차 검수 2: 왜 이 항목이 설치인지 — 기준을 목록 위에 둔다
     cards.append(el("p", "muted small", HOW_FOUND));
+    for (const run of sortInstalls(r.result.items)) cards.append(buildCard(run));
   };
   void load();
   return root;

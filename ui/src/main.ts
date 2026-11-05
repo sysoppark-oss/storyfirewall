@@ -79,7 +79,7 @@ async function showStatus(ok: boolean) {
   }
   status.replaceChildren(
     ...(elevated ? [el("span", "st-warn", "관리자 권한으로 실행 중 — 권장하지 않음 (일반 권한으로 실행해도 변경은 승인 창으로 됩니다)"), " · "] : []),
-    el("span", "st-ok", elevated ? good : `${good} · 보기 모드 · 변경은 승인 창(관리자 확인)으로`),
+    el("span", "st-ok", elevated ? good : `${good} · 보기 모드(변경은 승인 창에서)`),
   );
   status.className = elevated ? "status ok mixed elevated" : "status ok mixed";
 }

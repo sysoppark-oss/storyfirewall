@@ -22,6 +22,8 @@ fn base_lower(image: &str) -> String {
 
 /// 설치 프로그램으로 보는 실행 파일 이름인가.
 /// msiexec, 이름에 setup·install 이 든 실행 파일. 제거 프로그램(unins*, uninstall*)은 뺀다.
+/// L067(31차 검수): Windows 폴더 아래 구성 요소(TrustedInstaller.exe = Windows 모듈 설치 관리자 서비스, servicing·WinSxS 의
+/// 업데이트 도구)는 사용자가 실행한 설치가 아니다 — msiexec 만 남긴다. Windows 업데이트는 설치 엑스레이 대상이 아니다
 pub fn is_installer_image(image: &str) -> bool {
     let b = base_lower(image);
     if !b.ends_with(".exe") {
@@ -30,7 +32,15 @@ pub fn is_installer_image(image: &str) -> bool {
     if b.starts_with("unins") || b.contains("uninstall") {
         return false;
     }
-    b == "msiexec.exe" || b.contains("setup") || b.contains("install")
+    if b == "msiexec.exe" {
+        return true;
+    }
+    let p = image.replace('/', "\\").to_ascii_lowercase();
+    let in_windows = p.len() > 3 && p.as_bytes()[1] == b':' && p[2..].starts_with("\\windows\\");
+    if in_windows || b == "trustedinstaller.exe" {
+        return false;
+    }
+    b.contains("setup") || b.contains("install")
 }
 
 /// 설치 한 번의 요약
@@ -368,6 +378,12 @@ mod tests {
             r"C:\Temp\Git-2.47.0-64-bit-installer.exe"
         ));
         assert!(!is_installer_image(r"C:\Program Files\App\unins000.exe"));
+        // L067: Windows 구성 요소는 설치가 아니다(msiexec 만 예외)
+        assert!(!is_installer_image(r"C:\Windows\servicing\TrustedInstaller.exe"));
+        assert!(!is_installer_image(r"C:\Windows\WinSxS\amd64_x\TrustedInstaller.exe"));
+        assert!(!is_installer_image(r"C:\Windows\System32\oobe\Setup.exe"));
+        assert!(!is_installer_image(r"D:\TrustedInstaller.exe"));
+        assert!(is_installer_image(r"C:\Users\u\Downloads\windows-setup.exe"));
         assert!(!is_installer_image(r"C:\Program Files\App\Uninstall.exe"));
         assert!(!is_installer_image(
             r"C:\Program Files\Google\Chrome\chrome.exe"

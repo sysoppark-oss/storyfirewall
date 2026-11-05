@@ -49,6 +49,12 @@ export function settings(): HTMLElement {
     frMin.append(o);
   }
   frMin.value = "10";
+  // 31차 검수 4: settings.get 응답 전에는 기본값(알리기·10분)이 실제 설정처럼 보이고, 그때 "저장"을 누르면 실제 설정을 덮어쓴다 →
+  // 응답이 올 때까지 잠그고 "불러오는 중"을 보인다
+  frMode.disabled = true;
+  frMin.disabled = true;
+  voice.disabled = true;
+  frModeTip.textContent = "지금 설정을 불러오는 중…";
   // 관찰실 차단 정책(우산)의 지금 상태 — 막기 모드일 때만 한 줄
   const frUmb = el("p", "muted");
   const refreshUmbrella = async () => {
@@ -71,9 +77,10 @@ export function settings(): HTMLElement {
     else for (const pol of r.result.policies ?? []) out.append(countdown(pol, root, () => void refreshUmbrella(), "관찰실 "));
     void refreshUmbrella();
   }, "btn primary");
+  save.disabled = true;
   // D006-5: 끝점·다시 연결은 고급 접힘 안으로
   const adv = el("details", "advanced", el("summary", undefined, "고급"), el("label", undefined, "서비스 끝점 ", endpoint, " ", reconnect));
-  const geoAge = el("p", "muted");
+  const geoAge = el("p", "muted", "IP 데이터 정보를 불러오는 중…");
   // D007-3: DB 있음/없음에 따라 문장이 모순되지 않게 한 곳에서 정한다
   const geoSrc = el("p", "muted");
   // D011: 화면 테마 — Windows 따라가기 / 밝게 / 어둡게 (이 브라우저에 기억, 서비스 설정 아님)
@@ -106,7 +113,16 @@ export function settings(): HTMLElement {
   void (async () => {
     const r = await rpc<Record<string, unknown>>("settings.get", {});
     if (r.ok && typeof r.result["voice"] === "string") voice.value = r.result["voice"];
+    if (!r.ok) {
+      // 설정을 못 읽었으면 잠근 채로 두고 까닭을 보인다(기본값으로 저장하지 않게)
+      frModeTip.textContent = "지금 설정을 불러오지 못했습니다. 화면을 다시 열어 주세요.";
+      frModeTip.className = "warn";
+    }
     if (r.ok) {
+      frMode.disabled = false;
+      frMin.disabled = false;
+      voice.disabled = false;
+      save.disabled = false;
       const fr = firstRunSetting(r.result);
       frMode.value = fr.mode;
       frModeTip.textContent = firstRunSentence(fr.mode);
@@ -118,6 +134,11 @@ export function settings(): HTMLElement {
     // IP 데이터 기준일(제안 A5 첫 단계): 90일 넘으면 주황
     const c = await rpc<{ geo?: { built?: number | null } }>("connections.list", { since_secs: 1 });
     const built = c.ok ? c.result.geo?.built : null;
+    if (!c.ok) {
+      geoAge.textContent = "IP 데이터 정보를 불러오지 못했습니다.";
+      geoSrc.textContent = "IP 국가·ASN 데이터: DB-IP Lite (CC BY 4.0, https://db-ip.com). 국가 표기는 정치적 입장을 뜻하지 않습니다.";
+      return;
+    }
     if (built) {
       const d = new Date(built * 1000);
       const days = Math.floor((Date.now() - d.getTime()) / 86400000);

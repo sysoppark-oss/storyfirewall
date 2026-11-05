@@ -42,7 +42,7 @@ export function emptyText(days: number): string {
 }
 
 /// 설치를 어떻게 찾는지(빈 상태 보조 줄). 서버 규칙 is_installer_image 와 같은 내용
-export const HOW_FOUND = "이름에 setup·install 이 든 프로그램과 msiexec 의 실행을 설치로 봅니다. 제거 프로그램(unins…)은 뺍니다.";
+export const HOW_FOUND = "이름에 setup·install 이 든 프로그램과 msiexec 의 실행을 설치로 봅니다. 제거 프로그램(unins…)과 Windows 폴더 안의 구성 요소(Windows 업데이트)는 뺍니다.";
 
 /// 자동 실행의 대조 범위 (L060)
 export const AUTORUN_SCOPE = "대조 범위: Run 키 등록, 예약 작업·서비스 등록 명령(명령줄을 받은 경우)";
