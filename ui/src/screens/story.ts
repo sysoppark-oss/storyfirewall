@@ -61,6 +61,8 @@ interface StoryEvent {
   destroy?: { kind: string; sentence: string; cmdline: string; ts: number; edge_id: number };
   /// 정상 처리 가능(파일에서 시작한 사건). false 면 "이건 정상입니다"를 숨긴다
   feedback_ok?: boolean;
+  /// 프로세스에서 시작한 사건의 정상 처리 단위 "부모 → 도구 → (띄운 프로그램)" — 있으면 누르기 전에 이 조합을 확인받는다
+  feedback_unit?: string;
   last_ts?: number;
   /// 수집 시작 전부터 실행 중이던 프로세스의 시작 시각(L024)
   running_since?: number;
@@ -532,6 +534,8 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       let normalBtn: HTMLButtonElement | null = null;
       if (ev.feedback_ok !== false) {
         normalBtn = button("이건 정상입니다", async () => {
+          // 프로세스에서 시작한 사건: 정상으로 보는 범위(조합)를 먼저 보이고 확인받는다 — 도구 전체가 아니라 이 조합만
+          if (ev.feedback_unit && !confirm(feedbackUnitText(ev.feedback_unit))) return;
           const r2 = await mutation("judge.feedback_normal", { root: ev.root });
           if (!r2.ok) alert(`실패: ${r2.error.message}`);
           void load();
@@ -773,6 +777,10 @@ export function cardNote(core: boolean, noFeedback: boolean): string | null {
   if (core) parts.push("Windows 핵심 프로세스라 끝내지 않습니다. 의심 주소만 막을 수 있습니다.");
   if (noFeedback) parts.push(FEEDBACK_NOT_YET);
   return parts.length ? parts.join(" ") : null;
+}
+/// 프로세스에서 시작한 사건의 "이건 정상입니다" 확인 문구: 무엇이 정상이 되는지(조합)와 언제 다시 의심하는지를 밝힌다
+export function feedbackUnitText(unit: string): string {
+  return `이 실행 조합만 정상으로 봅니다:\n\n${unit}\n\n실행한 프로그램이나 띄우는 프로그램이 달라지면 다시 의심합니다. 도구(두 번째 프로그램) 자체를 정상으로 만들지는 않습니다.`;
 }
 export const FEEDBACK_NOT_YET = "이 종류의 사건(프로그램이 실행 중에 시작한 사건)은 아직 '정상'으로 표시하는 기능이 없습니다.";
 /// D043-1: 4칸 막대 바로 아래 한 줄 — 왼쪽 빨간 띠 + [파괴 징후] 글자 칩 + 사실 문장 · 시각

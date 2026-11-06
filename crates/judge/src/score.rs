@@ -195,6 +195,29 @@ pub fn score(
         .or_else(|| chain.procs.first().copied());
     add(base_points(chain.chapter), "장 기본점", None, root_id);
 
+    // "정상" 피드백(프로세스 뿌리): 부모→도구→띄운 프로그램 조합 키(ChainUnit). 조합이 바뀌면 키가 달라 다시 의심한다
+    if matches!(
+        kind,
+        RootKind::IsolatedSvchost | RootKind::LolbinFromDocApp | RootKind::RecoveryInhibit
+    ) {
+        if let Some(root) = chain.procs.first().copied() {
+            if let Some(u) = v.chain_unit(root) {
+                if feedback.contains(&u.key()) {
+                    return Ok(Scored {
+                        score: 0,
+                        level: Level::Normal,
+                        reasons: vec![Reason {
+                            points: 0,
+                            what: "사용자가 정상으로 확인한 실행 조합",
+                            edge_id: None,
+                            node_id: Some(root),
+                        }],
+                    });
+                }
+            }
+        }
+    }
+
     // ---- 뿌리 파일 성질 (PE 서명·출신·경로) ----
     let root_file = chain.files.first().map(|id| v.node(*id));
     let mut root_unsigned = false;

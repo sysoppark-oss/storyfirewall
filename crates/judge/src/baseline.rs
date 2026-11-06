@@ -99,6 +99,60 @@ pub fn vault_key(file: &Node) -> String {
     format!("vault:{}", root_key(file))
 }
 
+/// 프로세스에서 시작한 사건((다) 고립 svchost·(라) 문서 처리기→LOLBin·(바) 복구 수단 삭제)의 "정상" 단위(인수인계 2026-11-07 남은 일 2).
+/// 단위 = 부모 프로그램 → 실행된 도구(뿌리) → 그 도구가 띄운 프로그램들. 각각 경로+서명(`root_key`).
+/// 도구 전체(cmd.exe·powershell.exe 등 서명된 Windows 도구)를 정상으로 만들면 그 도구를 거치는 악성 코드까지 숨기므로
+/// "누가 실행했고 무엇을 띄웠는가"의 조합으로 좁힌다. 띄우는 프로그램이 하나라도 달라지면 키가 달라져 다시 의심한다.
+/// (바)는 명령 종류(`ran_kind`, 예: "그림자 복사본 삭제")까지 넣는다 — 같은 도구의 다른 파괴 명령은 다시 의심.
+pub struct ChainUnit<'a> {
+    pub parent: Option<&'a Node>,
+    pub tool: &'a Node,
+    pub children: Vec<&'a Node>,
+    pub commands: Vec<&'static str>,
+}
+
+impl ChainUnit<'_> {
+    pub fn key(&self) -> String {
+        let mut kids: Vec<String> = self.children.iter().map(|n| root_key(n)).collect();
+        kids.sort();
+        kids.dedup();
+        let mut cmds: Vec<&str> = self.commands.clone();
+        cmds.sort();
+        cmds.dedup();
+        format!(
+            "chain:{}>{}>{}>{}",
+            self.parent.map(root_key).unwrap_or_else(|| "?".into()),
+            root_key(self.tool),
+            kids.join(";"),
+            cmds.join(";")
+        )
+    }
+    /// 화면용 한 줄: "WINWORD.EXE → powershell.exe → (curl.exe)" (파일 이름만, 서명은 키에만)
+    pub fn label(&self) -> String {
+        let name = |n: &Node| file_name_lower(&n.key);
+        let mut kids: Vec<String> = self.children.iter().map(|n| name(n)).collect();
+        kids.sort();
+        kids.dedup();
+        let mut s = format!(
+            "{} → {}",
+            self.parent
+                .map(name)
+                .unwrap_or_else(|| "알 수 없는 프로그램".into()),
+            name(self.tool)
+        );
+        if !kids.is_empty() {
+            s.push_str(&format!(" → ({})", kids.join(", ")));
+        }
+        if !self.commands.is_empty() {
+            let mut c = self.commands.clone();
+            c.sort();
+            c.dedup();
+            s.push_str(&format!(" · 명령: {}", c.join(", ")));
+        }
+        s
+    }
+}
+
 pub fn root_key(file: &Node) -> String {
     match sig_of(file) {
         Some(Sig::Microsoft) | Some(Sig::Valid) => format!(
@@ -222,6 +276,15 @@ impl Baseline {
         store.conn().execute(
             "INSERT OR REPLACE INTO feedback_normal(root_key, created_ts) VALUES (?1, ?2)",
             rusqlite::params![vault_key(file), self.now_ts],
+        )?;
+        Ok(())
+    }
+
+    /// 프로세스에서 시작한 사건의 정상 처리: `ChainUnit::key` 로 저장(부모→도구→띄운 프로그램 조합에 한정)
+    pub fn mark_normal_chain(&self, store: &Store, key: &str) -> Result<()> {
+        store.conn().execute(
+            "INSERT OR REPLACE INTO feedback_normal(root_key, created_ts) VALUES (?1, ?2)",
+            rusqlite::params![key, self.now_ts],
         )?;
         Ok(())
     }

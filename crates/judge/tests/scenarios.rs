@@ -1123,3 +1123,115 @@ fn unsigned_installed_program_key_binds_to_hash() {
     let k2 = judge::baseline::program_key(&store.node(id).unwrap()).unwrap();
     assert_ne!(k1, k2);
 }
+
+/// 인수인계 2026-11-07 남은 일 2: 프로세스에서 시작한 사건((라))의 "이건 정상입니다"는
+/// 부모 → 도구 → 띄운 프로그램 조합에만 — 같은 도구가 다른 프로그램을 띄우면 다시 의심한다
+#[test]
+fn lolbin_normal_feedback_is_scoped_to_parent_tool_children_combination() {
+    let store = Store::open_in_memory().unwrap();
+    let word = r"C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE";
+    let ps = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe";
+    let mut ing = Ingester::new(&store);
+    ing.ingest_all(&[
+        snap(T0, 1000, 4, EXPLORER, &[]),
+        start(T0 + SEC, 5000, 1000, word),
+        sig(
+            T0 + SEC,
+            word,
+            Some("Microsoft Corporation"),
+            "valid",
+            false,
+        ),
+        start(T0 + 2 * SEC, 5100, 5000, ps),
+        sig(T0 + 2 * SEC, ps, Some("Microsoft Windows"), "valid", true),
+        start(T0 + 3 * SEC, 5200, 5100, CURL),
+        sig(T0 + 3 * SEC, CURL, Some("Microsoft Windows"), "valid", true),
+        conn(T0 + 4 * SEC, 5200, "203.0.113.50", 443),
+    ])
+    .unwrap();
+    let bl = Baseline::open(&store, T0 + DAY).unwrap();
+    let find = |ss: &[judge::Story]| {
+        ss.iter()
+            .find(|s| s.root_kind == RootKind::LolbinFromDocApp)
+            .cloned()
+            .expect("(라) 사건")
+    };
+    let s = find(&judge::run(&store, 0, i64::MAX, &bl).unwrap());
+    assert_ne!(s.level, Level::Normal);
+    // 정상 처리 단위 = winword → powershell → (curl)
+    let view = judge::View::load(&store, 0, i64::MAX).unwrap();
+    let unit = view.chain_unit(s.root).expect("실행 조합");
+    assert_eq!(unit.label(), "winword.exe → powershell.exe → (curl.exe)");
+    let key = unit.key();
+    assert!(key.starts_with("chain:"), "{key}");
+    bl.mark_normal_chain(&store, &key).unwrap();
+    let keys = bl.feedback_keys(&store).unwrap();
+    let ps_node = store.node(unit.tool.id).unwrap();
+    assert!(
+        !keys.contains(&judge::baseline::root_key(&ps_node)),
+        "powershell 전체를 정상으로 만들지 않는다"
+    );
+    let s2 = find(&judge::run(&store, 0, i64::MAX, &bl).unwrap());
+    assert_eq!(s2.level, Level::Normal, "{:?}", s2.reasons);
+    assert_eq!(s2.score, 0);
+    // 같은 powershell 이 다른 프로그램(미서명 payload)을 더 띄우면 조합이 달라져 다시 의심
+    ing.ingest_all(&[
+        start(T0 + 10 * SEC, 5300, 5100, PAYLOAD),
+        sig(T0 + 10 * SEC, PAYLOAD, None, "none", false),
+    ])
+    .unwrap();
+    let s3 = find(&judge::run(&store, 0, i64::MAX, &bl).unwrap());
+    assert_ne!(s3.level, Level::Normal, "{:?}", s3.reasons);
+    let unit3 = judge::View::load(&store, 0, i64::MAX)
+        .unwrap()
+        .chain_unit(s3.root)
+        .unwrap()
+        .key();
+    assert_ne!(unit3, key);
+}
+
+/// (바) 복구 수단 삭제: 정상 조합에는 명령 종류까지 들어간다 — 같은 cmd → vssadmin 이라도 다른 파괴 명령이면 다시 의심
+#[test]
+fn recovery_inhibit_normal_feedback_includes_command_kind() {
+    let store = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&store);
+    ing.ingest_all(&[
+        snap(T0, 1000, 4, EXPLORER, &[]),
+        sig(T0, EXPLORER, Some("Microsoft Windows"), "valid", true),
+        start(T0 + SEC, 3000, 1000, CMD),
+        sig(T0 + SEC, CMD, Some("Microsoft Windows"), "valid", true),
+        start(T0 + 2 * SEC, 3100, 3000, VSSADMIN),
+        sig(
+            T0 + 2 * SEC,
+            VSSADMIN,
+            Some("Microsoft Windows"),
+            "valid",
+            true,
+        ),
+        cmd(
+            T0 + 2 * SEC,
+            3100,
+            "vssadmin.exe delete shadows /all /quiet",
+        ),
+    ])
+    .unwrap();
+    let bl = Baseline::open(&store, T0 + DAY).unwrap();
+    let s = judge::run(&store, 0, i64::MAX, &bl)
+        .unwrap()
+        .into_iter()
+        .find(|s| s.root_kind == RootKind::RecoveryInhibit)
+        .expect("(바) 사건");
+    let view = judge::View::load(&store, 0, i64::MAX).unwrap();
+    let unit = view.chain_unit(s.root).unwrap();
+    assert_eq!(
+        unit.label(),
+        "cmd.exe → vssadmin.exe · 명령: 그림자 복사본 삭제"
+    );
+    bl.mark_normal_chain(&store, &unit.key()).unwrap();
+    let s2 = judge::run(&store, 0, i64::MAX, &bl)
+        .unwrap()
+        .into_iter()
+        .find(|s| s.root_kind == RootKind::RecoveryInhibit)
+        .unwrap();
+    assert_eq!(s2.level, Level::Normal, "{:?}", s2.reasons);
+}

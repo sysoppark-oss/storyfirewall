@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { triageText, triageCountsText, emptyText, cardNote, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned, liveText, recommendText, chainKids, chainTitle, adjustForDestroy } from "./story";
+import { triageText, triageCountsText, emptyText, cardNote, feedbackUnitText, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned, liveText, recommendText, chainKids, chainTitle, adjustForDestroy } from "./story";
 import { hostOf, portOf, REL } from "./mindmap";
 // 그래프 관계 이름의 원본(Rust) — vite ?raw 로 글자 그대로 읽는다
 import graphLib from "../../../crates/graph/src/lib.rs?raw";
@@ -171,5 +171,14 @@ describe("사건 추적(처리 상태)", () => {
     expect(emptyText("open", c)).toContain("처리한 사건 5건");
     expect(emptyText("open", { new: 0, investigated: 0, acted: 0, closed: 0 })).toBe("해당하는 사건이 없습니다.");
     expect(emptyText("done", c)).toBe("처리한 사건이 없습니다.");
+  });
+});
+
+describe("프로세스에서 시작한 사건의 정상 처리 확인 문구", () => {
+  it("조합을 그대로 보이고, 도구 전체가 아님을 밝힌다", () => {
+    const t = feedbackUnitText("winword.exe → powershell.exe → (curl.exe)");
+    expect(t).toContain("winword.exe → powershell.exe → (curl.exe)");
+    expect(t).toContain("다시 의심");
+    for (const w of ["추정", "악성", "랜섬"]) expect(t.includes(w)).toBe(false);
   });
 });

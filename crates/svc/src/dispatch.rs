@@ -781,7 +781,15 @@ fn handle(
                     // 정상 처리(judge.feedback_normal)는 파일 뿌리만 된다 — 화면이 단추를 숨긴다
                     // L063: 금고 경비 사건(프로세스 뿌리)도 정상 처리 가능(그 판정에 한정)
                     let vault = page_stories.iter().any(|s| s.root == n.root && s.root_kind == judge::RootKind::VaultAccess);
-                    v["feedback_ok"] = serde_json::json!(root_kind == "file" || vault);
+                    // 프로세스 뿌리 (다)·(라)·(바): 정상 처리 단위 = 부모 → 도구 → 띄운 프로그램. 화면이 확인 창에 그 조합을 보인다
+                    let chain_unit = page_stories
+                        .iter()
+                        .find(|s| s.root == n.root && matches!(s.root_kind, judge::RootKind::IsolatedSvchost | judge::RootKind::LolbinFromDocApp | judge::RootKind::RecoveryInhibit))
+                        .and_then(|_| world.judge_inc.view().and_then(|vw| vw.chain_unit(n.root)).map(|u| u.label()));
+                    v["feedback_ok"] = serde_json::json!(root_kind == "file" || vault || chain_unit.is_some());
+                    if let Some(u) = chain_unit {
+                        v["feedback_unit"] = serde_json::json!(u);
+                    }
                     // 사건 추적: 처리 상태(없으면 새 사건)
                     v["triage"] = serde_json::to_value(triage_all.get(&n.root).cloned().unwrap_or_else(crate::triage::Rec::new_default)).unwrap_or_default();
                     // 프로세스 뿌리만 process_detail(파일 노드에도 Ok 를 돌려주지만 경로가 빈다 — L046 "위치 줄 없음")
@@ -1027,17 +1035,41 @@ fn handle(
                 } else {
                     None
                 };
-                let Some(f) = image else {
-                    return Err(RpcError::with(ErrorCode::InvalidParams, "이 종류의 사건(프로세스에서 시작한 사건)은 아직 '이건 정상입니다'를 지원하지 않습니다".to_string()));
+                if let Some(f) = image {
+                    world
+                        .baseline
+                        .mark_normal_vault(&world.graph, &f)
+                        .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
+                    world.judge_inc.invalidate();
+                    // 사건 추적: 정상 처리 = 조치함(정상)
+                    let _ = set_triage(world, v.root, crate::triage::State::Acted, Some(crate::triage::Action::Normal), &actor(caller), None);
+                    return j(serde_json::json!({ "ok": true, "scope": "vault" }));
+                }
+                // 인수인계 2026-11-07 남은 일 2: (다)·(라)·(바)는 "부모 → 도구 → 띄운 프로그램(경로+서명)" 조합 단위로 정상 처리.
+                // 키는 판정과 같은 뷰(judge_inc)로 만든다 — 다른 창(전체 그래프)으로 만들면 띄운 프로그램 집합이 달라 키가 어긋난다
+                let chain_kind = world.judged.as_ref().and_then(|(_, ss)| {
+                    ss.iter().find(|s| s.root == v.root).map(|s| s.root_kind)
+                });
+                if !matches!(
+                    chain_kind,
+                    Some(judge::RootKind::IsolatedSvchost | judge::RootKind::LolbinFromDocApp | judge::RootKind::RecoveryInhibit)
+                ) {
+                    return Err(RpcError::with(ErrorCode::InvalidParams, "이 종류의 사건은 아직 '이건 정상입니다'를 지원하지 않습니다".to_string()));
+                }
+                let (key, label) = match world.judge_inc.view().and_then(|vw| vw.chain_unit(v.root)) {
+                    Some(u) => (u.key(), u.label()),
+                    None => {
+                        return Err(RpcError::with(ErrorCode::InvalidParams, "이 사건의 실행 조합(부모 → 도구 → 띄운 프로그램)을 지금 확인할 수 없습니다. 잠시 뒤 다시 시도해 주세요".to_string()));
+                    }
                 };
                 world
                     .baseline
-                    .mark_normal_vault(&world.graph, &f)
+                    .mark_normal_chain(&world.graph, &key)
                     .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
                 world.judge_inc.invalidate();
-                // 사건 추적: 정상 처리 = 조치함(정상)
-                let _ = set_triage(world, v.root, crate::triage::State::Acted, Some(crate::triage::Action::Normal), &actor(caller), None);
-                return j(serde_json::json!({ "ok": true, "scope": "vault" }));
+                let note = format!("정상 조합: {label}");
+                let _ = set_triage(world, v.root, crate::triage::State::Acted, Some(crate::triage::Action::Normal), &actor(caller), Some(&note));
+                return j(serde_json::json!({ "ok": true, "scope": "chain", "unit": label }));
             }
             world
                 .baseline

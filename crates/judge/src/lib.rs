@@ -146,6 +146,31 @@ impl View {
             .map(|e| self.node(e.src))
     }
 
+    /// 프로세스에서 시작한 사건의 정상 처리 단위(부모 → 도구(뿌리) → 띄운 프로그램 · (바)는 명령 종류까지).
+    /// 뿌리가 프로세스가 아니거나 실행 파일을 모르면 None. 판정(score)과 정상 처리(svc)가 같은 뷰로 같은 키를 만든다
+    pub fn chain_unit(&self, root: i64) -> Option<baseline::ChainUnit<'_>> {
+        let tool = self.image_file(root)?;
+        let parent = self
+            .ins(root)
+            .find(|e| e.rel == "spawned")
+            .and_then(|e| self.image_file(e.src));
+        let children: Vec<&Node> = self
+            .outs(root)
+            .filter(|e| e.rel == "spawned")
+            .filter_map(|e| self.image_file(e.dst))
+            .collect();
+        let commands: Vec<&'static str> = self
+            .outs(root)
+            .filter_map(|e| rules::ran_kind(e, self.node(e.dst)))
+            .collect();
+        Some(baseline::ChainUnit {
+            parent,
+            tool,
+            children,
+            commands,
+        })
+    }
+
     /// 증분: 선 하나를 뺀다(목록·id 색인·table_only 에서). `edges` 의 칸은 남는다. 뺀 선을 돌려준다
     pub(crate) fn remove_edge(&mut self, id: i64) -> Option<Edge> {
         let idx = self.by_id.remove(&id)?;
