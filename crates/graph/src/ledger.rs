@@ -94,6 +94,8 @@ struct State {
     arms: Vec<(Proxy, Arm)>,
     /// 작업 스케줄러 서비스를 담은 svchost pid(서비스 대조표)
     sched: std::collections::HashSet<u32>,
+    /// 34차 Q1: 관찰 중에 등록된 예약 작업 이름(소문자) → (뿌리, 기한). 작업 스케줄러 ETW 106·140 이 넣고 129 가 쓴다
+    tasks: HashMap<String, (Root, i64)>,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -172,6 +174,63 @@ pub fn set_schedule_hosts(pids: &[u32]) {
     with(|s| {
         s.sched = pids.iter().copied().collect();
     });
+}
+
+/// 지금 관찰 중인 서로 다른 뿌리(기한 안). 대리 등록을 어느 대상에 이을지 정할 때만 쓴다
+fn live_roots(s: &State, now_ft: i64) -> Vec<(Root, i64)> {
+    let mut v: Vec<(Root, i64)> = Vec::new();
+    for e in s
+        .watch
+        .values()
+        .filter(|e| e.until_ft >= now_ft && !e.inferred)
+    {
+        match v.iter_mut().find(|x| x.0 == e.root) {
+            Some(x) => x.1 = x.1.max(e.until_ft),
+            None => v.push((e.root, e.until_ft)),
+        }
+    }
+    v
+}
+
+/// 34차 Gemini Q1: 예약 작업이 등록·변경됨(작업 스케줄러 ETW 106·140). 이벤트에 등록한 프로세스 pid 가 없다(러너 실측 —
+/// 헤더 pid 는 작업 스케줄러 svchost). 그래서 **지금 관찰 중인 대상이 하나뿐일 때만** 그 대상에 잇는다(여럿이면 어느 쪽인지 모름).
+/// 이은 작업이 나중에 실행되면(129) 실행된 프로세스를 정확히 그 pid 로 물려받는다 — 시각 창이 아니라 작업 이름으로. 이었으면 true
+pub fn task_registered(name: &str, now_ft: i64) -> bool {
+    with(|s| {
+        let roots = live_roots(s, now_ft);
+        if roots.len() != 1 {
+            return false;
+        }
+        let (root, until) = roots[0];
+        if s.tasks.len() > 256 {
+            s.tasks.retain(|_, (_, u)| *u >= now_ft);
+        }
+        s.tasks.insert(name.to_ascii_lowercase(), (root, until));
+        true
+    })
+}
+
+/// 예약 작업이 프로세스를 실행함(작업 스케줄러 ETW 129: TaskName·ProcessID). 이은 작업이면 그 pid 를 추정으로 물려받는다
+pub fn task_launched(name: &str, pid: u32, now_ft: i64) -> bool {
+    with(|s| {
+        let Some(&(root, until)) = s.tasks.get(&name.to_ascii_lowercase()) else {
+            return false;
+        };
+        if until < now_ft || s.watch.len() >= MAX_PIDS {
+            return false;
+        }
+        s.watch.insert(
+            pid,
+            Entry {
+                create_ft: 0,
+                until_ft: until,
+                root,
+                inferred: true,
+                folders: HashMap::new(),
+            },
+        );
+        true
+    })
 }
 
 /// 물려받은 방법

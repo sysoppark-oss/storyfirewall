@@ -191,6 +191,7 @@ pub fn start(cfg: Config, sink: Option<Sender<Vec<Event>>>) -> Result<Session> {
         .enable(etw::network_provider(ctx.clone()))
         .enable(etw::dns_provider(ctx.clone()))
         .enable(etw::file_provider(ctx.clone()))
+        .enable(etw::task_provider(ctx.clone()))
         .enable(etw::capi2_provider(ctx.clone()));
     if cfg.experimental {
         builder = builder.enable(etw::experimental_provider(

@@ -28,6 +28,8 @@ pub const KERNEL_PROCESS: &str = "22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716";
 pub const KERNEL_NETWORK: &str = "7dd42a49-5329-4832-8dfd-43d979153a88";
 pub const DNS_CLIENT: &str = "1c95126e-7eea-49a9-a3fe-a378b03ddb4d";
 pub const KERNEL_FILE: &str = "edd08927-9cc4-4e65-b970-c2560fb5c289";
+/// Microsoft-Windows-TaskScheduler (34차 Q1, 러너 실측: 106 등록·140 변경 TaskName, 129 실행 TaskName·ProcessID)
+pub const TASK_SCHEDULER: &str = "de7b24ea-73c8-4a09-985d-5bdadcfa9017";
 // 실험 공급자 (P6). RPC 공급자는 run-3 에서 이벤트 0건이라 뺐다.
 pub const WINHTTP: &str = "7d44233d-3055-4b9c-ba64-0d47ca40a232";
 pub const CAPI2: &str = "5bbca4a8-b209-48dc-a8c7-b23d3e5216fb";
@@ -442,6 +444,41 @@ pub fn network_provider(ctx: Arc<Ctx>) -> Provider {
                         },
                     ));
                 }
+            }
+        })
+        .build()
+}
+
+/// 34차 Gemini Q1: 변경 장부 대리 실행 — 도구 없이(COM·PowerShell) 등록한 예약 작업도 잇는다.
+/// 106·140(등록·변경)은 등록한 프로세스 pid 가 없어(헤더 pid = 작업 스케줄러 svchost, 실측) 관찰 대상이 하나뿐일 때만 그 대상에 잇고,
+/// 129(작업이 프로세스를 실행)는 TaskName 과 ProcessID 로 실행된 프로세스를 정확히 물려준다. 그래프에는 아무것도 쓰지 않는다(장부 상태만)
+pub fn task_provider(ctx: Arc<Ctx>) -> Provider {
+    Provider::by_guid(TASK_SCHEDULER)
+        .add_filter(EventFilter::ByEventIds(vec![106, 129, 140]))
+        .add_callback(move |record: &EventRecord, locator: &SchemaLocator| {
+            let id = record.event_id();
+            if id != 106 && id != 129 && id != 140 {
+                return;
+            }
+            ctx.count("task");
+            let Ok(schema) = locator.event_schema(record) else {
+                return;
+            };
+            note_schema(&ctx, "task", record, &schema);
+            let p = Parser::create(record, &schema);
+            let Some(name) = s(&p, "TaskName") else {
+                missing(&ctx);
+                return;
+            };
+            let ts = ctx.ts(record.raw_timestamp());
+            if id == 129 {
+                if let Some(pid) = u32f(&p, "ProcessID") {
+                    if graph::ledger::task_launched(&name, pid, ts) {
+                        ctx.count("ledger_task_launch");
+                    }
+                }
+            } else if graph::ledger::task_registered(&name, ts) {
+                ctx.count("ledger_task_register");
             }
         })
         .build()
