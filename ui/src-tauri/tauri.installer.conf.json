@@ -9,6 +9,7 @@
       "binaries/story-firewall-svc"
     ],
     "windows": {
+      "allowDowngrades": false,
       "webviewInstallMode": {
         "type": "embedBootstrapper"
       },

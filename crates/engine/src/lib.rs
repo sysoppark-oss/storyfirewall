@@ -1272,6 +1272,61 @@ impl<'a> Engine<'a> {
         Ok(())
     }
 
+    /// 37차 Q2: 인터페이스 조건은 넣을 때 별칭 → LUID 로 바꿔 박힌다. 어댑터 재설치 등으로 LUID 가 바뀌면 영구 필터는
+    /// 옛 LUID 를 쥔 채 아무것도 걸지 않는다(차단이 조용히 풀림). 서비스 시작 때 인터페이스 조건이 있는 살아 있는 필터를
+    /// 정책 판 단위로 지금 별칭으로 다시 건다(한 판 = 한 트랜잭션, weight 는 명세에 그대로라 순서 유지).
+    /// 별칭이 없으면 트랜잭션이 실패해 옛 필터가 남는다 → 경고 사건만 남기고 계속한다(시작 대조를 멈추지 않음).
+    fn rebind_interfaces(&mut self) -> Result<usize> {
+        let live: HashSet<u64> = self
+            .backend
+            .list_ours()
+            .map_err(EngineError::Backend)?
+            .into_iter()
+            .collect();
+        let mut groups: std::collections::BTreeMap<(i64, i64), (Vec<u64>, Vec<BlockSpec>)> =
+            std::collections::BTreeMap::new();
+        for row in self.store.all_filters()? {
+            if row.spec.interface.is_some() && live.contains(&row.filter_id) {
+                let g = groups.entry((row.policy_id, row.version)).or_default();
+                g.0.push(row.filter_id);
+                g.1.push(row.spec);
+            }
+        }
+        let mut n = 0;
+        for ((pid, ver), (ids, specs)) in groups {
+            match self.swap(pid, ver, &ids, &specs) {
+                Ok(k) => {
+                    n += k;
+                    self.store.history(
+                        self.clock.wall(),
+                        pid,
+                        "rebind_interface",
+                        "system",
+                        &format!("filters {ids:?} -> {k}"),
+                    )?;
+                }
+                Err(EngineError::Backend(e)) => {
+                    let names: Vec<String> = specs
+                        .iter()
+                        .filter_map(|s| s.interface.clone())
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .into_iter()
+                        .collect();
+                    self.event(
+                        "policy_interface_missing",
+                        2,
+                        format!(
+                            "인터페이스 {} 을(를) 다시 찾지 못해 그 조건이 있는 규칙이 지금 걸리지 않을 수 있습니다 ({e})",
+                            names.join(", ")
+                        ),
+                    )?;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(n)
+    }
+
     /// 새로 넣은 필터의 filterKey 를 DB 에 남긴다(실패해도 정책 적용은 성공 — 다음 대조 때 채운다)
     fn record_keys(&mut self, ids: &[u64]) {
         if let Ok(keys) = self.backend.list_keys() {
@@ -1323,6 +1378,7 @@ impl<'a> Engine<'a> {
         // 그대로 두면 자가 치유가 그 행을 두 체계로 다시 넣어 필터가 늘어난다(시험에서 재현). → 살아 있는 예전 필터를
         // 지우고 주소 체계별로 다시 넣는 것을 한 트랜잭션으로(swap). 살아 있지 않으면 아래 재등록이 나눠서 넣는다.
         self.normalize_legacy_rows()?;
+        self.rebind_interfaces()?;
         let live: HashSet<u64> = self
             .backend
             .list_ours()

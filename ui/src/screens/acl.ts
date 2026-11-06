@@ -81,7 +81,10 @@ export function yamlToAcl(yaml: string): AclRule[] | null {
         : { action: ac[1] as "block" | "allow", dir, iface: typeof m["interface"] === "string" ? m["interface"] : "", proto, srcIp: li, srcPort: lp, dstIp: ri, dstPort: rp };
     out.push({ n: Number(pr[1]), r });
   }
-  return out.sort((a, b) => a.n - b.n).map((x) => x.r);
+  const rows = out.sort((a, b) => a.n - b.n).map((x) => x.r);
+  // 37차 Q5: 표로 다시 만든 원문이 걸린 원문과 글자 그대로 같을 때만 표로 보인다.
+  // 손으로 넣은 줄·주석·다른 키(process 등)가 있으면 표가 실제 규칙을 덜 보여 줄 수 있으므로 표로 읽지 않는다
+  return aclToYaml(rows).trimEnd() === yaml.replace(/\r\n/g, "\n").trimEnd() ? rows : null;
 }
 
 /// 한 줄 요약(표 셀): "192.168.0.10:443" / "10.0.0.1, 10.0.0.2 · 포트 443" / "포트 3389"(주소 모두) / "모두"
@@ -194,6 +197,8 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
   let rules: AclRule[] = [];
   let applied = "";
   let ifaces: NetIf[] = [];
+  // 지금 걸린 ACL 이 표로 읽을 수 없는 꼴(고급에서 손으로 쓴 것)인가 — 그러면 표를 적용할 때 그 ACL 을 통째로 바꾼다고 알린다
+  let foreign = false;
   const head = el("div", "acl-head");
   const body = el("div", "acl-body");
   const foot = el("div", "acl-foot");
@@ -208,6 +213,7 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
     const title = el("div", "acl-title", el("h2", undefined, "보안 정책 (ACL)"), el("span", "badge count", String(rules.length)));
     head.append(title, button("+ 규칙 추가", () => openDialog(-1)));
     head.append(el("p", "muted small acl-note", "위 규칙부터 판정합니다. 표 전체가 한 번에 적용되고 한 번에 되돌려집니다. ‘허용’은 Story Firewall 차단에 대한 예외이며 Windows 방화벽이 막은 것을 열지는 않습니다."));
+    if (foreign) head.append(el("p", "warn acl-foreign", "지금 걸린 ACL 은 표로 보여 줄 수 없는 꼴(아래 ‘고급’에서 직접 쓴 것)이라 이 표에 나오지 않습니다. 이 표를 적용하면 그 ACL 을 통째로 바꿉니다. 원문은 ‘고급’에서 보세요."));
     if (!rules.length) {
       body.append(
         el(
@@ -401,7 +407,8 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
         rules = back;
         applied = aclToYaml(back);
       } else {
-        body.append(el("p", "warn", "지금 걸린 ACL 을 표로 읽지 못했습니다(고급 편집에서 손으로 쓴 꼴). 아래 ‘고급’에서 원문을 보세요."));
+        // 37차 Q5 검토 중 발견: 이 안내를 body 에 붙였더니 바로 아래 draw() 가 지워 보이지 않았다
+        foreign = true;
       }
     }
     draw();
@@ -412,6 +419,7 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
   // 적용이 받아들여지면 "적용하지 않은 변경" 표시를 지운다(검수 B3: 적용 직후에도 변경 있음으로 보였다)
   const markApplied = (yaml: string) => {
     applied = yaml;
+    foreign = false;
     draw();
   };
   return { root, load, markApplied };

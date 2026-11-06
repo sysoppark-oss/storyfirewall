@@ -171,6 +171,10 @@ if (mode === "acl") {
   await page.screenshot({ path: path.join(outDir, "acl-5-applied.png"), fullPage: true });
   const listed = await page.evaluate(() => document.body.innerText.includes("ACL 규칙 2개"));
   must(listed, "acl: applied policy listed as 'ACL 규칙 2개'");
+  // 적용 직후 카운트다운은 위 카드 한 곳에서만 센다(목록 줄은 '위 카드에서 유지/되돌리기')
+  const cd = await page.evaluate(() => ({ cards: document.querySelectorAll(".card.alert").length, inline: document.querySelectorAll(".countdown-inline").length }));
+  if (cd.inline) console.log("DEBUG", await page.evaluate(() => [...document.querySelectorAll(".policy-row")].map((r) => r.innerText.replace(/\n/g, " ")).join(" || ")));
+  must(cd.cards === 1 && cd.inline === 0, `acl: countdown shown once (card=${cd.cards} inline=${cd.inline})`);
   // 화면을 다시 열면 걸린 ACL 을 표로 읽는다
   await page.click("button.nav-btn[data-key=dashboard]");
   await page.waitForTimeout(500);

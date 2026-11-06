@@ -113,9 +113,12 @@ export function policy(): HTMLElement {
     return true;
   };
 
+  // 위 카드가 세는 정책 번호 — 목록 줄은 같은 정책의 카운트다운을 다시 세지 않는다(검수: 두 곳에서 겹쳐 셈)
+  let cardPolicyId: number | null = null;
   const startCountdown = (a: ApplyReply) => {
     clear(pending);
-    pending.append(countdown(a, root, () => void refreshList()));
+    cardPolicyId = a.policy_id;
+    pending.append(countdown(a, root, () => { cardPolicyId = null; void refreshList(); }));
   };
 
   // ACL 표(위): 처음 목록을 받을 때 한 번만 지금 걸린 ACL 을 읽는다(편집 중인 표를 새로 고침이 덮지 않게)
@@ -156,7 +159,9 @@ export function policy(): HTMLElement {
       }
       const row = el("div", "row policy-row", el("div", "policy-main", el("div", "policy-head", chip, " ", name, " ", ver), meta), el("span", "spacer"));
       // D007-1: 확인 대기 — 남은 시간(1초 갱신, 주황) + 주 단추 "유지(확인)". 확인은 기존 경로(mutation: 보기 모드면 승인 창)
-      if (p.state === "Applied" && p.confirm_deadline) {
+      if (p.state === "Applied" && p.confirm_deadline && p.id === cardPolicyId) {
+        row.append(el("span", "muted", "위 카드에서 유지/되돌리기"));
+      } else if (p.state === "Applied" && p.confirm_deadline) {
         const left = el("span", "warn countdown-inline");
         const tick = () => {
           const s = p.confirm_deadline! - Math.floor(Date.now() / 1000);

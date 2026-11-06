@@ -43,6 +43,16 @@ describe("ACL 표 ↔ 정책 YAML", () => {
     expect(yamlToAcl("- name: x\n  action: block\n  match:\n    direction: out\n")).toBeNull();
   });
 
+  it("37차 Q5: 표가 보여 주지 못하는 줄이 하나라도 있으면 표로 읽지 않는다", () => {
+    const y = aclToYaml([r({ dstIp: "1.1.1.1" }), r({ action: "allow", dstIp: "10.0.0.0/8" })]);
+    expect(yamlToAcl(y)).not.toBeNull();
+    expect(yamlToAcl(y.replace("  action: block\n", "  action: block\n  process: \"C:\\\\x.exe\"\n"))).toBeNull(); // 프로그램 조건
+    expect(yamlToAcl(y.replace('"1.1.1.1"]', '"1.1.1.1"],"remote_domain":["evil.example"]'))).toBeNull(); // 표에 없는 키
+    expect(yamlToAcl(y + "# 주석\n")).toBeNull();
+    expect(yamlToAcl(y.replace('"acl.2"', '"내 허용"'))).toBeNull(); // 이름이 번호와 다름
+    expect(yamlToAcl(y.replace(/\n/g, "\r\n"))).not.toBeNull(); // 줄 끝만 다르면 같은 원문
+  });
+
   it("목록·표기", () => {
     expect(splitList(" 1.1.1.1,  8.8.8.8 ")).toEqual(["1.1.1.1", "8.8.8.8"]);
     expect(endText("", "")).toBe("모두");

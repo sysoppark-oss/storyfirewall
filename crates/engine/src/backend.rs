@@ -38,6 +38,11 @@ pub struct FakeWfp {
     pub log: Vec<(usize, usize)>,
     /// 필터 ID → filterKey(넣을 때 정함, 번호가 바뀌어도 그대로)
     pub keys: std::collections::BTreeMap<u64, String>,
+    /// 없는 인터페이스 별칭 — 실제 WFP 처럼 이 별칭 조건을 넣으려 하면 트랜잭션 전체가 실패한다
+    pub missing_ifaces: std::collections::BTreeSet<String>,
+    /// 별칭 → 지금 LUID(가짜). 넣을 때의 값을 `bound` 에 남겨 다시 걸렸는지 시험한다
+    pub luid: std::collections::BTreeMap<String, u64>,
+    pub bound: std::collections::BTreeMap<u64, u64>,
 }
 
 impl FakeWfp {
@@ -77,6 +82,13 @@ impl WfpBackend for FakeWfp {
         if self.fail_on_call == Some(self.calls) {
             return Err("가짜 BFE 오류 (트랜잭션 abort)".into());
         }
+        if let Some(a) = add
+            .iter()
+            .filter_map(|s| s.interface.as_deref())
+            .find(|a| self.missing_ifaces.contains(*a))
+        {
+            return Err(format!("인터페이스 '{a}' 없음"));
+        }
         for id in remove {
             self.filters.remove(id);
             self.keys.remove(id);
@@ -86,6 +98,10 @@ impl WfpBackend for FakeWfp {
         for s in add {
             for f in s.split_family() {
                 self.next_id += 1;
+                if let Some(a) = f.interface.as_deref() {
+                    let l = self.luid.get(a).copied().unwrap_or(1);
+                    self.bound.insert(self.next_id, l);
+                }
                 self.filters.insert(self.next_id, f);
                 self.keys
                     .insert(self.next_id, format!("key-{}", self.next_id));

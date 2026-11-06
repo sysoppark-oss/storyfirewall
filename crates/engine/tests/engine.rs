@@ -1196,3 +1196,76 @@ fn acl_yaml_from_ui_is_accepted() {
     let a3 = fs.iter().find(|f| f.spec.name == "acl.3").unwrap();
     assert_eq!(a3.spec.protocols, vec![1]);
 }
+
+/// 37차 Q2: 어댑터 재설치로 LUID 가 바뀌면 서비스 시작 대조가 인터페이스 조건 필터를 지금 별칭으로 다시 건다.
+/// 별칭이 사라졌으면 옛 필터를 남기고(트랜잭션 실패) 경고 사건만 — 시작 대조는 멈추지 않는다
+#[test]
+fn reconcile_rebinds_interface_filters_to_current_luid() {
+    let clock = FakeClock::new(MONDAY_0000);
+    let mut wfp = FakeWfp::default();
+    wfp.luid.insert("Wi-Fi".into(), 7);
+    let dir = std::env::temp_dir().join(format!("engine-rebind-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("engine.db");
+    let _ = std::fs::remove_file(&path);
+    let acl = "- name: acl.1\n  priority: 1\n  action: block\n  match: { direction: out, interface: Wi-Fi, remote_ip: [10.0.0.5] }\n- name: acl.2\n  priority: 2\n  action: block\n  match: { direction: out, remote_ip: [10.0.0.6] }\n";
+    let pid = {
+        let mut e = Engine::new(
+            rusqlite::Connection::open(&path).unwrap(),
+            &mut wfp,
+            &NoGraph,
+            &clock,
+            &R,
+            &[],
+        )
+        .unwrap();
+        let r = e.apply(acl, &[], "a", "ui").unwrap();
+        e.confirm(r.policy_id, 1, "ui").unwrap();
+        r.policy_id
+    };
+    let iface_id = |w: &FakeWfp| {
+        w.filters
+            .iter()
+            .find(|(_, s)| s.interface.is_some())
+            .map(|(id, _)| *id)
+            .unwrap()
+    };
+    assert_eq!(wfp.bound[&iface_id(&wfp)], 7);
+    // 서비스가 내려간 사이 어댑터 재설치 → 같은 별칭, 새 LUID
+    wfp.luid.insert("Wi-Fi".into(), 9);
+    {
+        let mut e = Engine::new(
+            rusqlite::Connection::open(&path).unwrap(),
+            &mut wfp,
+            &NoGraph,
+            &clock,
+            &R,
+            &[],
+        )
+        .unwrap();
+        e.reconcile().unwrap();
+        assert_eq!(e.store.filters_of(pid).unwrap().len(), 2, "필터 수 그대로");
+    }
+    assert_eq!(wfp.filters.len(), 2, "옛 필터를 남기지 않는다");
+    assert_eq!(wfp.bound[&iface_id(&wfp)], 9, "새 LUID 로 다시 걸림");
+    // 별칭이 사라짐 → 옛 필터 유지 + 경고, 대조는 계속
+    wfp.missing_ifaces.insert("Wi-Fi".into());
+    let before = iface_id(&wfp);
+    let mut e = Engine::new(
+        rusqlite::Connection::open(&path).unwrap(),
+        &mut wfp,
+        &NoGraph,
+        &clock,
+        &R,
+        &[],
+    )
+    .unwrap();
+    e.reconcile().unwrap();
+    assert!(e
+        .events
+        .iter()
+        .any(|ev| ev.kind == "policy_interface_missing" && ev.detail.contains("Wi-Fi")));
+    assert_eq!(e.store.filters_of(pid).unwrap().len(), 2);
+    drop(e);
+    assert_eq!(iface_id(&wfp), before);
+}
