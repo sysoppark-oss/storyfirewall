@@ -25,7 +25,12 @@ const SERVICE_EVENT_TITLE: Record<string, string> = {
   defender_cfa_audited: "Windows 기본 보호가 보호 폴더 변경을 기록했습니다(감사 모드)",
   // 17판 23-2 ①: 첫 실행 관찰실
   first_run_watch: "인터넷에서 받은 프로그램이 처음 실행되어 지켜보는 중입니다",
+  // 14판 20-4: 원격 제어 사기 경보 — 사실만(상대·의도를 단정하지 않는다)
+  remote_session_start: "원격 제어 프로그램이 외부로 데이터를 계속 보내기 시작했습니다",
+  remote_session_end: "원격 제어 세션 모양이 끝났습니다",
 };
+/// 경고 테두리 없이 보여 줄 사건(막지 않은 사실·끝난 사실)
+const QUIET_KINDS = new Set(["defender_cfa_audited", "first_run_watch", "remote_session_end"]);
 /// 보여 줄 보호 사건 (정책 변경 기록 등 평범한 사건은 정책 화면 몫)
 const PROTECTION_KINDS = new Set(Object.keys(SERVICE_EVENT_TITLE));
 
@@ -153,7 +158,7 @@ export function dashboard(): HTMLElement {
       const list = el("div", "list service-events");
       for (const e of prot) {
         // 감사 모드 기록은 막지 않은 사실이라 경고 테두리 없이
-        const row = el("div", e.kind === "defender_cfa_audited" || e.kind === "first_run_watch" ? "row" : "row alert");
+        const row = el("div", QUIET_KINDS.has(e.kind) ? "row" : "row alert");
         row.append(el("span", "title", SERVICE_EVENT_TITLE[e.kind] ?? e.kind));
         // Defender 기록은 서비스가 읽은 시각이 아니라 Defender 가 남긴 시각
         const dts = typeof e.target?.defender_ts === "number" && e.target.defender_ts > 0 ? e.target.defender_ts : e.ts;

@@ -162,6 +162,8 @@ pub struct World<'a> {
     pub decoys_seen: Option<Vec<String>>,
     /// L069: 설치 목록 미리 계산(주기 판정 뒤). installs.list 는 이것만 읽는다
     pub install_cache: graph::install::InstallCache,
+    /// 원격 제어 사기 경보(14판 20-4): 원격 도구 프로세스와 세션 모양 추적
+    pub remote: crate::remote_watch::RemoteWatch,
     /// 갈래 C: 증분 주기 판정기(메모리 뷰·사슬 캐시). 결과는 전체 판정과 같다(judge 시험).
     /// 30번에 한 번·보관 정리 뒤·기준선 학습 뒤·"정상" 피드백 뒤·오류 뒤에는 전체를 다시 읽는다.
     /// SF_JUDGE_INCREMENTAL=0 이면 매번 전체(현장에서 되돌리기용)
@@ -277,6 +279,7 @@ impl Runtime {
                     decoys_retired: Vec::new(),
                     decoys_seen: None,
                     install_cache: graph::install::InstallCache::default(),
+                    remote: Default::default(),
                 };
                 crate::first_run::ensure_table(&world.graph);
                 // 재시작 대조: 누락 재등록·고아 제거·미확인 롤백
@@ -363,6 +366,7 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
             Command::Tick => {
                 let _ = world.engine.tick();
                 crate::first_run::sweep(world);
+                crate::remote_watch::sample(world);
                 flush_events(world);
             }
             Command::Resume => {
@@ -422,6 +426,9 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                 }
                 // 첫 실행 관찰실: 이 배치의 ProcessStart 를 대기 목록에 넣고, 서명·출신이 온 것을 판단한다
                 crate::first_run::on_batch(world, &events);
+                // 원격 제어 사기 경보: 도구 시작·끝을 받고, 때가 됐으면 송신량을 잰다
+                crate::remote_watch::on_batch(world, &events);
+                crate::remote_watch::sample(world);
                 flush_events(world);
             }
             Command::Ingest(events) => {

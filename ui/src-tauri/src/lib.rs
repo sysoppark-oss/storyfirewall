@@ -37,6 +37,19 @@ pub(crate) fn probe_service() -> bool {
     probe_service_at(&ep)
 }
 
+/// events.new 중 원격 세션 시작이면 알림 본문(서비스가 만든 사실 문장)
+fn remote_session_toast(v: &serde_json::Value) -> Option<String> {
+    if v.get("method").and_then(|m| m.as_str()) != Some("events.new") {
+        return None;
+    }
+    let p = v.get("params")?;
+    if p.get("kind").and_then(|k| k.as_str()) != Some("remote_session_start") {
+        return None;
+    }
+    // 문장에는 외부에서 온 이름이 섞이지 않는다(도구 표시 이름은 서비스 목록의 상수) — 길이만 자른다
+    Some(p.get("detail").and_then(|d| d.as_str()).unwrap_or("").chars().take(240).collect())
+}
+
 pub(crate) fn notify(app: &tauri::AppHandle, title: &str, body: &str) {
     use tauri_plugin_notification::NotificationExt;
     let _ = app.notification().builder().title(title).body(body).show();
@@ -57,6 +70,10 @@ async fn connect(app: tauri::AppHandle, state: State<'_, AppState>, endpoint: St
         let c = Client::connect(&ep, Box::new(move |v| {
             if v.get("method").and_then(|m| m.as_str()) == Some("client.disconnected") {
                 link2.up.store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+            // 14판 20-4: 원격 제어 세션 시작은 창을 열지 않아도 바로 Windows 알림(조용함 원칙의 예외)
+            if let Some(body) = remote_session_toast(&v) {
+                notify(&app2, "원격 제어 경보", &body);
             }
             let _ = app2.emit("svc-notify", v);
         }))

@@ -24,6 +24,7 @@ pub mod handler;
 pub mod host;
 pub mod policy_view;
 pub mod reads;
+pub mod remote_watch;
 pub mod resolver;
 pub mod runtime;
 /// Windows 전용: 네임드 파이프 Transport, 토큰·서명 Authn, 시각대. Linux 는 `--features host-check` 로 check 만
