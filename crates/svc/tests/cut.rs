@@ -313,3 +313,93 @@ fn injected_host_is_not_path_blocked_and_its_children_are_not_targets() {
     .unwrap();
     assert!(p.terminate.iter().any(|x| x.pid == 15));
 }
+
+/// 2026-11-06 노트북 제보: 수집 전부터 실행 중이라 경로를 모르는 프로세스를 끊으려 하면 "제어 문자" 경고로 대상이 빠지고,
+/// 접속지 맨 앞의 DNS 주소(…:53/udp)로 만든 정책이 규칙 8 자동 제외로 비어 적용이 안 됐다.
+/// → 살아 있으면 (PID, 생성 시각)으로 지금 경로를 읽어 채우고, DNS·NTP·DHCP 주소는 막을 목록에서 뺀다
+#[test]
+fn unknown_image_is_filled_from_live_process_and_dns_is_kept_open() {
+    use graph::event::{Direction, ProcRef, Proto};
+    let st = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&st);
+    let t = 133_800_000_000_000_000i64;
+    let ev = |ts: i64, kind: EventKind| Event {
+        ts,
+        source: "t".into(),
+        kind,
+    };
+    let conn = |ts: i64, raddr: &str, rport: u16, proto: Proto| {
+        ev(
+            ts,
+            EventKind::Connect {
+                proc: ProcRef::new(30, None),
+                proto,
+                direction: Direction::Out,
+                laddr: "10.0.0.2".into(),
+                lport: 50000 + rport,
+                raddr: raddr.into(),
+                rport,
+            },
+        )
+    };
+    ing.ingest_all(&[
+        ev(
+            t,
+            EventKind::ProcessSnapshot {
+                pid: 30,
+                ppid: 4,
+                image: String::new(),
+                create_time: t,
+                services: vec![],
+            },
+        ),
+        conn(t + 1, "1.214.68.2", 53, Proto::Udp),
+        conn(t + 2, "203.0.113.9", 443, Proto::Tcp),
+    ])
+    .unwrap();
+    let root = st
+        .find_node(graph::NodeKind::Process, &format!("30@{t}"))
+        .unwrap()
+        .unwrap();
+    // 살아 있는 프로세스 경로를 모르면: 경로 없이 접속지만, "제어 문자" 경고는 없다
+    let p0 = svc::cut::plan(&st, root, &[]).unwrap();
+    assert!(p0.block_images.is_empty());
+    assert!(
+        !p0.warnings.iter().any(|w| w.contains("제어 문자")),
+        "{:?}",
+        p0.warnings
+    );
+    assert!(
+        p0.warnings
+            .iter()
+            .any(|w| w.contains("경로를 확인하지 못한")),
+        "{:?}",
+        p0.warnings
+    );
+    assert!(
+        p0.addresses.iter().all(|a| a.port != 53),
+        "DNS 는 막지 않는다"
+    );
+    assert!(p0.addresses.iter().any(|a| a.ip == "203.0.113.9"));
+    assert!(
+        p0.yaml.contains("203.0.113.9"),
+        "첫 주소 정책이 DNS 가 아니어야 한다: {}",
+        p0.yaml
+    );
+    // 살아 있고 생성 시각이 맞으면 지금 경로로 채워 경로 차단
+    let live = |pid: u32, ft: i64| {
+        (pid == 30 && ft == t).then(|| r"C:\Users\x\AppData\Local\Temp\agent.exe".to_string())
+    };
+    let p1 = svc::cut::plan_with(&st, root, &[], &live).unwrap();
+    assert_eq!(
+        p1.block_images,
+        vec![r"C:\Users\x\AppData\Local\Temp\agent.exe".to_string()]
+    );
+    // 생성 시각이 다르면(PID 재사용) 채우지 않는다
+    let wrong =
+        |pid: u32, ft: i64| (pid == 30 && ft == t + 99).then(|| "C:\\other.exe".to_string());
+    assert!(svc::cut::plan_with(&st, root, &[], &wrong)
+        .unwrap()
+        .block_images
+        .is_empty());
+}

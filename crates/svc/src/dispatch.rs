@@ -163,8 +163,10 @@ fn summarize(
     match method {
         Method::CutApply => {
             let v: CutParams = from(p)?;
-            let plan = crate::cut::plan(&world.graph, v.story_root, &v.also)
-                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
+            let plan = crate::cut::plan_with(&world.graph, v.story_root, &v.also, &|pid, ft| {
+                world.host.live_image(pid, ft)
+            })
+            .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
             if plan.yaml.is_empty() {
                 return Err(RpcError::with(
                     ErrorCode::InvalidParams,
@@ -1409,8 +1411,10 @@ fn handle(
             if !caller.scope().process_visible(&world.graph, v.story_root) {
                 return Err(out_of_scope());
             }
-            let plan = crate::cut::plan(&world.graph, v.story_root, &v.also)
-                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
+            let plan = crate::cut::plan_with(&world.graph, v.story_root, &v.also, &|pid, ft| {
+                world.host.live_image(pid, ft)
+            })
+            .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
             let val = if plan.yaml.is_empty() {
                 None
             } else {
@@ -1429,8 +1433,10 @@ fn handle(
                 .request_id
                 .clone()
                 .ok_or_else(|| RpcError::with(ErrorCode::InvalidParams, "request_id 필수"))?;
-            let plan = crate::cut::plan(&world.graph, v.story_root, &v.also)
-                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
+            let plan = crate::cut::plan_with(&world.graph, v.story_root, &v.also, &|pid, ft| {
+                world.host.live_image(pid, ft)
+            })
+            .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
             if plan.yaml.is_empty() {
                 return Err(RpcError::with(
                     ErrorCode::InvalidParams,

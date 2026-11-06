@@ -103,6 +103,15 @@ impl crate::host::Host for WinHost {
     fn terminate(&self, pid: u32, create_ft: Option<i64>) -> String {
         format!("{:?}", terminate(pid, create_ft))
     }
+    fn live_image(&self, pid: u32, create_ft: i64) -> Option<String> {
+        // 생성 시각이 맞을 때만(PID 재사용 방지) 실제 실행 파일 경로를 읽는다
+        if pid == 0 || create_time(pid)? != create_ft {
+            return None;
+        }
+        let img = super::authn::image_of_pid(pid)?;
+        // 읽는 사이 PID 가 바뀌지 않았는지 한 번 더
+        (create_time(pid)? == create_ft).then_some(img)
+    }
     fn interfaces(&self) -> Result<Vec<crate::host::NetIf>, String> {
         super::netif::interfaces()
     }

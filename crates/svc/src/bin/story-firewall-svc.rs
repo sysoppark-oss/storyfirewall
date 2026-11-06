@@ -468,21 +468,22 @@ mod real {
     /// 노트북 확인을 화면 제어 없이 하려는 것. 쓰지 않는다(OPEN_READ_ONLY)
     fn diag_policies(path: &std::path::Path) {
         use rusqlite::OpenFlags;
-        let c = match rusqlite::Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY) {
+        let c = match rusqlite::Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        {
             Ok(c) => c,
             Err(e) => return println!("diag: policy open failed {e}"),
         };
-        let q = |sql: &str, f: &dyn Fn(&rusqlite::Row) -> rusqlite::Result<String>| {
-            match c.prepare(sql) {
-                Ok(mut st) => {
-                    let rows = st.query_map([], |r| f(r));
-                    match rows {
-                        Ok(it) => it.flatten().for_each(|l| println!("diag: {l}")),
-                        Err(e) => println!("diag: query failed {e}"),
-                    }
+        let q = |sql: &str, f: &dyn Fn(&rusqlite::Row) -> rusqlite::Result<String>| match c
+            .prepare(sql)
+        {
+            Ok(mut st) => {
+                let rows = st.query_map([], |r| f(r));
+                match rows {
+                    Ok(it) => it.flatten().for_each(|l| println!("diag: {l}")),
+                    Err(e) => println!("diag: query failed {e}"),
                 }
-                Err(e) => println!("diag: prepare failed {e}"),
             }
+            Err(e) => println!("diag: prepare failed {e}"),
         };
         q(
             "SELECT id, name, state, version, created, confirm_deadline FROM policies ORDER BY id DESC LIMIT 8",

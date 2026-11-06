@@ -113,8 +113,63 @@ fn path_ok(p: &str) -> bool {
 }
 
 pub fn plan(graph: &Store, root: i64, also: &[String]) -> Result<CutPlan, String> {
-    let t: CutTargets = views::cut_targets(graph, root, MAX_TARGETS).map_err(|e| e.to_string())?;
+    plan_with(graph, root, also, &|_, _| None)
+}
+
+/// 끊기에서 막지 않는 포트(가드 규칙 8과 같은 뜻): DNS 53 · NTP 123 · DHCP 67/68.
+/// 2026-11-06 노트북 제보: 접속지 목록 맨 앞이 DNS 서버(…:53/udp)라 그 주소로 만든 정책이 규칙 8 자동 제외로 비어 적용이 안 됐다
+const KEEP_PORTS: &[u16] = &[53, 123, 67, 68];
+
+/// `live(pid, 생성 시각)`: 수집 때 실행 파일 경로를 못 얻은 프로세스가 지금 살아 있으면 그 경로(생성 시각이 맞을 때만)
+pub fn plan_with(
+    graph: &Store,
+    root: i64,
+    also: &[String],
+    live: &dyn Fn(u32, i64) -> Option<String>,
+) -> Result<CutPlan, String> {
+    let mut t: CutTargets =
+        views::cut_targets(graph, root, MAX_TARGETS).map_err(|e| e.to_string())?;
     let mut warnings = Vec::new();
+    // 경로를 모르는 프로세스: 살아 있으면 지금 경로를 읽어 채운다(PID+생성 시각 대조)
+    for p in t.procs.iter_mut().filter(|p| p.image.is_empty()) {
+        if let Some(img) = live(p.pid, p.create_ts) {
+            p.system = views::is_system_image(&img);
+            p.image = img;
+        }
+    }
+    if t.root_image.as_deref().is_none_or(|x| x.is_empty()) {
+        if let Some(p) = t
+            .procs
+            .iter()
+            .find(|p| p.node_id == root && !p.image.is_empty())
+        {
+            t.root_image = Some(p.image.clone());
+        }
+    }
+    let unknown: Vec<u32> = t
+        .procs
+        .iter()
+        .filter(|p| p.image.is_empty())
+        .map(|p| p.pid)
+        .collect();
+    if !unknown.is_empty() {
+        warnings.push(format!(
+            "실행 파일 경로를 확인하지 못한 프로세스 {}개(PID {})는 경로로 막지 못하고 접속지만 막습니다 — 수집을 시작하기 전부터 실행 중이었을 수 있습니다",
+            unknown.len(),
+            unknown.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    let before = t.addresses.len();
+    t.addresses.retain(|a| !KEEP_PORTS.contains(&a.port));
+    if t.addresses.len() < before {
+        warnings.push(format!(
+            "DNS·시간·DHCP 주소 {}곳은 막지 않습니다 (규칙 8 — 막으면 인터넷 전체가 멈출 수 있음)",
+            before - t.addresses.len()
+        ));
+    }
+    for a in t.addresses.iter_mut().filter(|a| a.who.is_empty()) {
+        a.who = "프로그램 확인 못 함".into();
+    }
     if t.root_kind != "file" && t.root_kind != "process" {
         return Err(format!(
             "끊기 뿌리는 파일 또는 프로세스여야 합니다 (받은 것: {})",
@@ -123,8 +178,14 @@ pub fn plan(graph: &Store, root: i64, also: &[String]) -> Result<CutPlan, String
     }
     let mut images: Vec<String> = Vec::new();
     let mut push = |img: &str, warnings: &mut Vec<String>| {
+        if img.is_empty() {
+            return; // 경로를 모름 — 위에서 따로 알렸다(전에는 "제어 문자" 경고로 잘못 보였다)
+        }
         if !path_ok(img) {
-            warnings.push("제어 문자가 든 경로를 대상에서 뺐습니다 (표시 위장 의심)".into());
+            let w = "제어 문자가 든 경로를 대상에서 뺐습니다 (표시 위장 의심)".to_string();
+            if !warnings.contains(&w) {
+                warnings.push(w);
+            }
             return;
         }
         if views::is_system_image(img) {

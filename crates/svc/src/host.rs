@@ -46,6 +46,11 @@ pub trait Host: Send {
     fn rdp_port(&self) -> u16 {
         3389
     }
+    /// 끊기(2026-11-06 노트북 제보): 수집 때 실행 파일 경로를 못 얻은 프로세스가 지금도 살아 있으면 그 경로.
+    /// (PID, 생성 시각)이 둘 다 맞을 때만 — PID 재사용으로 엉뚱한 프로그램 경로를 붙이지 않게. 모르면 None
+    fn live_image(&self, _pid: u32, _create_ft: i64) -> Option<String> {
+        None
+    }
     /// 35차 Q4: 실행 파일의 버전 리소스 원래 이름(OriginalFileName, 소문자). 모르면 None
     fn original_name(&self, _path: &str) -> Option<String> {
         None
