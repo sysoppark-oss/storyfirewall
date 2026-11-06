@@ -16,6 +16,7 @@
 
 use crate::event::{Direction, Event, EventKind, ProcRef};
 use crate::{NodeKind, Rel, Result, Store};
+use rusqlite::OptionalExtension;
 use std::collections::HashMap;
 
 /// 서비스 경유 귀속 시간 창 (FILETIME 100ns 단위). 2초.
@@ -30,6 +31,10 @@ const BOOT_SLACK: i64 = 2 * 60 * 10_000_000;
 
 /// SCM 매핑이 ProcessStart 보다 먼저 왔을 때 같은 프로세스로 보는 여유(100ns, 2초 — 생성 시각보다 이만큼 이른 매핑까지)
 const SCM_EARLY_SLACK: i64 = 2 * 10_000_000;
+
+/// 시작 이벤트보다 먼저 온 접속·파일 이벤트로 만든 "알 수 없는 프로그램" 노드를 늦게 온 ProcessStart 가 넘겨받는 여유(100ns, 30초).
+/// 실측(2026-11-06 노트북): chrome 네트워크 서비스(생성 21:59:21)의 접속(21:59:25)이 시작 이벤트보다 먼저 그래프에 들어와 이름을 잃었다
+const ADOPT_WINDOW: i64 = 30 * 10_000_000;
 
 /// 명령 노드 키 최대 길이(문자)
 pub const CMDLINE_MAX: usize = 1024;
@@ -220,13 +225,42 @@ impl<'a> Ingester<'a> {
         let attrs = attrs.to_string();
         // 이하 노드·선·부모 찾기는 보정된 시각으로(부모도 같은 규칙으로 보정돼 first_ts 비교가 맞는다)
         let key_ts = shown_ts;
-        let child = self.store.upsert_node(
-            NodeKind::Process,
-            &child_key,
-            &file_name(image),
-            key_ts,
-            Some(&attrs),
-        )?;
+        // 순서 뒤바뀜 보정: 이 프로세스가 생긴 뒤(여유 안) 같은 PID 로 먼저 만들어진 이름 모름 노드가 있으면
+        // 새 노드를 만들지 않고 그 노드를 넘겨받는다(키·이름·속성을 이 프로세스 것으로). 이미 붙은 접속·파일 선은 그대로 이 프로세스 것이 된다
+        let adopt: Option<i64> = self
+            .store
+            .conn
+            .query_row(
+                "SELECT id FROM nodes
+                 WHERE kind = 'process' AND key >= ?1 AND key < ?2
+                   AND json_extract(attrs_json, '$.unresolved') = 1
+                   AND first_ts >= ?3 AND first_ts <= ?4
+                 ORDER BY first_ts LIMIT 1",
+                rusqlite::params![
+                    format!("{pid}@"),
+                    format!("{pid}A"),
+                    key_ts,
+                    key_ts + ADOPT_WINDOW
+                ],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(id) = adopt {
+            self.store.conn.execute(
+                "UPDATE nodes SET key = ?1, label = ?2, first_ts = ?3, attrs_json = ?4 WHERE id = ?5",
+                rusqlite::params![child_key, file_name(image), key_ts, attrs, id],
+            )?;
+        }
+        let child = match adopt {
+            Some(id) => id,
+            None => self.store.upsert_node(
+                NodeKind::Process,
+                &child_key,
+                &file_name(image),
+                key_ts,
+                Some(&attrs),
+            )?,
+        };
         let mut n = 0;
         // 부모: 스냅샷 프로세스는 부모가 이미 종료됐을 수 있다. 있을 때만 잇는다.
         let parent = if preexisting {

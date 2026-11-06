@@ -552,7 +552,9 @@ pub fn narrate(store: &Store, stories: &[Story], voice: Voice) -> Result<Vec<Nar
                                     .conn()
                                     .query_row("SELECT n.label FROM edges x JOIN nodes n ON n.id = x.src WHERE x.dst = ?1 AND x.rel = 'spawned' ORDER BY x.ts DESC LIMIT 1", [e.dst], |r| r.get(0))
                                     .ok();
+                                // 실행 파일 선이 없으면(시작 이벤트를 못 본 프로세스) 횟수를 세지 않는다 — "0번 실행됨"은 틀린 문장(2026-11-07 노트북 실측)
                                 let value = match parent {
+                                    _ if n == 0 => "시작 기록 없음 — 수집 전부터 실행 중이었거나 시작 기록을 놓쳤습니다".to_string(),
                                     Some(p) => format!(
                                         "이 파일이 {n}번 실행됨 · 부모 {}",
                                         crate::render::no_arrows(&p)

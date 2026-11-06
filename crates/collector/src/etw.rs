@@ -679,17 +679,29 @@ pub fn file_provider(ctx: Arc<Ctx>) -> Provider {
                 let (write_path, source) = match graph::ledger::record_file(pid, &path, ts) {
                     graph::ledger::Write::Skip => (None, String::new()),
                     // 대리 창으로 물려받은 프로세스(추정)는 출처에 뿌리를 단다 — ledger.get 이 뿌리로 찾는다
-                    graph::ledger::Write::Each { inferred_root: Some(r) } => {
-                        (Some(path.clone()), graph::ledger::inferred_source(r))
-                    }
-                    graph::ledger::Write::Each { inferred_root: None } => (
+                    graph::ledger::Write::Each {
+                        inferred_root: Some(r),
+                    } => (Some(path.clone()), graph::ledger::inferred_source(r)),
+                    graph::ledger::Write::Each {
+                        inferred_root: None,
+                    } => (
                         Some(path.clone()),
-                        if kind == "rename" { "etw:file:ledger:rename".to_string() } else { "etw:file:ledger".to_string() },
+                        if kind == "rename" {
+                            "etw:file:ledger:rename".to_string()
+                        } else {
+                            "etw:file:ledger".to_string()
+                        },
                     ),
-                    graph::ledger::Write::Summary { folder_glob, count, inferred_root } => {
+                    graph::ledger::Write::Summary {
+                        folder_glob,
+                        count,
+                        inferred_root,
+                    } => {
                         ctx.count("ledger_bulk");
                         let src = match inferred_root {
-                            Some(r) => format!("{}:bulk:{count}", graph::ledger::inferred_source(r)),
+                            Some(r) => {
+                                format!("{}:bulk:{count}", graph::ledger::inferred_source(r))
+                            }
                             None => format!("etw:file:ledger:bulk:{count}"),
                         };
                         (Some(folder_glob), src)
@@ -707,7 +719,10 @@ pub fn file_provider(ctx: Arc<Ctx>) -> Provider {
                     );
                     // 35차 Q1: 공동 추정(등록 때 관찰 대상이 여럿)이면 나머지 뿌리마다 같은 기록을 하나씩 더(뿌리 꼬리표만 다름)
                     let extra: Vec<String> = if source.starts_with("etw:file:ledger:inferred:") {
-                        let tail = source.split_once(":bulk:").map(|(_, n)| format!(":bulk:{n}")).unwrap_or_default();
+                        let tail = source
+                            .split_once(":bulk:")
+                            .map(|(_, n)| format!(":bulk:{n}"))
+                            .unwrap_or_default();
                         graph::ledger::co_roots(pid)
                             .into_iter()
                             .map(|r| format!("{}{tail}", graph::ledger::inferred_source(r)))
