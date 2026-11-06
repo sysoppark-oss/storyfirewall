@@ -20,6 +20,10 @@ pub trait Host: Send {
     fn terminate(&self, _pid: u32, _create_ft: Option<i64>) -> String {
         "no_terminator".into()
     }
+    /// 32차 Gemini Q1: 지금 활성인 원격 데스크톱(RDP) 세션 (세션 id, 접속한 쪽 이름 — 자료로만). 모르면 빈 목록
+    fn rdp_sessions(&self) -> Vec<(u32, String)> {
+        Vec::new()
+    }
 }
 
 /// 아무것도 하지 않는 호스트 (Linux 테스트·개발 기본값)

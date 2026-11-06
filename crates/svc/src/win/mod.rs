@@ -19,6 +19,8 @@ pub mod service;
 pub mod time;
 /// A26: engine::WfpBackend 의 Windows 구현
 pub mod wfp_backend;
+/// 32차 Q1: 원격 데스크톱(RDP) 활성 세션
+pub mod wts;
 
 pub fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()

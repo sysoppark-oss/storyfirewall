@@ -103,4 +103,7 @@ impl crate::host::Host for WinHost {
     fn terminate(&self, pid: u32, create_ft: Option<i64>) -> String {
         format!("{:?}", terminate(pid, create_ft))
     }
+    fn rdp_sessions(&self) -> Vec<(u32, String)> {
+        super::wts::rdp_sessions().unwrap_or_default()
+    }
 }
