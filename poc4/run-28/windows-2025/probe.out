@@ -1,0 +1,2 @@
+probe: name=\\.\pipe\story-firewall-201363c14dee48e19aef7f20f63c7ea6 valid=true server_pid=6600 session=0 image_query=denied(open Access is denied. (os error 5))
+probe: hello ok
