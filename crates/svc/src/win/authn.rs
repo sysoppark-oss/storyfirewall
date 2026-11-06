@@ -112,6 +112,18 @@ pub fn client_signature_ok(pid: u32, expected_signer: &str) -> (bool, String) {
     )
 }
 
+/// 오픈소스 공개 빌드(OV 인증서 없음, 2026-11-06 보류 결정): 공개 빌드마다 CI 가 일회용 자체 서명 키를 만들어
+/// UI·서비스에 서명하고, 그 잎 인증서 SHA-256 을 `SF_RELEASE_PIN` 으로 서비스에 컴파일해 넣은 뒤 키를 버린다.
+/// 키를 보관하지 않으므로 훔칠 비밀이 없고, 같은 판의 UI 만 통과한다(판을 올리면 설치 프로그램이 UI·서비스를 함께 바꾼다).
+/// 64자리 16진수가 아니면 없는 것으로 본다(잘못 넣은 값으로 검사가 꺼지지 않게 — 없으면 CN 검사로 간다).
+pub fn release_pin() -> Option<&'static str> {
+    valid_pin(option_env!("SF_RELEASE_PIN"))
+}
+
+fn valid_pin(v: Option<&'static str>) -> Option<&'static str> {
+    v.filter(|p| p.len() == 64 && p.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
 /// 제품 서명자 CN (컴파일 시 고정). OV 인증서 발급 뒤 실제 CN 으로 바꾼다 — README 열린 질문.
 /// 실행 인자·설정 파일로는 바꿀 수 없다: 인자 조작 한 번으로 인증이 무력화되는 것을 막기 위함(제안 3).
 pub const PRODUCT_SIGNER_CN: &str = "StoryFirewall";
@@ -138,7 +150,8 @@ impl WinAuthn {
             .unwrap_or_else(|| "\\\\?\\no-install-dir".into());
         Self {
             expected_signer: PRODUCT_SIGNER_CN.to_string(),
-            pin: None,
+            // 공개 빌드: 지문 고정 + 설치 폴더 검사(둘 다)
+            pin: release_pin().map(|p| p.to_ascii_lowercase()),
             client_dirs: vec![judge::norm_dir(own)],
             pipe,
         }
@@ -201,5 +214,22 @@ impl Authn for WinAuthn {
                 false
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_pin;
+
+    #[test]
+    fn release_pin_must_be_64_hex() {
+        let good = "ab".repeat(32);
+        let good: &'static str = Box::leak(good.into_boxed_str());
+        assert_eq!(valid_pin(Some(good)), Some(good));
+        assert_eq!(valid_pin(None), None);
+        assert_eq!(valid_pin(Some("")), None, "빈 값으로 검사가 꺼지지 않는다");
+        let bad: &'static str = Box::leak("zz".repeat(32).into_boxed_str());
+        assert_eq!(valid_pin(Some(bad)), None);
+        assert_eq!(valid_pin(Some("abcd")), None);
     }
 }
