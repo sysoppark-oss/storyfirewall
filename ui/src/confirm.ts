@@ -31,7 +31,9 @@ export function countdown(a: ApplyReply, owner: HTMLElement, onDone: () => void,
   const rollback = button("되돌리기", async () => {
     const r = await mutation("policy.rollback", { policy_id: a.policy_id });
     stop();
-    box.replaceChildren(r.ok ? el("div", "ok", "되돌렸습니다") : errorBox(r.error.message));
+    // 검수 38-1: 주황 카드에 초록 글자 대신 중립 카드 + 지금 상태를 말한다
+    if (r.ok) box.className = "card";
+    box.replaceChildren(r.ok ? el("div", undefined, el("strong", undefined, "되돌렸습니다"), " — 이 정책은 지금 걸려 있지 않습니다.") : errorBox(r.error.message));
     onDone();
   });
   box.append(el("div", "actions", rollback, confirm));

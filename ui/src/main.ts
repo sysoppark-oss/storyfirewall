@@ -79,9 +79,13 @@ async function showStatus(ok: boolean) {
     status.className = "status ok mixed elevated";
     return;
   }
+  // 검수 38-11(F2): 항목 단위로만 접힌다 — 항목마다 nowrap 덩어리
+  const okItems = el("span", "st-ok");
+  const parts = [`보호 서비스 연결됨`, `${state.serverVersion}판`, ...(elevated ? [] : ["보기 모드(변경은 승인 창에서)"])];
+  parts.forEach((t, i) => okItems.append(...(i ? [" · "] : []), el("span", "nowrap", t)));
   status.replaceChildren(
     ...(elevated ? [el("span", "st-warn", "관리자 권한으로 실행 중 — 권장하지 않음 (일반 권한으로 실행해도 변경은 승인 창으로 됩니다)"), " · "] : []),
-    el("span", "st-ok", elevated ? good : `${good} · 보기 모드(변경은 승인 창에서)`),
+    okItems,
   );
   status.className = elevated ? "status ok mixed elevated" : "status ok mixed";
 }

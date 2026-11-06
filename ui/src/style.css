@@ -313,7 +313,7 @@ table.grid.empty thead { display: none; }
 .seg-opt:last-child { border-right: 0; }
 .seg-opt.on { background: var(--brand-strong); color: var(--on-brand); font-weight: 600; }
 .seg-opt.bad.on { background: var(--fg); color: var(--card); }
-.seg-opt.ok.on { background: transparent; color: var(--ok); box-shadow: inset 0 0 0 2px var(--ok); }
+.seg-opt.ok.on { background: var(--ok); color: var(--on-brand); } /* 검수 38-9: 선택은 채움으로(테두리는 포커스용) */
 .seg-opt:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 /* 규칙 편집 대화상자 */
 dialog.acl-dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--fg); width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; overflow: auto; }

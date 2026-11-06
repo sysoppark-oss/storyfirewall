@@ -199,6 +199,8 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
   let ifaces: NetIf[] = [];
   // 지금 걸린 ACL 이 표로 읽을 수 없는 꼴(고급에서 손으로 쓴 것)인가 — 그러면 표를 적용할 때 그 ACL 을 통째로 바꾼다고 알린다
   let foreign = false;
+  // 마지막으로 걸었던(또는 불러온) ACL 원문 — 되돌린 뒤 '다시 적용…'을 가르는 데 쓴다(검수 38-2)
+  let lastYaml = "";
   const head = el("div", "acl-head");
   const body = el("div", "acl-body");
   const foot = el("div", "acl-foot");
@@ -212,7 +214,7 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
     clear(foot);
     const title = el("div", "acl-title", el("h2", undefined, "보안 정책 (ACL)"), el("span", "badge count", String(rules.length)));
     head.append(title, button("+ 규칙 추가", () => openDialog(-1)));
-    head.append(el("p", "muted small acl-note", "위 규칙부터 판정합니다. 표 전체가 한 번에 적용되고 한 번에 되돌려집니다. ‘허용’은 이 표에서 그 아래 차단에 대한 예외입니다. 끊기 같은 보안 차단이나 Windows 방화벽이 막은 것은 열지 않습니다."));
+    head.append(el("p", "muted small acl-note", "윗줄부터 판정하고 표 전체를 한 번에 적용·되돌립니다. ‘허용’은 이 표에서 그 아래 차단에 대한 예외입니다. 끊기 같은 보안 차단이나 Windows 방화벽이 막은 것은 열지 않습니다."));
     if (foreign) head.append(el("p", "warn acl-foreign", "지금 걸린 ACL 은 표로 보여 줄 수 없는 꼴(아래 ‘고급’에서 직접 쓴 것)이라 이 표에 나오지 않습니다. 이 표를 적용하면 그 ACL 을 통째로 바꿉니다. 원문은 ‘고급’에서 보세요."));
     if (!rules.length) {
       body.append(
@@ -270,10 +272,17 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
     }
     // 아래 줄: 상태(적용 안 된 변경) · 보조(검증) → 주(적용)
     // 2026-11-06 노트북 제보: 자동 되돌림 뒤에도 '같습니다'로 보이고 적용 단추가 꺼져 다시 걸 수 없었다 → 기준은 '지금 걸린' ACL
-    const state = dirty()
-      ? el("span", "acl-dirty", applied ? "● 적용하지 않은 변경이 있습니다" : "● 이 표는 지금 걸려 있지 않습니다(되돌렸거나 아직 적용하지 않음)")
-      : el("span", "muted small", applied ? "지금 걸린 ACL 과 같습니다" : "");
-    const applyBtn = button(dirty() ? "변경 적용…" : "적용…", () => onApply(aclToYaml(rules)), "btn primary");
+    // 검수 38-2: 상태 말을 하나로 — 걸림과 같음 / 걸린 것과 다름 / 되돌려서 안 걸림 / 아직 안 걸어 봄
+    const now = aclToYaml(rules);
+    const rolledBack = !applied && !!lastYaml && now === lastYaml;
+    const state = !dirty()
+      ? el("span", "muted small", applied ? "지금 걸린 ACL과 같습니다" : "")
+      : applied
+        ? el("span", "acl-dirty", "● 적용하지 않은 변경이 있습니다")
+        : rolledBack
+          ? el("span", "acl-dirty", "● 되돌림 — 이 표는 지금 걸려 있지 않습니다")
+          : el("span", "acl-dirty", "● 아직 적용하지 않았습니다 — 이 표는 지금 걸려 있지 않습니다");
+    const applyBtn = button(!dirty() ? "적용…" : applied ? "변경 적용…" : rolledBack ? "다시 적용…" : "적용…", () => onApply(now), "btn primary");
     applyBtn.disabled = !rules.length || !dirty();
     foot.append(state, el("span", "spacer"), button("검증", () => onValidate(aclToYaml(rules))), applyBtn);
   };
@@ -282,7 +291,7 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
     const r: AclRule = { ...(idx >= 0 ? rules[idx]! : EMPTY) };
     const dlg = el("dialog", "acl-dialog");
     const n = idx >= 0 ? idx + 1 : rules.length + 1;
-    dlg.append(el("div", "acl-dlg-head", el("h3", undefined, idx >= 0 ? `규칙 acl.${n} 수정` : `새 규칙 acl.${n}`), el("p", "muted small", "빈 칸은 ‘모두’입니다. 여러 값은 쉼표로 나눕니다.")));
+    dlg.append(el("div", "acl-dlg-head", el("h3", undefined, idx >= 0 ? `규칙 ${n} 수정` : `새 규칙 (${n}번째 줄)`), el("p", "muted small", "빈 칸은 ‘모두’입니다. 여러 값은 쉼표로 나눕니다.")));
     const preview = el("p", "acl-preview");
     const errs = new Map<string, string>();
     const save = button(idx >= 0 ? "저장" : "표에 추가", () => {
@@ -295,7 +304,8 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
     const refresh = () => {
       const bad = errs.size > 0;
       // 잘못된 입력이면 규칙 문장을 보이지 않는다(검수: 1.1.1.999 를 정상 규칙처럼 보여 줌)
-      preview.textContent = bad ? `입력을 고치면 규칙 문장이 여기에 나옵니다 — ${[...errs.values()][0]}` : ruleSentence(r);
+      // 검수 38-10: 오류는 칸 아래 한 곳에서만 — 미리보기는 회색 안내만
+      preview.textContent = bad ? "입력을 고치면 규칙 문장이 여기에 나옵니다" : ruleSentence(r);
       preview.className = `acl-preview ${bad ? "invalid" : r.action}`;
       save.disabled = bad;
     };
@@ -409,6 +419,7 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
       if (back) {
         rules = back;
         applied = active ? aclToYaml(back) : "";
+        lastYaml = aclToYaml(back);
       } else {
         // 37차 Q5 검토 중 발견: 이 안내를 body 에 붙였더니 바로 아래 draw() 가 지워 보이지 않았다
         foreign = true;
@@ -422,6 +433,7 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
   // 적용이 받아들여지면 "적용하지 않은 변경" 표시를 지운다(검수 B3: 적용 직후에도 변경 있음으로 보였다)
   const markApplied = (yaml: string) => {
     applied = yaml;
+    lastYaml = yaml;
     foreign = false;
     draw();
   };
@@ -429,6 +441,8 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
   const setActive = (yaml: string | null) => {
     const back = yaml ? yamlToAcl(yaml) : null;
     const next = back ? aclToYaml(back) : "";
+    if (next) lastYaml = next;
+    else if (applied) lastYaml = applied;
     if (next !== applied) {
       applied = next;
       draw();

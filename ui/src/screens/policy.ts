@@ -105,6 +105,7 @@ export function policy(): HTMLElement {
     const a = r.result as ApplyReply;
     showValidation({ errors: [], warnings: a.warnings, needs_ack: [] });
     if (a.address_block_notice) out.append(el("div", "warn", ext("span", a.address_block_notice)));
+    clear(out); // 검수 38-3: 적용하면 지난 검증 결과("문제 없음")를 지운다
     if (r.approval) {
       clear(pending);
       pending.append(approvalBox(r.approval));
@@ -181,7 +182,8 @@ export function policy(): HTMLElement {
         }, "btn small primary"));
       }
       // 이미 되돌렸거나 만료된 정책에는 걸 것이 없으므로 단추를 두지 않는다(노트북 확인 2026-11-06)
-      if (p.state !== "RolledBack" && p.state !== "Expired") {
+      // 검수 38-4: 위 카드가 확인을 기다리는 동안에는 같은 동작을 줄에 또 두지 않는다
+      if (p.state !== "RolledBack" && p.state !== "Expired" && p.id !== cardPolicyId) {
         row.append(
           button("일시 중지", async () => { await mutation("policy.pause", { policy_id: p.id }); void refreshList(); }, "btn small"),
           button("되돌리기", async () => { await mutation("policy.rollback", { policy_id: p.id }); void refreshList(); }, "btn small"),
