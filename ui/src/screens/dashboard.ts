@@ -66,6 +66,13 @@ interface Health {
   clock_changes_24h: number[];
 }
 /// C1 수집 상태 한 줄: 정상은 회색(초록 점만), 이상이면 주황 문장을 앞에. 원인을 단정하지 않는다
+/// 마지막 사건이 얼마 전인지(상태 줄과 보호 서비스 카드가 같은 말을 쓰게 — 검수 B3)
+export function agoText(lastSec: number | null): string {
+  return lastSec == null ? "없음" : lastSec < 60 ? `${lastSec}초 전` : lastSec < 3600 ? `${Math.floor(lastSec / 60)}분 전` : `${Math.floor(lastSec / 3600)}시간 전`;
+}
+export function lastEventSec(h: { now: number; last_event_ft: number | null }): number | null {
+  return h.last_event_ft ? Math.max(0, h.now - filetimeToUnix(h.last_event_ft)) : null;
+}
 export function healthLine(h: Health, onMore: () => void, gapStart?: { n: number; open: () => void }): HTMLElement {
   const lastSec = h.last_event_ft ? Math.max(0, h.now - filetimeToUnix(h.last_event_ft)) : null;
   const stalled = lastSec == null || lastSec > 60;
@@ -86,8 +93,7 @@ export function healthLine(h: Health, onMore: () => void, gapStart?: { n: number
   else if (lost) box.append(el("span", "lead", "일부 기록이 빠졌을 수 있습니다"));
   else if (clock) box.append(el("span", "lead", "PC 시계가 바뀐 적이 있습니다"));
   else box.append(el("span", undefined, "기록 중"));
-  const ago = lastSec == null ? "없음" : lastSec < 60 ? `${lastSec}초 전` : lastSec < 3600 ? `${Math.floor(lastSec / 60)}분 전` : `${Math.floor(lastSec / 3600)}시간 전`;
-  box.append(el("span", undefined, `마지막 사건 ${ago}`));
+  box.append(el("span", undefined, `마지막 사건 ${agoText(lastSec)}`));
   const g = h.gaps_24h.find((x) => x.reason !== "no_record");
   box.append(el("span", undefined, lost && g ? `손실 ${h.lost_24h}건 (${fmtRange(filetimeToUnix(g.from_ts), filetimeToUnix(g.to_ts))})` : "손실 0 (최근 24시간)"));
   // 25차 Q1: 서비스가 멈췄거나 절전이던 구간. 노트북은 절전이 흔하므로 주황으로 올리지 않고 사실만 보인다
@@ -141,6 +147,8 @@ export function dashboard(): HTMLElement {
       : stalledNow && !sus.length
         ? el("div", undefined, el("div", "big muted", "—"), el("div", "warn small", "기록이 없어 셀 수 없음"))
         : el("div", undefined, el("div", "big " + (sus.length ? "bad" : "ok"), String(groups.length)));
+    // 검수 B1: 기록이 멈췄는데 이미 찾은 의심 사건이 있으면 숫자는 그대로 두되(찾은 경보를 숨기지 않는다) 그 뒤는 세지 못했다고 밝힌다
+    if (ev.ok && stalledNow && sus.length) susBody.append(el("div", "warn small", "기록이 멈춰 그 뒤 일은 세지 못함"));
     if (ev.ok && groups.length !== sus.length) susBody.append(el("div", "muted small", `사건 ${sus.length}건`));
     if (staleN) susBody.append(el("div", "muted small", `그 밖에 수집 전부터 실행 중 ${staleN}건`));
     status.append(card("의심 사건", susBody, sus.length ? "card alert alert-bad" : "card"));
@@ -153,7 +161,7 @@ export function dashboard(): HTMLElement {
     const svcBody = !state.connected
       ? el("div", undefined, el("div", "big-text warn", "연결 끊김"), el("div", "muted", "서비스가 멈췄거나 시작 중일 수 있습니다"))
       : stalledNow
-        ? el("div", undefined, el("div", "big-text warn", "기록 멈춤?"), el("div", "muted", "서비스는 연결됨 · 마지막 사건 없음"))
+        ? el("div", undefined, el("div", "big-text warn", "기록 멈춤?"), el("div", "muted", `서비스는 연결됨 · 마지막 사건 ${agoText(hr.ok ? lastEventSec(hr.result) : null)}`))
         : engineStuckText(state.engineBusyMs)
           // D046-3: 아래 상태 줄이 "엔진이 묶여 있다"고 말하는 동안 카드도 초록 "작동 중"만 보이지 않게(같은 기준값)
           ? el("div", undefined, el("div", "big-text warn", "작동 중 · 응답 늦음"), el("div", "muted", `서비스 ${state.serverVersion}`))
