@@ -91,7 +91,11 @@ jobs:
             while ((Get-Date) -lt $end) {
               $all = Get-CimInstance Win32_Process
               $kids = @($root)
-              do { $n = $kids.Count; $kids = @($kids + @($all | Where-Object { $kids -contains $_.ParentProcessId } | ForEach-Object { $_.ProcessId }) | Select-Object -Unique) } while ($kids.Count -ne $n)
+              # PID reuse guard: a child counts only if it was created after its parent (a reused parent PID made
+              # svchost / WaAppAgent look like UI children - run 2026-11-06 42170238636)
+              $made = @{}
+              foreach ($p in $all) { $made[[int]$p.ProcessId] = $p.CreationDate }
+              do { $n = $kids.Count; $kids = @($kids + @($all | Where-Object { ($kids -contains $_.ParentProcessId) -and $made.ContainsKey([int]$_.ParentProcessId) -and ($_.CreationDate -ge $made[[int]$_.ParentProcessId]) } | ForEach-Object { $_.ProcessId }) | Select-Object -Unique) } while ($kids.Count -ne $n)
               Get-NetTCPConnection -ErrorAction SilentlyContinue | Where-Object { $kids -contains $_.OwningProcess -and $_.RemoteAddress -notmatch '^(127\.|::1$|0\.0\.0\.0$|::$)' } | ForEach-Object {
                 $name = ($all | Where-Object ProcessId -eq $_.OwningProcess | Select-Object -First 1).Name
                 $k = "$name $($_.RemoteAddress):$($_.RemotePort)"
