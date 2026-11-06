@@ -1,0 +1,26 @@
+PASS attached to WebView2 over CDP
+PASS found app page (http://tauri.localhost/)
+PASS UI runs non-elevated (view mode) as standard user (elevated=false)
+PASS connected to service
+PASS dashboard shows suspicious count
+PASS story card for payload.exe
+PASS mindmap canvas rendered
+PASS cut dialog lists payload.exe
+PASS cut dialog separates injected browser
+PASS cut dialog lists precise addresses (ip:port/proto)
+PASS approval helper saw service-computed summary (targets, addresses)
+PASS cut kept via approval helper (no in-UI countdown)
+PASS connections show c2 domain (UTC window)
+PASS process detail opens from connection row
+PASS process detail closes with Esc
+PASS policy needs_ack round-trip then approval helper
+PASS direct policy.apply from standard-user UI rejected -32001 ({"error":{"code":-32001,"message":"unauthorized: 로컬 관리자 그룹만"},"id":25,"jsonrpc":"2.0"})
+PASS change.get from standard-user UI rejected -32001 ({"error":{"code":-32001,"message":"unauthorized: 로컬 관리자 그룹만"},"id":26,"jsonrpc":"2.0"})
+PASS approval helper exit 0 ({"code":0,"res":{"id":28,"jsonrpc":"2.0","result":{"policies":[{"policy_id":3,"state":"Confirmed"}],"result":{"confirm_deadline_ts":1793927006,"filters":2,"policy_id":3,"version":1,"warnings":[]},"state":"done"}}})
+PASS helper committed and confirmed (change.result)
+PASS helper showed service-computed summary
+PASS helper logged exit 0
+PASS helper recorded pipe server session (pid 7600 session 2)
+PASS no CSP violations ()
+PASS no page errors ()
+PASS only app/ipc origins (http://tauri.localhost, http://ipc.localhost)
