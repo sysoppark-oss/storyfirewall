@@ -180,10 +180,13 @@ export function policy(): HTMLElement {
           void refreshList();
         }, "btn small primary"));
       }
-      row.append(
-        button("일시 중지", async () => { await mutation("policy.pause", { policy_id: p.id }); void refreshList(); }, "btn small"),
-        button("되돌리기", async () => { await mutation("policy.rollback", { policy_id: p.id }); void refreshList(); }, "btn small"),
-      );
+      // 이미 되돌렸거나 만료된 정책에는 걸 것이 없으므로 단추를 두지 않는다(노트북 확인 2026-11-06)
+      if (p.state !== "RolledBack" && p.state !== "Expired") {
+        row.append(
+          button("일시 중지", async () => { await mutation("policy.pause", { policy_id: p.id }); void refreshList(); }, "btn small"),
+          button("되돌리기", async () => { await mutation("policy.rollback", { policy_id: p.id }); void refreshList(); }, "btn small"),
+        );
+      }
       list.append(row);
       // 우산 아래 자동 차단: 실행 파일 · 만료 · 줄마다 해제(같은 필터 해제 경로)
       for (const c of p.child_blocks ?? []) {
