@@ -4,10 +4,5 @@
    Compiling geo v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\geo)
    Compiling graph v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\graph)
    Compiling dsl v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\dsl)
-   Compiling engine v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\engine)
    Compiling api v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\api)
-   Compiling judge v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\judge)
-   Compiling collector v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\collector)
-   Compiling story v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\story)
-   Compiling svc v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\svc)
-    Finished `release` profile [optimized] target(s) in 40.07s
+   Compiling engine v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\engine)
