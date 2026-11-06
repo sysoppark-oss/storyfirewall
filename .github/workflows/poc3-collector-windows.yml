@@ -62,8 +62,10 @@ jobs:
         shell: pwsh
         run: |
           # Runner is admin. ETW session needs it.
+          # 90 s (was 55): on a slow runner the scenario took 78 s and the late checks (whoami, port 47555) fell
+          # after collection had stopped (2026-11-06, 60657ff).
           $exe = ".\target\release\collector-poc.exe"
-          $p = Start-Process -FilePath $exe -ArgumentList "55", "collector.db", "--experimental" `
+          $p = Start-Process -FilePath $exe -ArgumentList "90", "collector.db", "--experimental" `
                  -RedirectStandardOutput run.out -RedirectStandardError run.err -PassThru
           Start-Sleep -Seconds 4
 
@@ -187,7 +189,7 @@ jobs:
           Wait-Process -Id $dl1.Id -Timeout 30 -ErrorAction SilentlyContinue
           "=== P8 download ==="; Get-Content p8.txt -ErrorAction SilentlyContinue; Get-Content p8.err -ErrorAction SilentlyContinue
 
-          Wait-Process -Id $p.Id -Timeout 60 -ErrorAction SilentlyContinue
+          Wait-Process -Id $p.Id -Timeout 100 -ErrorAction SilentlyContinue
           if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
           & reg.exe delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v sfpoc /f | Out-Null
           [Environment]::OSVersion.VersionString | Set-Content osver.txt
