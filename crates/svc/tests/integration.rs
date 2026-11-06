@@ -1730,6 +1730,11 @@ fn first_run_watch_settings_notify_and_story_line() {
     assert_eq!(tg["until_ts"], serde_json::json!(T0 + 300), "{tg}");
     assert_eq!(tg["blocked"], false);
     assert!(tg["node_id"].is_i64(), "프로세스 노드로 이어진다: {tg}");
+    // 17판 23-2 ③ 변경 장부: 관찰 대상이면 열리고(자손 트리 사실), 아무 프로세스나 열리지는 않는다
+    let v = a.call("ledger.get", serde_json::json!({"node_id": tg["node_id"]}));
+    assert!(v["result"]["run"]["procs"].is_array(), "{v}");
+    let v = a.call("ledger.get", serde_json::json!({"node_id": 1}));
+    assert!(v["error"].is_object(), "{v}");
     // 정책 화면: 우산 1건(확인 대기, 그 아래 차단 없음)
     let v = a.call("policy.list", serde_json::json!({}));
     let items = v["result"]["items"].as_array().unwrap();

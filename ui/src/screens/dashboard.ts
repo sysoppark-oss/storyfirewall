@@ -6,6 +6,9 @@ import { levelChip, bareTitle } from "./story";
 import { engineStuckText, state } from "../state";
 import { processPanel } from "./process";
 import { watchUntilText } from "./first-run";
+import { buildCard } from "./installs";
+import type { InstallRun } from "./installs-text";
+import { LEDGER_SCOPE, ledgerSummary } from "./first-run";
 
 /// 서비스가 남긴 보호 사건 (A29): 파이프 이름 가로채기, 데이터 폴더 점유 등. 대상이 그래프의 프로세스면 상세로 잇는다
 interface ServiceEvent {
@@ -174,7 +177,20 @@ export function dashboard(): HTMLElement {
         const node = e.target?.node_id;
         if (typeof node === "number") {
           const slot = el("div", "slot");
-          row.append(button("그 프로그램 보기", () => { clear(slot); slot.append(processPanel(node)); }), slot);
+          row.append(button("그 프로그램 보기", () => { clear(slot); slot.append(processPanel(node)); }));
+          // 17판 23-2 ③ 변경 장부: 관찰 대상과 자손이 만든 파일·자동 실행·접속(사실만)
+          if (e.kind === "first_run_watch") {
+            row.append(" ", button("변경 장부", () => {
+              clear(slot);
+              slot.append(loadingBox());
+              void rpc<{ run: InstallRun }>("ledger.get", { node_id: node }).then((r) => {
+                clear(slot);
+                if (!r.ok) return void slot.append(failBox(r.error, () => {}, "변경 장부"));
+                slot.append(el("p", "muted small", LEDGER_SCOPE), buildCard(r.result.run, ledgerSummary(r.result.run)));
+              });
+            }));
+          }
+          row.append(slot);
         }
         list.append(row);
       }

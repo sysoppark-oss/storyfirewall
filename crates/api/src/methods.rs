@@ -58,6 +58,8 @@ pub enum Method {
     InstallsList,
     /// AI 에이전트 감시 (기획서 14판 20-5): AI 도구별 통신한 곳·실행한 명령·만든 파일. 조회(사용자)
     AgentsList,
+    /// 변경 장부 (17판 23-2 ③): 첫 실행 관찰 대상(프로세스 노드)과 자손이 만든 파일·자동 실행·접속. 조회(사용자 범위)
+    LedgerGet,
 }
 
 impl Method {
@@ -75,6 +77,7 @@ impl Method {
         ("story.events", Method::StoryEvents),
         ("installs.list", Method::InstallsList),
         ("agents.list", Method::AgentsList),
+        ("ledger.get", Method::LedgerGet),
         ("events.subscribe", Method::EventsSubscribe),
         ("judge.feedback_normal", Method::JudgeFeedbackNormal),
         ("judge.baseline_status", Method::JudgeBaselineStatus),
@@ -427,6 +430,10 @@ pub fn validate_params(
             check((1..=100).contains(&v.limit), "limit 은 1~100")?;
             check((1..=30).contains(&v.days), "days 는 1~30")?;
         }
+        Method::LedgerGet => {
+            let _: LedgerParams = serde_json::from_value(p.clone())
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+        }
         Method::AgentsList => {
             let v: AgentsParams = serde_json::from_value(p.clone())
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
@@ -549,6 +556,12 @@ pub struct InstallsParams {
     #[serde(default = "default_install_limit")]
     pub limit: u32,
 }
+/// ledger.get 파라미터: 관찰 대상 프로세스 노드
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LedgerParams {
+    pub node_id: i64,
+}
+
 /// agents.list 파라미터: 최근 며칠(기본 1일, 최대 7일 — 미리 계산 범위), 최대 몇 건(기본 20)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentsParams {

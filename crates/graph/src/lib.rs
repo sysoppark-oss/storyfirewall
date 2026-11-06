@@ -17,6 +17,7 @@ pub mod event;
 pub mod hash;
 pub mod ingest;
 pub mod install;
+pub mod ledger;
 pub mod query;
 pub mod remote;
 pub mod retention;

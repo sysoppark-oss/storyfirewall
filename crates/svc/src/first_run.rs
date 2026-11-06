@@ -655,6 +655,22 @@ fn start_watch(world: &mut crate::runtime::World, t: &Target, s: Settings) {
     if !record_watch(&world.graph, t, s, blocked) {
         return;
     }
+    // 17판 23-2 ③ 변경 장부: 관찰 시간 동안 이 프로그램과 자손이 만든·이름 바꾼 파일을 바로 기록(수집기가 물어본다).
+    // 대기(서명·출신 기다림) 사이에 이미 띄운 자손도 넣는다
+    let until_ft = crate::runtime::unix_to_filetime(until);
+    if t.pid != 0 {
+        graph::ledger::watch(t.pid, until_ft);
+    }
+    if let Ok(desc) = graph::views::descendants(&world.graph, t.proc_node, 200) {
+        for d in desc {
+            if let Ok(n) = world.graph.node(d) {
+                let ended = n.attr("ended").and_then(|v| v.as_bool()) == Some(true);
+                if let (false, Some(p)) = (ended, n.attr("pid").and_then(|v| v.as_u64())) {
+                    graph::ledger::watch(p as u32, until_ft);
+                }
+            }
+        }
+    }
     let mut detail = format!(
         "{}: {}",
         story_line(t.sig, t.installer, s.minutes, blocked),

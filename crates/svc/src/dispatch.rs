@@ -1230,6 +1230,26 @@ fn handle(
             };
             j(serde_json::json!({ "items": items }))
         }
+        Method::LedgerGet => {
+            let v: api::methods::LedgerParams = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            // 관찰 대상으로 기록된 프로세스만(아무 프로세스의 자손 트리를 여는 통로가 되지 않게), 보이는 범위 검사
+            let watched: bool = world
+                .graph
+                .conn()
+                .query_row(
+                    "SELECT 1 FROM first_run_watch WHERE proc_node = ?1",
+                    [v.node_id],
+                    |_| Ok(()),
+                )
+                .is_ok();
+            if !watched || !caller.scope().process_visible(&world.graph, v.node_id) {
+                return Err(RpcError::with(ErrorCode::InvalidParams, "관찰 대상이 아닙니다".to_string()));
+            }
+            // 자손 300까지(상한을 넘으면 접속·쓰기를 한 자손 먼저 — install_xray)
+            let run = graph::install::install_xray(&world.graph, v.node_id, 300).map_err(internal)?;
+            j(serde_json::json!({ "run": run }))
+        }
         Method::AgentsList => {
             let v: api::methods::AgentsParams = serde_json::from_value(p)
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;

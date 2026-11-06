@@ -55,3 +55,18 @@ export function firstRunSentence(mode: FirstRunMode): string {
 export function watchUntilText(until: unknown, fmt: (unix: number) => string): string {
   return typeof until === "number" && until > 0 ? `관찰 끝 ${fmt(until)}` : "";
 }
+
+/// 변경 장부(17판 23-2 ③)의 기록 범위 안내 — 무엇을 적고 무엇을 못 적는지
+export const LEDGER_SCOPE =
+  "관찰 시간 동안 이 프로그램과 그 자손이 새로 만들거나 이름을 바꾼 파일을 적습니다(위치·종류 상관없음). 있던 파일의 내용을 고친 것과 지운 것은 아직 적지 못합니다.";
+
+/// 변경 장부 한 줄 요약(사실의 개수만)
+export function ledgerSummary(run: { procs: string[]; files: string[]; autoruns: unknown[]; remotes: unknown[]; truncated?: boolean }): string {
+  const more = run.truncated ? " 이상" : "";
+  const parts: string[] = [];
+  if (run.files.length) parts.push(`파일 ${run.files.length}개${more} 만듦·이름 바꿈`);
+  if (run.procs.length > 1) parts.push(`프로그램 ${run.procs.length - 1}개${more} 실행`);
+  if (run.autoruns.length) parts.push(`자동 실행 ${run.autoruns.length}건 등록`);
+  if (run.remotes.length) parts.push(`접속한 곳 ${run.remotes.length}곳`);
+  return parts.length ? parts.join(" · ") : "관찰 시간 동안 적힌 변경이 없습니다";
+}

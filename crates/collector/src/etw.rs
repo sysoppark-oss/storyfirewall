@@ -187,6 +187,10 @@ pub fn process_provider(ctx: Arc<Ctx>) -> Provider {
                         ev.source = source;
                         ctx.emit(ev);
                     }
+                    // 17판 23-2 ③ 변경 장부: 관찰 대상의 자손은 같은 기한을 물려받는다
+                    if graph::ledger::on_spawn(ppid, pid, ts) {
+                        ctx.count("ledger_spawn");
+                    }
                     // A30: 로그온 세션 (Kernel-Process ProcessStart 의 SessionID). 노드 키와 같은 생성 시각으로 보낸다
                     let session = u32f(&p, "SessionID");
                     ctx.emit(Event::new(
@@ -244,6 +248,7 @@ pub fn process_provider(ctx: Arc<Ctx>) -> Provider {
                         missing(&ctx);
                         return;
                     };
+                    graph::ledger::on_exit(pid);
                     ctx.emit(Event::new(
                         ts,
                         "etw:process",
@@ -624,12 +629,25 @@ pub fn file_provider(ctx: Arc<Ctx>) -> Provider {
                 }
                 return;
             }
+            let pid = record.process_id();
+            // 17판 23-2 ③ 변경 장부: 관찰 대상과 그 자손이 만든·이름 바꾼 파일은 실행 여부·위치와 상관없이 바로 기록한다
+            // (설치 프로그램은 Program Files 에 쓴다). 실행 파일 확장자 제한도 없다 — 수집 키워드가 만들기·이름 바꾸기뿐이라 양은 작다
+            if kind != "namedelete" && graph::ledger::is_watched(pid, ts) && !path.ends_with(":Zone.Identifier") {
+                ctx.count("ledger_file");
+                ctx.emit(Event::new(
+                    ts,
+                    if kind == "rename" { "etw:file:ledger:rename" } else { "etw:file:ledger" },
+                    EventKind::FileWrite {
+                        proc: ProcRef::new(pid, None),
+                        path: path.clone(),
+                    },
+                ));
+            }
             // 시스템·Program Files 는 제외 (명세 4판 2-2)
             let lower = path.to_ascii_lowercase();
             if lower.contains(":\\windows\\") || lower.contains(":\\program files") {
                 return;
             }
-            let pid = record.process_id();
             // ADS 생성(`x:Zone.Identifier`) → 1초 뒤 본체의 MOTW 를 읽는다 (내용을 쓰기 전일 수 있음)
             if kind == "create" {
                 if let Some(base) = path.strip_suffix(":Zone.Identifier") {
