@@ -2,6 +2,7 @@ import { dashboard } from "./screens/dashboard";
 import { connections } from "./screens/connections";
 import { story } from "./screens/story";
 import { installs } from "./screens/installs";
+import { agents } from "./screens/agents";
 import { policy } from "./screens/policy";
 import { settings } from "./screens/settings";
 import { engineStuckText, state } from "./state";
@@ -31,6 +32,7 @@ const SCREENS = {
   connections: { label: "연결", make: () => connections() },
   story: { label: "이야기", make: (a?: Record<string, unknown>) => story(a) },
   installs: { label: "설치", make: () => installs() },
+  agents: { label: "AI 도구", make: () => agents() },
   policy: { label: "정책", make: () => policy() },
   settings: { label: "설정", make: () => settings() },
 } as const;

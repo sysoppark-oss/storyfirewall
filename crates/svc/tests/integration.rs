@@ -1900,3 +1900,51 @@ fn first_run_watch_settings_notify_and_story_line() {
     assert_eq!(n_watch, 2, "끄기: {v}");
     rt.shutdown();
 }
+
+/// AI 에이전트 감시 (14판 20-5): 미리 계산 전에는 ready=false(조회 때 계산하지 않음), 주기 판정 뒤에는 도구별 목록. 범위 검사
+#[test]
+fn agents_list_reads_precomputed_cache() {
+    let (rt, _, _) = boot();
+    let mut a = Client::connect(&rt, 100, 1);
+    a.hello();
+    let v = a.call("agents.list", serde_json::json!({}));
+    assert_eq!(v["result"]["ready"], false, "{v}");
+    let v = a.call("agents.list", serde_json::json!({"days": 8}));
+    assert!(v["error"].is_object(), "{v}");
+    let t = svc::runtime::unix_to_filetime(T0) - 3600 * 10_000_000;
+    let evs = vec![
+        Event {
+            ts: t,
+            source: "etw:process".into(),
+            kind: EventKind::ProcessStart {
+                pid: 7000,
+                ppid: 4,
+                image: r"C:\Users\pjg\AppData\Local\AnthropicClaude\claude.exe".into(),
+                create_time: Some(t),
+            },
+        },
+        Event {
+            ts: t + 10_000_000,
+            source: "etw:network".into(),
+            kind: EventKind::Connect {
+                proc: ProcRef::new(7000, None),
+                proto: Proto::Tcp,
+                direction: Direction::Out,
+                laddr: "10.0.0.2".into(),
+                lport: 50000,
+                raddr: "203.0.113.40".into(),
+                rport: 443,
+            },
+        },
+    ];
+    rt.tx.send(Command::Ingest(evs)).unwrap();
+    rt.tx.send(Command::Judge).unwrap();
+    let v = a.call("agents.list", serde_json::json!({"days": 1}));
+    assert_eq!(v["result"]["ready"], true, "{v}");
+    let items = v["result"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{v}");
+    assert_eq!(items[0]["key"], "claude");
+    assert_eq!(items[0]["found_by"], "image");
+    assert!(items[0]["run"]["remotes"].to_string().contains("203.0.113.40"), "{v}");
+    rt.shutdown();
+}

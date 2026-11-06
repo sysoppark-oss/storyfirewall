@@ -44,7 +44,8 @@ function section(title: string, items: HTMLElement[], note?: string): HTMLElemen
   return box;
 }
 
-function buildCard(run: InstallRun): HTMLElement {
+/// 카드 하나. AI 도구 화면(14판 20-5)도 같은 모양을 쓴다 — `summary` 로 요약 문장만 바꾼다
+export function buildCard(run: InstallRun, summary: string = summaryText(run)): HTMLElement {
   const card = el("div", "card install");
   const title = ext("h3", baseName(run.image));
   title.title = sanitize(run.image, 400).text;
@@ -64,7 +65,7 @@ function buildCard(run: InstallRun): HTMLElement {
   }
   card.append(meta);
 
-  card.append(el("p", "install-summary", summaryText(run)));
+  card.append(el("p", "install-summary", summary));
   if (run.truncated) card.append(el("p", "warn small", "기록이 많아 일부만 모았습니다. 아래 목록은 전부가 아닐 수 있습니다."));
 
   const det = el("details", "install-detail");

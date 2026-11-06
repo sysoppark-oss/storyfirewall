@@ -164,6 +164,8 @@ pub struct World<'a> {
     pub install_cache: graph::install::InstallCache,
     /// 원격 제어 사기 경보(14판 20-4): 원격 도구 프로세스와 세션 모양 추적
     pub remote: crate::remote_watch::RemoteWatch,
+    /// AI 에이전트 감시(14판 20-5) 미리 계산: (계산한 엔진 벽시각, 최근 7일 목록). agents.list 는 이것만 읽는다
+    pub agent_cache: Option<(i64, Vec<graph::agent::AgentRun>)>,
     /// 갈래 C: 증분 주기 판정기(메모리 뷰·사슬 캐시). 결과는 전체 판정과 같다(judge 시험).
     /// 30번에 한 번·보관 정리 뒤·기준선 학습 뒤·"정상" 피드백 뒤·오류 뒤에는 전체를 다시 읽는다.
     /// SF_JUDGE_INCREMENTAL=0 이면 매번 전체(현장에서 되돌리기용)
@@ -280,6 +282,7 @@ impl Runtime {
                     decoys_seen: None,
                     install_cache: graph::install::InstallCache::default(),
                     remote: Default::default(),
+                    agent_cache: None,
                 };
                 crate::first_run::ensure_table(&world.graph);
                 // 재시작 대조: 누락 재등록·고아 제거·미확인 롤백
@@ -305,6 +308,9 @@ impl Runtime {
 pub fn unix_to_filetime(unix_secs: i64) -> i64 {
     (unix_secs + 11_644_473_600) * 10_000_000
 }
+
+/// AI 도구 목록을 다시 계산하는 간격(초)
+const AGENT_EVERY_SECS: i64 = 300;
 
 fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
     // TIMECHANGE 합치기 중에 받은 다른 명령을 다음 바퀴로 넘기는 자리
@@ -455,6 +461,16 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                 world
                     .timings
                     .record("엔진: 설치 목록 미리 계산", ti.elapsed());
+                // 14판 20-5: AI 도구 목록 미리 계산(5분마다, 최근 7일). 조회 때 계산하지 않는다(2초 원칙)
+                if world.agent_cache.as_ref().is_none_or(|(at, _)| world.engine_wall() - at >= AGENT_EVERY_SECS) {
+                    let ta = std::time::Instant::now();
+                    let since = unix_to_filetime(world.engine_wall() - 7 * 86_400);
+                    match graph::agent::agent_activity(&world.graph, since, 50, 300) {
+                        Ok(v) => world.agent_cache = Some((world.engine_wall(), v)),
+                        Err(e) => eprintln!("agents: refresh failed: {e}"),
+                    }
+                    world.timings.record("엔진: AI 도구 미리 계산", ta.elapsed());
+                }
                 // 27차: 보관 정리 — 판정이 먼저 장(chapter)을 남긴 뒤(의심 사건 선은 30일 보존), 1시간마다
                 if world.engine_wall() - world.last_retention_wall >= RETENTION_EVERY_SECS {
                     let tr = std::time::Instant::now();

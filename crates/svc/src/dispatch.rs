@@ -1230,6 +1230,26 @@ fn handle(
             };
             j(serde_json::json!({ "items": items }))
         }
+        Method::AgentsList => {
+            let v: api::methods::AgentsParams = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            // 읽기만(판정하지 않는다). 미리 계산 전(시작 직후 몇 분)이면 빈 목록과 ready=false — 조회 때 계산하지 않는다
+            let since_ft = crate::runtime::unix_to_filetime(world.engine_wall() - v.days as i64 * 86_400);
+            let scope = caller.scope();
+            let (ready, items): (bool, Vec<&graph::agent::AgentRun>) = match &world.agent_cache {
+                Some((_, all)) => (
+                    true,
+                    all.iter()
+                        // 기간 안에 시작했거나 그 뒤까지 일한 것(아직 도는 데스크톱 앱 포함)
+                        .filter(|a| a.run.last_ts >= since_ft || a.run.start_ts >= since_ft)
+                        .filter(|a| scope.process_visible(&world.graph, a.run.root))
+                        .take(v.limit as usize)
+                        .collect(),
+                ),
+                None => (false, Vec::new()),
+            };
+            j(serde_json::json!({ "ready": ready, "items": items }))
+        }
         Method::ListenersList => {
             let ls = world
                 .host

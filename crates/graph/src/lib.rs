@@ -11,6 +11,7 @@
 //!
 //! 이 크레이트는 OS 의존이 없다. Windows 이벤트는 `event::Event` 로 정규화되어 들어온다.
 
+pub mod agent;
 pub mod changes;
 pub mod event;
 pub mod hash;
