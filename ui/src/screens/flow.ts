@@ -79,6 +79,11 @@ const SVG = "http://www.w3.org/2000/svg";
 /// 열마다 보이는 상자 수(나머지는 "외 N개" — 전부는 마인드맵)
 export const PER_COL = 8;
 
+/// 조상 쪽의 "실행 파일" 노드(판정 근거 아님)는 그리지 않는다 — 같은 이름이 파일·출신 열에 두 번 보이는 혼동(마인드맵 D006-6)
+export function hiddenOrigin(b: { side: string; node: { kind: string }; via: { rel: string; chapter: number | null } | null }): boolean {
+  return b.side === "origin" && b.node.kind === "file" && b.via?.rel === "executed_as" && b.via.chapter == null;
+}
+
 /// 도메인 노드 id → 같은 호스트의 접속지 노드 id
 export function domainAliases(branches: { node: { id: number; kind: string; key: string; label: string } }[]): Map<number, number> {
   const remoteByHost = new Map<string, number>();
@@ -205,9 +210,24 @@ export function flowView(ev: {
     const alias = domainAliases(r.result.branches);
     const best = new Map<number, Branch>();
     for (const b of r.result.branches) {
-      if (alias.has(b.node.id)) continue;
+      if (alias.has(b.node.id) || hiddenOrigin(b)) continue;
       const cur = best.get(b.node.id);
       if (!cur || rank(b) < rank(cur)) best.set(b.node.id, b);
+    }
+    // 주인공 프로세스: 뿌리가 파일이면 그 파일로 실행된 첫 프로세스(마인드맵 D007-4 와 같은 규칙)
+    const root0 = [...best.values()].find((b) => b.depth === 0);
+    let heroId = root0?.node.id ?? ev.root;
+    if (root0?.node.kind === "file") {
+      const p = [...best.values()].find((b) => b.side === "action" && b.depth === 1 && b.node.kind === "process" && b.via?.rel === "executed_as");
+      if (p) heroId = p.node.id;
+    }
+    // 접속지는 주인공의 것과 판정 근거만 상자로. 다른 프로그램(조상 브라우저 등)의 접속은 그 상자 안 "접속 N" 으로 접는다(마인드맵 D007-5)
+    const foldN = new Map<number, number>();
+    for (const b of [...best.values()]) {
+      const target = b.node.kind === "remote" || b.node.kind === "domain";
+      if (!target || !b.via || b.via.chapter != null || b.via.src === heroId) continue;
+      best.delete(b.node.id);
+      foldN.set(b.via.src, (foldN.get(b.via.src) ?? 0) + 1);
     }
     // 열 안 순서: 판정 선(chapter) 먼저, 그다음 시각순. 열마다 PER_COL 개까지(나머지는 "외 N개" — 화면이 길어지지 않게)
     const byCol = new Map<FlowCol, Branch[]>();
@@ -233,6 +253,8 @@ export function flowView(ev: {
           img.alt = "";
           box.prepend(img);
         }
+        const fold = foldN.get(b.node.id);
+        if (fold) box.append(el("span", "flow-box-sub", `접속 ${fold}곳 — 마인드맵에서`));
         box.title = b.node.label || b.node.key;
         box.addEventListener("click", () => {
           for (const x of boxes.values()) x.classList.remove("selected");

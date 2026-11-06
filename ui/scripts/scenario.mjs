@@ -25,9 +25,14 @@ export async function runScenario(page, outDir, must, opts = {}) {
   await page.waitForTimeout(500);
   must((await page.evaluate(() => document.querySelectorAll(".flowview .rail-step").length)) === 5, "flow rail has 5 steps");
   must((await page.evaluate(() => document.querySelectorAll(".flowview .flow-line").length)) > 0, "flow lines drawn");
-  await page.locator(".flowview").scrollIntoViewIfNeeded();
-  await page.waitForTimeout(300);
-  await page.locator(".flowview").screenshot({ path: `${outDir}/2b-flow.png` });
+  // 요소 캡처는 창보다 긴 요소에서 잘린다(WebView2) — 1393 폭으로 넓혀 흐름 보기 위쪽에 맞춘 뒤 전체 화면을 찍는다
+  const vp = page.viewportSize();
+  await page.setViewportSize({ width: 1393, height: 1400 });
+  await page.locator(".flowview").evaluate((e) => e.scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${outDir}/2b-flow.png` });
+  must((await page.evaluate(() => document.querySelectorAll(".flowview .flow-tail-row, .flowview .flow-tail .muted").length)) > 0, "flow tail rendered");
+  if (vp) await page.setViewportSize(vp);
   // 같은 접속지가 도메인·접속지 상자로 두 번 나오지 않는다
   const dup = await page.evaluate(() => { const t = [...document.querySelectorAll(".flowview .col-did .flow-box-title")].map((e) => e.textContent?.toLowerCase()); return t.length - new Set(t).size; });
   must(dup === 0, `flow did-column has no duplicate boxes (${dup})`);

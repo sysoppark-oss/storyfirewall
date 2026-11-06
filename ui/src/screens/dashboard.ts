@@ -95,7 +95,7 @@ export function healthLine(h: Health, onMore: () => void, gapStart?: { n: number
   else box.append(el("span", undefined, "기록 중"));
   box.append(el("span", undefined, `마지막 사건 ${agoText(lastSec)}`));
   const g = h.gaps_24h.find((x) => x.reason !== "no_record");
-  box.append(el("span", undefined, lost && g ? `손실 ${h.lost_24h}건 (${fmtRange(filetimeToUnix(g.from_ts), filetimeToUnix(g.to_ts))})` : "손실 0 (최근 24시간)"));
+  box.append(el("span", undefined, lost && g ? `손실 ${h.lost_24h}건 (${fmtRange(filetimeToUnix(g.from_ts), filetimeToUnix(g.to_ts))})` : stalled ? "손실 — (기록이 멈췄으면 셀 수 없음)" : "손실 0 (최근 24시간)"));
   // 25차 Q1: 서비스가 멈췄거나 절전이던 구간. 노트북은 절전이 흔하므로 주황으로 올리지 않고 사실만 보인다
   const nr = h.gaps_24h.filter((x) => x.reason === "no_record");
   const lastNr = nr[nr.length - 1];
@@ -148,7 +148,7 @@ export function dashboard(): HTMLElement {
         ? el("div", undefined, el("div", "big muted", "—"), el("div", "warn small", "기록이 없어 셀 수 없음"))
         : el("div", undefined, el("div", "big " + (sus.length ? "bad" : "ok"), String(groups.length)));
     // 검수 B1: 기록이 멈췄는데 이미 찾은 의심 사건이 있으면 숫자는 그대로 두되(찾은 경보를 숨기지 않는다) 그 뒤는 세지 못했다고 밝힌다
-    if (ev.ok && stalledNow && sus.length) susBody.append(el("div", "warn small", "기록이 멈춰 그 뒤 일은 세지 못함"));
+    if (ev.ok && stalledNow && sus.length) susBody.append(el("div", "warn small", "기록이 멈췄을 수 있어 그 뒤 일은 세지 못했을 수 있음"));
     if (ev.ok && groups.length !== sus.length) susBody.append(el("div", "muted small", `사건 ${sus.length}건`));
     if (staleN) susBody.append(el("div", "muted small", `그 밖에 수집 전부터 실행 중 ${staleN}건`));
     status.append(card("의심 사건", susBody, sus.length ? "card alert alert-bad" : "card"));

@@ -53,3 +53,12 @@ describe("도메인·접속지 합치기", () => {
     expect(m.has(3)).toBe(false);
   });
 });
+
+describe("조상 실행 파일 숨김", () => {
+  it("판정 근거가 아닌 조상 쪽 executed_as 파일만 숨긴다", async () => {
+    const { hiddenOrigin } = await import("./flow");
+    expect(hiddenOrigin({ side: "origin", node: { kind: "file" }, via: { rel: "executed_as", chapter: null } })).toBe(true);
+    expect(hiddenOrigin({ side: "origin", node: { kind: "file" }, via: { rel: "executed_as", chapter: 1 } })).toBe(false);
+    expect(hiddenOrigin({ side: "action", node: { kind: "file" }, via: { rel: "executed_as", chapter: null } })).toBe(false);
+  });
+});
