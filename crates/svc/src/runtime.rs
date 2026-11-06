@@ -166,6 +166,8 @@ pub struct World<'a> {
     pub remote: crate::remote_watch::RemoteWatch,
     /// AI 에이전트 감시(14판 20-5) 미리 계산: (계산한 엔진 벽시각, 최근 7일 목록). agents.list 는 이것만 읽는다
     pub agent_cache: Option<(i64, Vec<graph::agent::AgentRun>)>,
+    /// 37차 Q2: 지난번 본 (별칭, LUID) 짝. 바뀌면 인터페이스 조건 규칙을 지금 LUID 로 다시 건다. None = 아직 못 봄
+    pub if_seen: Option<Vec<(String, u64)>>,
     /// 갈래 C: 증분 주기 판정기(메모리 뷰·사슬 캐시). 결과는 전체 판정과 같다(judge 시험).
     /// 30번에 한 번·보관 정리 뒤·기준선 학습 뒤·"정상" 피드백 뒤·오류 뒤에는 전체를 다시 읽는다.
     /// SF_JUDGE_INCREMENTAL=0 이면 매번 전체(현장에서 되돌리기용)
@@ -283,11 +285,14 @@ impl Runtime {
                     install_cache: graph::install::InstallCache::default(),
                     remote: Default::default(),
                     agent_cache: None,
+                    if_seen: None,
                 };
                 crate::first_run::ensure_table(&world.graph);
                 // 35차 Q2: 보관했던 장부 이름 되살리기(기한 지난 것은 버림)
                 if let Some(js) = world.graph.get_meta("ledger_names").ok().flatten() {
-                    if let Ok(rows) = serde_json::from_str::<Vec<(String, Vec<(u32, i64)>, i64)>>(&js) {
+                    if let Ok(rows) =
+                        serde_json::from_str::<Vec<(String, Vec<(u32, i64)>, i64)>>(&js)
+                    {
                         graph::ledger::import_names(rows, unix_to_filetime(world.engine_wall()));
                     }
                 }
@@ -474,14 +479,33 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                     .timings
                     .record("엔진: 설치 목록 미리 계산", ti.elapsed());
                 // 14판 20-5: AI 도구 목록 미리 계산(5분마다, 최근 7일). 조회 때 계산하지 않는다(2초 원칙)
-                if world.agent_cache.as_ref().is_none_or(|(at, _)| world.engine_wall() - at >= AGENT_EVERY_SECS) {
+                if world
+                    .agent_cache
+                    .as_ref()
+                    .is_none_or(|(at, _)| world.engine_wall() - at >= AGENT_EVERY_SECS)
+                {
                     let ta = std::time::Instant::now();
                     let since = unix_to_filetime(world.engine_wall() - 7 * 86_400);
                     match graph::agent::agent_activity(&world.graph, since, 50, 300) {
                         Ok(v) => world.agent_cache = Some((world.engine_wall(), v)),
                         Err(e) => eprintln!("agents: refresh failed: {e}"),
                     }
-                    world.timings.record("엔진: AI 도구 미리 계산", ta.elapsed());
+                    world
+                        .timings
+                        .record("엔진: AI 도구 미리 계산", ta.elapsed());
+                }
+                // 37차 Q2: 어댑터 재설치·이름 바꾸기로 별칭↔LUID 짝이 바뀌면 인터페이스 규칙을 다시 건다(시작 때는 reconcile 이 함)
+                if let Ok(ifs) = world.host.interfaces() {
+                    let mut now: Vec<(String, u64)> =
+                        ifs.into_iter().map(|i| (i.alias, i.luid)).collect();
+                    now.sort();
+                    if world.if_seen.as_ref().is_some_and(|prev| *prev != now) {
+                        match world.engine.rebind_interfaces() {
+                            Ok(n) => eprintln!("netif: changed, rebound {n} filters"),
+                            Err(e) => eprintln!("netif: rebind failed: {e}"),
+                        }
+                    }
+                    world.if_seen = Some(now);
                 }
                 // 27차: 보관 정리 — 판정이 먼저 장(chapter)을 남긴 뒤(의심 사건 선은 30일 보존), 1시간마다
                 if world.engine_wall() - world.last_retention_wall >= RETENTION_EVERY_SECS {
@@ -872,7 +896,12 @@ pub fn register_decoys(world: &mut World, dirs: Vec<String>) {
     let mut installs: Vec<(String, Vec<String>)> =
         graph::install::installs(&world.graph, since, 50, 300, |_| true)
             // 31차 Gemini Q3: 이름 조각만으로 미끼를 빼면 탈취 도구가 싸게 끈다 — 설치 파일이 유효 서명일 때만
-            .map(|v| v.into_iter().filter(|r| r.signer.is_some()).map(|r| (r.image, r.files)).collect())
+            .map(|v| {
+                v.into_iter()
+                    .filter(|r| r.signer.is_some())
+                    .map(|r| (r.image, r.files))
+                    .collect()
+            })
             .unwrap_or_default();
     // 설치로 잡히지 않은 설치(이름에 setup 없음)도 그 프로그램이 실행되면 보인다: 이름 조각이 든 실행 파일
     for c in decoy::CANDIDATES {

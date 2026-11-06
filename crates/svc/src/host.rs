@@ -20,6 +20,9 @@ pub struct NetIf {
     pub up: bool,
     /// 이 PC 주소 "주소/접두 길이"
     pub addrs: Vec<String>,
+    /// 인터페이스 LUID(화면에는 보내지 않음) — 37차 Q2: 별칭↔LUID 짝이 바뀌었는지 1분마다 비교
+    #[serde(skip)]
+    pub luid: u64,
 }
 
 pub trait Host: Send {

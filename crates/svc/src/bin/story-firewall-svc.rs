@@ -554,11 +554,15 @@ mod real {
         });
         // L072(14판 20-4): 원격 도구 기준값 실측 — 지금 통신 중인 원격 도구의 누적 송수신·기간(유휴 평균 송신 속도를 본다)
         // 32차 Q1: 지금 활성 RDP 세션(WTS) — 서비스와 같은 판단의 입력
-        ms("rdp sessions now", &mut || match svc::win::wts::rdp_sessions() {
-            Ok(v) => format!("n={}", v.len()),
-            Err(e) => format!("err={e}"),
-        });
-        ms("remote tools (10min)", &mut || match graph::remote::running_tools(&store, now_ft - 600 * 10_000_000) {
+        ms(
+            "rdp sessions now",
+            &mut || match svc::win::wts::rdp_sessions() {
+                Ok(v) => format!("n={}", v.len()),
+                Err(e) => format!("err={e}"),
+            },
+        );
+        ms("remote tools (10min)", &mut || {
+            match graph::remote::running_tools(&store, now_ft - 600 * 10_000_000) {
             Ok(v) if v.is_empty() => "none".to_string(),
             Ok(v) => v
                 .iter()
@@ -577,6 +581,7 @@ mod real {
                 .collect::<Vec<_>>()
                 .join(" | "),
             Err(e) => format!("err={e}"),
+        }
         });
         ms("seen_before remotes (30d)", &mut || {
             let day = 86_400 * 10_000_000i64;

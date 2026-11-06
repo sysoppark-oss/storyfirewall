@@ -119,7 +119,8 @@ impl crate::host::Host for WinHost {
             return None;
         }
         // 같은 경로를 다시 읽지 않게 캐시(크기 상한). 바꿔치기된 같은 경로는 다음 재시작까지 옛 이름 — 섀도·tscon 대조에만 쓰는 값이라 감수
-        static CACHE: std::sync::Mutex<Option<std::collections::HashMap<String, Option<String>>>> = std::sync::Mutex::new(None);
+        static CACHE: std::sync::Mutex<Option<std::collections::HashMap<String, Option<String>>>> =
+            std::sync::Mutex::new(None);
         let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         let m = g.get_or_insert_with(std::collections::HashMap::new);
         if let Some(v) = m.get(&l) {
@@ -128,7 +129,8 @@ impl crate::host::Host for WinHost {
         if m.len() > 4096 {
             m.clear();
         }
-        let v = collector::cmdline::original_file_name(path).map(|n| collector::cmdline::norm_original(&n));
+        let v = collector::cmdline::original_file_name(path)
+            .map(|n| collector::cmdline::norm_original(&n));
         m.insert(l, v.clone());
         v
     }

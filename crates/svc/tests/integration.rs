@@ -1950,6 +1950,11 @@ fn agents_list_reads_precomputed_cache() {
     assert_eq!(items.len(), 1, "{v}");
     assert_eq!(items[0]["key"], "claude");
     assert_eq!(items[0]["found_by"], "image");
-    assert!(items[0]["run"]["remotes"].to_string().contains("203.0.113.40"), "{v}");
+    assert!(
+        items[0]["run"]["remotes"]
+            .to_string()
+            .contains("203.0.113.40"),
+        "{v}"
+    );
     rt.shutdown();
 }

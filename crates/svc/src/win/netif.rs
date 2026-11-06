@@ -51,6 +51,7 @@ pub fn interfaces() -> Result<Vec<crate::host::NetIf>, String> {
                     description: utf16z(&r.Description),
                     up: r.OperStatus == OPER_UP,
                     addrs: Vec::new(),
+                    luid: r.InterfaceLuid.Value,
                 },
             ));
         }

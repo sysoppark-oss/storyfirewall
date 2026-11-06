@@ -1276,7 +1276,7 @@ impl<'a> Engine<'a> {
     /// 옛 LUID 를 쥔 채 아무것도 걸지 않는다(차단이 조용히 풀림). 서비스 시작 때 인터페이스 조건이 있는 살아 있는 필터를
     /// 정책 판 단위로 지금 별칭으로 다시 건다(한 판 = 한 트랜잭션, weight 는 명세에 그대로라 순서 유지).
     /// 별칭이 없으면 트랜잭션이 실패해 옛 필터가 남는다 → 경고 사건만 남기고 계속한다(시작 대조를 멈추지 않음).
-    fn rebind_interfaces(&mut self) -> Result<usize> {
+    pub fn rebind_interfaces(&mut self) -> Result<usize> {
         let live: HashSet<u64> = self
             .backend
             .list_ours()

@@ -644,11 +644,20 @@ fn rerun_of_watched_path_waits_for_fresh_hash() {
         Assess::Pending
     );
     // 33차 Q5: 대기 시간이 지나도 안 오면 "모르는 내용" — 다시 관찰(이번 실행이 새 내용 판, 이미 관찰한 것으로 치지 않음)
-    let tu = target(svc::first_run::assess_at_expiry(&st, &none, proc_node(&st, 41, T + 100)));
+    let tu = target(svc::first_run::assess_at_expiry(
+        &st,
+        &none,
+        proc_node(&st, 41, T + 100),
+    ));
     assert!(tu.hash_unverified);
     assert_eq!(tu.sha256, None);
     assert_eq!(tu.content_ts, T + 100);
-    assert!(!svc::first_run::already_watched(&st, exe, tu.content_ts, None));
+    assert!(!svc::first_run::already_watched(
+        &st,
+        exe,
+        tu.content_ts,
+        None
+    ));
     // 같은 해시가 오면 → 전에 실행됨
     ing.ingest(&hash(exe, "aaaa", T + 101)).unwrap();
     assert_eq!(
