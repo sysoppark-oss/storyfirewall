@@ -611,6 +611,10 @@ fn handle(
                         "created_ts": created_ts,
                         "origin": origin,
                     });
+                    // ACL 정책 관리: 정책 화면의 ACL 표가 지금 걸린 규칙을 다시 읽는다(원문 YAML — 사용자가 쓴 것)
+                    if r.name == engine::ACL_RECORD_NAME {
+                        row["acl_yaml"] = serde_json::Value::String(r.yaml.clone());
+                    }
                     if umbrella {
                         // 우산 아래 지금 걸린 기한부 실행 파일 차단 (필터 번호로 하나씩 풀 수 있다: policy.release_address_blocks filter_id)
                         let kids: Vec<serde_json::Value> = world

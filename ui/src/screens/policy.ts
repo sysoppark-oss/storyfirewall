@@ -3,6 +3,7 @@ import { approvalBox, countdown, type ApplyReply } from "../confirm";
 import { el, ext, button, clear, errorBox, fmtShort, extPath } from "../ui";
 import { failBox } from "../list-state";
 import { state } from "../state";
+import { aclEditor } from "./acl";
 
 interface Validation {
   errors: string[];
@@ -30,6 +31,8 @@ interface PolicyRow {
   confirm_deadline?: number | null;
   /// 첫 실행 관찰실 우산 정책 아래 지금 걸린 기한부 실행 파일 차단
   child_blocks?: { filter_id: number; path: string | null; expires_at: number | null }[];
+  /// ACL 정책 관리: "ACL" 기록의 원문(정책 화면 ACL 표가 다시 읽는다)
+  acl_yaml?: string;
 }
 /// 상태 칩 색(D006-4): 적용 중 초록, 확인 대기·일시 중지 주황, 만료·되돌림 회색
 const STATE_CLS: Record<string, string> = { Confirmed: "ok", Applied: "warn", Paused: "warn", Expired: "muted", RolledBack: "muted" };
@@ -67,8 +70,8 @@ export function policy(): HTMLElement {
     for (const [name, kind] of v.needs_ack) out.append(el("div", "warn", `확인 필요: `, ext("span", name), ` — ${ACK_TEXT[kind] ?? kind}`));
   };
 
-  const validate = async () => {
-    const r = await rpc<Validation>("policy.validate", { yaml: ta.value });
+  const validate = async (yaml: string = ta.value) => {
+    const r = await rpc<Validation>("policy.validate", { yaml });
     if (!r.ok) return out.replaceChildren(errorBox(r.error.message));
     showValidation(r.result);
   };
@@ -87,13 +90,13 @@ export function policy(): HTMLElement {
       dlg.addEventListener("close", () => dlg.remove());
     });
 
-  const apply = async () => {
+  const apply = async (yaml: string = ta.value) => {
     const requestId = uuid(); // 재시도해도 같은 id (멱등)
-    let r = await mutation("policy.apply", { yaml: ta.value }, requestId);
+    let r = await mutation("policy.apply", { yaml }, requestId);
     if (!r.ok && r.error.code === -32003) {
       const items = ((r.error.data as { items?: [string, string][] } | undefined)?.items) ?? [];
       if (!(await askAck(items))) return;
-      r = await mutation("policy.apply", { yaml: ta.value, acknowledge: items }, requestId);
+      r = await mutation("policy.apply", { yaml, acknowledge: items }, requestId);
     }
     if (!r.ok) return out.replaceChildren(errorBox(`적용 실패: ${r.error.message}`));
     const a = r.result as ApplyReply;
@@ -111,12 +114,20 @@ export function policy(): HTMLElement {
     pending.append(countdown(a, root, () => void refreshList()));
   };
 
+  // ACL 표(위): 처음 목록을 받을 때 한 번만 지금 걸린 ACL 을 읽는다(편집 중인 표를 새로 고침이 덮지 않게)
+  const acl = aclEditor((y) => void apply(y), (y) => void validate(y));
+  let aclLoaded = false;
   const refreshList = async () => {
     const r = await rpc<{ items: PolicyRow[]; address_blocks?: number; address_block_items?: AddressBlock[] }>("policy.list", {});
     clear(list);
     if (!r.ok) return list.append(failBox(r.error, () => void refreshList(), "정책 목록"));
+    if (!aclLoaded) {
+      aclLoaded = true;
+      const row = r.result.items.find((x) => x.acl_yaml && x.state !== "RolledBack" && x.state !== "Expired");
+      acl.load(row?.acl_yaml ?? null);
+    }
     // D032-3: 비어 있음(2-5)
-    if (!r.result.items.length) list.append(el("p", "muted", "아직 만든 정책이 없습니다. 이야기 카드의 '여기서부터 끊기…' 또는 아래 '고급'에서 만들 수 있습니다."));
+    if (!r.result.items.length) list.append(el("p", "muted", "아직 적용된 정책이 없습니다. 위 ACL 표, 이야기 카드의 '여기서부터 끊기…', 아래 '고급'에서 만들 수 있습니다."));
     for (const p of r.result.items) {
       // D006-4: [상태 칩] 이름 · 한국어 요약 · 만료 · 만든 곳 · (오른쪽) 일시 중지 / 되돌리기. 영어 상태 문자열을 보이지 않는다
       const chip = el("span", `chip state ${STATE_CLS[p.state] ?? "muted"}`, p.state_ko ?? "알 수 없음");
@@ -196,7 +207,7 @@ export function policy(): HTMLElement {
     el("summary", undefined, "고급 — YAML 직접 편집"),
     el("div", "editor", ta, el("div", "actions", button("검증", () => void validate()), button("적용", () => void apply(), "btn primary"))),
   );
-  root.append(list, pending, adv, out);
+  root.append(acl.root, out, pending, el("h2", undefined, "적용된 정책"), list, adv);
   void refreshList();
   state.onNotify(root, (n) => {
     const k = String(n.params["kind"] ?? "");

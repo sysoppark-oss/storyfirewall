@@ -1158,3 +1158,41 @@ fn acl_set_applies_as_one_record_and_multi_without_numbers_is_rejected() {
         Err(EngineError::Invalid(_))
     ));
 }
+
+/// 접점 시험: 정책 화면(ui/src/screens/acl.ts aclToYaml)이 만든 꼴 그대로 — JSON flow mapping, 따옴표 이름, 문자열 포트
+#[test]
+fn acl_yaml_from_ui_is_accepted() {
+    let mut wfp = FakeWfp::default();
+    let clock = FakeClock::new(MONDAY_0000);
+    let mut e = Engine::new(
+        conn(),
+        &mut wfp,
+        &NoGraph,
+        &clock,
+        &R,
+        &["story-firewall-svc.exe"],
+    )
+    .unwrap();
+    let ui = r#"- name: "acl.1"
+  priority: 1
+  action: allow
+  match: {"direction":"out","interface":"Wi-Fi","protocol":"tcp","local_ip":["192.168.0.10"],"remote_ip":["10.0.0.5"],"remote_port":["443"]}
+- name: "acl.2"
+  priority: 2
+  action: block
+  match: {"direction":"both","remote_ip":["10.0.0.0/24"],"remote_port":["8000-8100"]}
+- name: "acl.3"
+  priority: 3
+  action: block
+  match: {"direction":"in","protocol":"icmp","remote_ip":["203.0.113.0/24"]}
+"#;
+    let r = e.apply(ui, &[], "ui-acl", "ui").unwrap();
+    let fs = e.store.filters_of(r.policy_id).unwrap();
+    // acl.1 V4 허용 1 · acl.2 나감·들어옴 V4 2 · acl.3 들어옴 ICMP V4 1
+    assert_eq!(fs.len(), 4, "{fs:?}");
+    let a1 = fs.iter().find(|f| f.spec.name == "acl.1").unwrap();
+    assert_eq!(a1.spec.interface.as_deref(), Some("Wi-Fi"));
+    assert_eq!(a1.spec.local_v4.len(), 1);
+    let a3 = fs.iter().find(|f| f.spec.name == "acl.3").unwrap();
+    assert_eq!(a3.spec.protocols, vec![1]);
+}

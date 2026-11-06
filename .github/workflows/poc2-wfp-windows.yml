@@ -141,6 +141,18 @@ jobs:
           $c = CurlCode; Log "final curl exit (expect 0): $c"
           Log "END"
 
+      # ACL policy management (2026-11-06): interface + local address conditions, unknown interface rejected,
+      # rule order by weight (allow #1 over block #2 and the reverse), ICMPv4 filter add.
+      - name: ACL conditions and order
+        shell: pwsh
+        run: |
+          $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" | Sort-Object RouteMetric | Select-Object -First 1
+          $alias = (Get-NetAdapter -InterfaceIndex $route.ifIndex).Name
+          $ip = (Get-NetIPAddress -InterfaceIndex $route.ifIndex -AddressFamily IPv4 | Select-Object -First 1).IPAddress
+          "interface=$alias local=$ip" | Tee-Object -FilePath acl.out
+          & .\target\release\policy-poc.exe acltest $alias $ip 2>&1 | Tee-Object -FilePath acl.out -Append
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Safety cleanup
         if: always()
         shell: pwsh
@@ -178,7 +190,7 @@ jobs:
           git clone --quiet --branch ci-logs --single-branch "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" $dst 2>$null
           $run = Join-Path $dst "poc2/run-${{ github.run_number }}/${{ matrix.os }}"
           New-Item -ItemType Directory -Path $run -Force | Out-Null
-          Copy-Item assert.txt, build.log, run.out, watch.out, watch.err, reauth.txt, ids.json $run -ErrorAction SilentlyContinue
+          Copy-Item assert.txt, build.log, run.out, acl.out, watch.out, watch.err, reauth.txt, ids.json $run -ErrorAction SilentlyContinue
           "${{ github.sha }}" | Set-Content (Join-Path $run "commit.txt")
           git -C $dst config user.name "github-actions"
           git -C $dst config user.email "actions@github.com"

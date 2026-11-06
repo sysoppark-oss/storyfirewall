@@ -277,3 +277,15 @@ table.grid.empty thead { display: none; }
 .flow-tail h4 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 500; }
 .flow-tail-row { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 8px; font-size: 13px; padding: 2px 0; }
 @media (max-width: 1100px) { .flow-body { grid-template-columns: minmax(0, 1fr); } .flow-rail { flex-direction: row; flex-wrap: wrap; } .flow-rail .rail-step { flex: 1 1 160px; } }
+/* ACL 정책 관리: 번호 순 규칙 표 + 아래 편집 칸 */
+.acl h2 { margin-top: 0; }
+.acl-grid td.path { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 12px; overflow-wrap: anywhere; }
+.acl-ops { white-space: nowrap; }
+.acl-ops .btn { margin-left: 4px; }
+.acl-form { margin-top: 10px; display: grid; gap: 8px; max-width: 760px; }
+.acl-form:empty { display: none; }
+.acl-field { display: grid; grid-template-columns: 9em minmax(0, 1fr); gap: 8px; align-items: center; }
+.acl-field input, .acl-field select { min-width: 0; }
+.acl-pair { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; }
+.acl-pair .acl-field:last-child { grid-template-columns: 3em minmax(0, 1fr); }
+@media (max-width: 800px) { .acl-pair { grid-template-columns: minmax(0, 1fr); } }
