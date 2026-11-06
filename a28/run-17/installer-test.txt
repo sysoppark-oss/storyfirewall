@@ -4,7 +4,7 @@ PASS  ui exe in Program Files
 PASS  svc exe in Program Files
 PASS  geo data installed
 PASS  service running after install (Running)
-status: state=4 published=\\.\pipe\story-firewall-e1a379b3ef0a4d76ba4f4b636226b57b wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+status: state=4 published=\\.\pipe\story-firewall-df39a381d30148439d0d5cf4ff860893 wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
 
 PASS  pipe name published
 PASS  data dir owner trusted
@@ -24,8 +24,8 @@ reinstall exit=0
 during upgrade: samples=35 min=2
 PASS  filters never dropped during upgrade (min=2, before=2)
 PASS  service running after reinstall
-service pid before=6680 after=4056 (restarted = files replaced)
-status: state=4 published=\\.\pipe\story-firewall-562577e1da2d4ac6b64c7d12f095ce0e wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+service pid before=1136 after=5044 (restarted = files replaced)
+status: state=4 published=\\.\pipe\story-firewall-8cba4112a7aa4afc860ce3a811031397 wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
 
 PASS  same filter count after upgrade + restart reconcile
 uninstall exit=0
