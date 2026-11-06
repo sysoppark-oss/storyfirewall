@@ -1,7 +1,7 @@
 // 앱 상태: 연결·알림 구독·화면 전환. 화면은 DOM 조각을 돌려주는 함수다 (프레임워크 없음, 14차 Q3).
 import { connect, onNotify, rpc, type Notification } from "./rpc";
 
-type Screen = "dashboard" | "connections" | "story" | "policy" | "settings";
+type Screen = "dashboard" | "connections" | "story" | "installs" | "agents" | "policy" | "settings";
 
 class AppState {
   connected = false;

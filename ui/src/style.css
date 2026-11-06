@@ -400,3 +400,34 @@ details.where-panel { border-radius: 16px; }
 @media (max-width: 900px) { .where-dash-cols { grid-template-columns: minmax(0, 1fr); } }
 .where-dash .bar-row { cursor: pointer; }
 .where-dash-more { margin-top: 10px; display: flex; justify-content: flex-end; }
+
+/* 대시보드 개요(2026-11-06 개편): 카드 줄 6칸 · 네 질문 2×2 · 시간대 막대 + 어디와 통신했나. B안 모서리 16 */
+.screen > .cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1200px) { .screen > .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.screen > .cards .card { min-width: 0; border-radius: 14px; }
+.card.tile { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; cursor: pointer; min-width: 0; }
+.card.tile:hover { border-color: var(--brand); }
+.card.tile:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.card.tile h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+.card.tile .big { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-overview { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
+.q-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 1000px) { .q-grid { grid-template-columns: minmax(0, 1fr); } }
+.q-card { border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.q-card h3 { margin: 0; font-size: 15px; }
+.q-lead { margin: 0; font-size: 18px; font-weight: 600; }
+.q-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.q-list li { overflow-wrap: anywhere; }
+.q-bars { display: flex; flex-direction: column; gap: 4px; }
+.q-more { margin-top: auto; display: flex; justify-content: flex-end; }
+.dash-row2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 14px; }
+@media (max-width: 1100px) { .dash-row2 { grid-template-columns: minmax(0, 1fr); } }
+.hour-card, .dash-row2 .where-dash { border-radius: 16px; padding: 16px 18px; margin: 0; min-width: 0; }
+.hour-card h3, .dash-row2 .where-dash h3 { margin: 0 0 10px; font-size: 15px; }
+.hour-bars { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 3px; height: 140px; align-items: end; }
+.hour-col { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; position: relative; }
+.hour-bar { display: block; background: var(--brand); border-radius: 3px 3px 0 0; min-height: 0; opacity: .85; }
+.hour-bar.now { opacity: 1; box-shadow: 0 0 0 1px var(--brand); }
+.hour-bar.future { opacity: .25; }
+.hour-lbl { position: absolute; bottom: -18px; left: 0; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.hour-card .muted.small { margin-top: 24px; }

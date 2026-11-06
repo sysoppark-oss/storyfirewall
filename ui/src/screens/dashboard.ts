@@ -10,6 +10,9 @@ import { buildCard } from "./installs";
 import type { InstallRun } from "./installs-text";
 import { LEDGER_SCOPE, LEDGER_PROXY_NOTE, ledgerSummary } from "./first-run";
 import { bars, type ConnLike } from "./conn-group";
+import { overview, type DashConn, type DashListener } from "./dash-overview";
+import { bytes } from "./connections";
+import { fileName } from "../sanitize";
 
 /// 서비스가 남긴 보호 사건 (A29): 파이프 이름 가로채기, 데이터 폴더 점유 등. 대상이 그래프의 프로세스면 상세로 잇는다
 interface ServiceEvent {
@@ -119,17 +122,91 @@ export function dashboard(): HTMLElement {
   const status = el("div", "cards");
   // 목록은 새로 고칠 때마다 비운다 (전에는 알림마다 '지금 봐야 할 것' 목록이 아래에 계속 쌓였다)
   const body = el("div", "dash-body");
-  // D008 A3(사용자 다시 요청 2026-11-06): 대시보드 아래 "오늘 어디와 통신했나" — 나라·망(조직) 막대 상위 5. 누르면 연결 화면
-  const where = el("section", "card where-dash");
+  // 대시보드 개요(사용자 "대시보드 UI 구성이 너무 약함" 2026-11-06): 네 질문 + 시간대 + 어디와 통신했나.
+  // 숫자는 연결 기록·듣는 포트·설치 묶음에서 세기만 한다(dash-overview.ts). 위 카드 줄에도 개요 칸 3개를 끼운다
+  const where = el("section", "dash-overview");
   root.append(status, body, where);
-  const drawWhere = async () => {
-    const r = await rpc<{ items: ConnLike[] }>("connections.list", { since_secs: 86400, cursor: { limit: 500 } });
+  let ovGen = 0;
+  const drawOverview = async () => {
+    const gen = ++ovGen;
+    const [cr, lr, ir] = await Promise.all([
+      rpc<{ items: (DashConn & ConnLike)[] }>("connections.list", { since_secs: 86400, cursor: { limit: 500 } }),
+      rpc<{ items: DashListener[] }>("listeners.list", {}),
+      rpc<{ items: InstallRun[] }>("installs.list", { days: 1, limit: 30 }),
+    ]);
+    if (gen !== ovGen) return;
     clear(where);
-    where.append(el("h2", undefined, "오늘 어디와 통신했나"));
-    if (!r.ok) return void where.append(cardFail(r.error, "연결 기록"));
+    if (!cr.ok) return void where.append(el("div", "card", cardFail(cr.error, "연결 기록")));
+    const conns = cr.result.items;
+    const o = overview(conns, lr.ok ? lr.result.items : [], Date.now() / 1000);
+    // 위 카드 줄: 오늘 접속 · 주고받은 양 · 밖에서 닿는 포트 (의심 사건 카드 바로 뒤)
+    const tile = (title: string, big: string, sub: string, go: () => void) => {
+      const t = el("button", "card tile", el("h3", undefined, title), el("div", "big", big), el("div", "muted small", sub));
+      (t as HTMLButtonElement).type = "button";
+      t.addEventListener("click", go);
+      return t;
+    };
+    const anchor = status.children[1] ?? null;
+    status.insertBefore(tile("오늘 접속", `${o.remotes}곳`, `프로그램 ${o.programs}개`, () => state.go("connections", {})), anchor);
+    status.insertBefore(tile("주고받은 양", bytes(o.sent + o.recv), `보냄 ${bytes(o.sent)} · 받음 ${bytes(o.recv)}`, () => state.go("connections", {})), anchor);
+    status.insertBefore(tile("밖에서 닿는 포트", String(o.exposed.length), o.exposed.length ? "모든 주소에서 듣는 중" : "없음", () => state.go("connections", {})), anchor);
+
+    // 네 질문(2×2)
+    const q = (title: string, lead: Node, ...rest: Node[]) => el("section", "card q-card", el("h3", undefined, title), lead, ...rest);
+    const grid = el("div", "q-grid");
+    // ① 밖에서 내 PC로
+    const ports = el("ul", "q-list");
+    for (const l of o.exposed.slice(0, 5)) ports.append(el("li", undefined, el("span", "mono", `${l.lport}/${l.proto.toUpperCase()}`), " ", ext("span", l.image ? fileName(l.image) : "(프로그램 확인 못 함)", "muted")));
+    if (!o.exposed.length) ports.append(el("li", "muted", "모든 주소에서 듣는 포트 없음"));
+    grid.append(q("밖에서 내 PC로",
+      el("p", "q-lead", o.inbound ? `들어온 연결 ${o.inbound}건 (상대 ${o.inboundRemotes}곳)` : "오늘 들어온 연결 기록 없음"),
+      el("div", "muted small", "밖에서 닿을 수 있는 포트"), ports));
+    // ② 내 PC에서 밖으로
+    const news = el("ul", "q-list");
+    const fresh = conns.filter((c) => c.new_asn || c.new_cc).slice(0, 4);
+    for (const c of fresh) news.append(el("li", undefined, el("span", "badge-new", "오늘 처음"), " ", ext("span", c.where?.org || c.where?.country || "—"), " ", ext("span", fileName(c.image), "muted")));
+    if (!fresh.length) news.append(el("li", "muted", "오늘 처음 본 망·나라 없음"));
+    grid.append(q("내 PC에서 밖으로",
+      el("p", "q-lead", `처음 본 망 ${o.newOrgs}곳 · 처음 본 나라 ${o.newCountries}곳`),
+      el("div", "muted small", "오늘 처음 접속한 곳"), news));
+    // ③ 네트워크를 많이 쓴 프로그램
+    const tops = el("div", "q-bars");
+    // 양을 모르면(연결 표만 본 기록 등 0) 원격 수로 비교한다 — "—" 막대만 늘어서지 않게
+    const byBytes = o.topPrograms.some((p) => p.sent + p.recv > 0);
+    const val = (p: { sent: number; recv: number; remotes: number }) => (byBytes ? p.sent + p.recv : p.remotes);
+    const maxB = Math.max(1, ...o.topPrograms.map(val));
+    for (const p of o.topPrograms) {
+      const fill = el("span", "bar-fill");
+      fill.style.width = `${Math.max(2, Math.round((val(p) / maxB) * 100))}%`;
+      tops.append(el("div", "bar-row", ext("span", p.name, "bar-name"), el("span", "bar-track", fill), el("span", "bar-val", byBytes ? bytes(p.sent + p.recv) : `${p.remotes}곳`)));
+    }
+    if (!o.topPrograms.length) tops.append(el("div", "muted small", "오늘 접속 기록 없음"));
+    grid.append(q("네트워크를 많이 쓴 프로그램", el("p", "q-lead", `프로그램 ${o.programs}개 · 상위 ${o.topPrograms.length}개`), el("div", "muted small", byBytes ? "주고받은 양 기준" : "양 기록이 없어 접속한 곳 수 기준"), tops));
+    // ④ PC 안에서 새로 생긴 것
+    const runs = ir.ok ? ir.result.items : [];
+    const inst = el("ul", "q-list");
+    for (const r of runs.slice(0, 4)) inst.append(el("li", undefined, ext("span", fileName(r.image)), " ", el("span", "muted small", `파일 ${r.files.length}개 · ${fmtShort(filetimeToUnix(r.start_ts))}`)));
+    if (!runs.length) inst.append(el("li", "muted", ir.ok ? "오늘 설치·새 프로그램 기록 없음" : "불러오지 못함"));
+    const instMore = button("설치 화면에서 자세히", () => state.go("installs", {}), "btn small");
+    grid.append(q("PC 안에서 새로 생긴 것", el("p", "q-lead", `설치·새 프로그램 ${runs.length}건`), inst, el("div", "q-more", instMore)));
+    where.append(grid);
+
+    // 시간대별 접속(오늘) + 어디와 통신했나
+    const hours = el("section", "card hour-card", el("h3", undefined, "오늘 시간대별 접속"));
+    const hb = el("div", "hour-bars");
+    const maxH = Math.max(1, ...o.hourly);
+    const nowH = new Date().getHours();
+    o.hourly.forEach((n, h) => {
+      const bar = el("span", `hour-bar${h === nowH ? " now" : ""}${h > nowH ? " future" : ""}`);
+      bar.style.height = `${n ? Math.max(4, Math.round((n / maxH) * 100)) : 0}%`;
+      bar.title = `${h}시 · 접속 ${n}건`;
+      hb.append(el("div", "hour-col", bar, el("span", "hour-lbl", h % 6 === 0 ? `${h}시` : "")));
+    });
+    hours.append(hb, el("p", "muted small", "묶인 접속 기록의 마지막 접속 시각 기준입니다."));
+    const whereCard = el("section", "card where-dash", el("h3", undefined, "오늘 어디와 통신했나"));
     const cols = el("div", "where-dash-cols");
     for (const [by, title] of [["country", "나라별 (접속 수)"], ["org", "망(조직)별 (접속 수)"]] as const) {
-      const { bars: bs, rest } = bars(r.result.items, by, 5);
+      const { bars: bs, rest } = bars(conns, by, 5);
       const col = el("div", "bar-col", el("h4", undefined, title));
       const max = Math.max(1, ...bs.map((b) => b.value));
       for (const b of bs) {
@@ -147,14 +224,14 @@ export function dashboard(): HTMLElement {
       if (!bs.length) col.append(el("div", "muted small", "공인 주소 접속이 없습니다."));
       cols.append(col);
     }
-    where.append(cols, el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다."),
-      el("div", "where-dash-more", button("연결 화면에서 자세히", () => state.go("connections", {}), "btn small")));
+    whereCard.append(cols, el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다."),
+      el("div", "q-more", button("연결 화면에서 자세히", () => state.go("connections", {}), "btn small")));
+    where.append(el("div", "dash-row2", hours, whereCard));
   };
   const refresh = async () => {
     clear(status);
     clear(body);
     body.append(loadingBox());
-    void drawWhere();
     // D035-2: 네 조회를 동시에 보내고 칸마다 따로 그린다(rpc 는 던지지 않고 결과로 돌려준다) — 한 조회가 늦거나 실패해도 나머지 칸은 그린다.
     // 전에는 의심 사건 → 정책 → 서비스 사건을 차례로 기다려, 엔진이 바쁘면 카드 하나만 그려진 반쪽 화면이 됐다(L044)
     const [ev, hr, pol, se] = await Promise.all([
@@ -199,6 +276,7 @@ export function dashboard(): HTMLElement {
           ? el("div", undefined, el("div", "big-text warn", "작동 중 · 응답 늦음"), el("div", "muted", `서비스 ${state.serverVersion}`))
           : el("div", undefined, el("div", "big-text ok", "작동 중"), el("div", "muted", `서비스 ${state.serverVersion}`));
     status.append(card("보호 서비스", svcBody));
+    void drawOverview();
     // C1: 카드 아래, 상태 줄과 별개. D014: 기록 없는 구간에 시작한 의심 사건이 있으면 맨 앞 주황 경고
     const inGap = all.filter((s) => s.started_in_gap);
     if (hr.ok) body.append(healthLine(hr.result, () => state.go("settings", {}), { n: inGap.length, open: () => state.go("story", { root: inGap[0]?.root }) }));
