@@ -128,11 +128,13 @@ export function policy(): HTMLElement {
     const r = await rpc<{ items: PolicyRow[]; address_blocks?: number; address_block_items?: AddressBlock[] }>("policy.list", {});
     clear(list);
     if (!r.ok) return list.append(failBox(r.error, () => void refreshList(), "정책 목록"));
+    // 지금 걸린 ACL = 적용(확인 대기)·확인됨 상태만. 되돌림·일시 중지·만료는 걸려 있지 않다
+    const live = r.result.items.find((x) => x.acl_yaml && (x.state === "Applied" || x.state === "Confirmed"));
     if (!aclLoaded) {
       aclLoaded = true;
       const row = r.result.items.find((x) => x.acl_yaml && x.state !== "RolledBack" && x.state !== "Expired");
-      acl.load(row?.acl_yaml ?? null);
-    }
+      acl.load(row?.acl_yaml ?? null, live?.acl_yaml ?? null);
+    } else acl.setActive(live?.acl_yaml ?? null);
     // D032-3: 비어 있음(2-5)
     if (!r.result.items.length) list.append(el("p", "muted", "아직 적용된 정책이 없습니다. 위 ACL 표, 이야기 카드의 '여기서부터 끊기…', 아래 '고급'에서 만들 수 있습니다."));
     for (const p of r.result.items) {

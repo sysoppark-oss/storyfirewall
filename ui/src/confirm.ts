@@ -37,8 +37,12 @@ export function countdown(a: ApplyReply, owner: HTMLElement, onDone: () => void,
   box.append(el("div", "actions", rollback, confirm));
   const render = () => {
     const left = a.confirm_deadline_ts - Math.floor(Date.now() / 1000);
-    txt.textContent = left > 0 ? `${left}초` : "기한 지남 — 서비스가 되돌렸는지 정책 목록에서 확인하세요";
-    if (left <= 0) stop();
+    txt.textContent = left > 0 ? `${left}초` : "기한 지남 — 서비스가 되돌렸습니다(목록을 새로 읽는 중)";
+    if (left <= 0) {
+      stop();
+      // 서비스가 되돌릴 시간을 조금 준 뒤 목록·표를 새로 읽는다(되돌린 뒤에도 '걸림'으로 보이던 것)
+      window.setTimeout(onDone, 3000);
+    }
   };
   render();
   t = window.setInterval(render, 500);

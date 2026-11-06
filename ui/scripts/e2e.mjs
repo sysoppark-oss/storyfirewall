@@ -175,6 +175,13 @@ if (mode === "acl") {
   const cd = await page.evaluate(() => ({ cards: document.querySelectorAll(".card.alert").length, inline: document.querySelectorAll(".countdown-inline").length }));
   if (cd.inline) console.log("DEBUG", await page.evaluate(() => [...document.querySelectorAll(".policy-row")].map((r) => r.innerText.replace(/\n/g, " ")).join(" || ")));
   must(cd.cards === 1 && cd.inline === 0, `acl: countdown shown once (card=${cd.cards} inline=${cd.inline})`);
+  // 되돌리면 표는 '걸려 있지 않음'이 되고 다시 적용할 수 있어야 한다(노트북 제보: 되돌린 뒤 적용 단추가 꺼져 있었다)
+  await page.click(".card.alert .btn:has-text('되돌리기')");
+  await page.waitForTimeout(1500);
+  const after = await page.evaluate(() => ({ txt: document.querySelector(".acl-foot")?.textContent ?? "", dis: document.querySelector(".acl-foot .btn.primary")?.disabled }));
+  must(after.txt.includes("걸려 있지 않습니다") && after.dis === false, `acl: after rollback table is re-appliable (${after.txt} disabled=${after.dis})`);
+  await page.click(".acl-foot .btn.primary");
+  await page.waitForTimeout(1500);
   // 화면을 다시 열면 걸린 ACL 을 표로 읽는다
   await page.click("button.nav-btn[data-key=dashboard]");
   await page.waitForTimeout(500);

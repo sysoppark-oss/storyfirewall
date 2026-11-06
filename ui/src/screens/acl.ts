@@ -192,7 +192,7 @@ function segmented<T extends string>(opts: [T, string, string?][], value: T, on:
 }
 
 /// ACL 표 편집기. onApply(yaml) 는 정책 화면의 적용 흐름(확인·승인 창·60초 유지)을 그대로 쓴다
-export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: string) => void): { root: HTMLElement; load: (yaml: string | null) => void; markApplied: (yaml: string) => void } {
+export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: string) => void): { root: HTMLElement; load: (yaml: string | null, active?: string | null) => void; markApplied: (yaml: string) => void; setActive: (yaml: string | null) => void } {
   const root = el("section", "card acl");
   let rules: AclRule[] = [];
   let applied = "";
@@ -269,7 +269,10 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
       body.append(el("div", "acl-scroll", t));
     }
     // 아래 줄: 상태(적용 안 된 변경) · 보조(검증) → 주(적용)
-    const state = dirty() ? el("span", "acl-dirty", "● 적용하지 않은 변경이 있습니다") : el("span", "muted small", applied ? "지금 걸린 ACL 과 같습니다" : "");
+    // 2026-11-06 노트북 제보: 자동 되돌림 뒤에도 '같습니다'로 보이고 적용 단추가 꺼져 다시 걸 수 없었다 → 기준은 '지금 걸린' ACL
+    const state = dirty()
+      ? el("span", "acl-dirty", applied ? "● 적용하지 않은 변경이 있습니다" : "● 이 표는 지금 걸려 있지 않습니다(되돌렸거나 아직 적용하지 않음)")
+      : el("span", "muted small", applied ? "지금 걸린 ACL 과 같습니다" : "");
     const applyBtn = button(dirty() ? "변경 적용…" : "적용…", () => onApply(aclToYaml(rules)), "btn primary");
     applyBtn.disabled = !rules.length || !dirty();
     foot.append(state, el("span", "spacer"), button("검증", () => onValidate(aclToYaml(rules))), applyBtn);
@@ -400,12 +403,12 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
     refresh();
   };
 
-  const load = (yaml: string | null) => {
+  const load = (yaml: string | null, active: string | null = yaml) => {
     if (yaml) {
       const back = yamlToAcl(yaml);
       if (back) {
         rules = back;
-        applied = aclToYaml(back);
+        applied = active ? aclToYaml(back) : "";
       } else {
         // 37차 Q5 검토 중 발견: 이 안내를 body 에 붙였더니 바로 아래 draw() 가 지워 보이지 않았다
         foreign = true;
@@ -422,5 +425,14 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
     foreign = false;
     draw();
   };
-  return { root, load, markApplied };
+  // 목록을 새로 받을 때마다: 지금 걸린 ACL(없으면 null) 기준으로 '적용 안 된 변경'을 다시 판단한다
+  const setActive = (yaml: string | null) => {
+    const back = yaml ? yamlToAcl(yaml) : null;
+    const next = back ? aclToYaml(back) : "";
+    if (next !== applied) {
+      applied = next;
+      draw();
+    }
+  };
+  return { root, load, markApplied, setActive };
 }
