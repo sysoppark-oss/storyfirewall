@@ -10,7 +10,7 @@
 - CI 확인: `gh api "repos/sysoppark-oss/storyfirewall/actions/runs?head_sha=<공개 해시>"` (GraphQL 은 막혀 있음, REST 만).
 - 노트북 설치: CI 의 "Dev build" 성공 뒤 `sh scripts/sync-devbuild.sh`(공개 dev-builds → 비공개 dev-builds) →
   `{"job":"install"}` 파일을 노트북 `C:\Program Files\StoryFirewallDev\requests\install-N.json` 으로 보낸다(device_commit_files).
-  결과 로그: `...\logs\jobs\install-N.txt`. **다음 번호: install-74, diag-26.**
+  결과 로그: `...\logs\jobs\install-N.txt`. **다음 번호: install-75, diag-26.**
   노트북 작업 실행기는 설치·진단만 한다 — 정책 적용(차단) 작업은 절대 넣지 않는다.
 - `cargo fmt --all` 금지(2026-11-07 사고: 관련 없는 파일 10개가 바뀌어 수집기 목록 시험이 깨짐). 바꾼 파일만 정렬.
 - 강제 push 금지. 되돌림은 추가 커밋으로.
@@ -20,8 +20,8 @@
 - 공개 릴리스: **v0.1.2 공개됨**(사용자가 공개). 다른 노트북에서 v0.1.1 → v0.1.2 자동 업데이트 성공 확인(2026-11-07 04:19).
 - 업데이트 서명 키: 비밀 키는 사용자 PC 와 GitHub 저장소 비밀(TAURI_SIGNING_PRIVATE_KEY·_PASSWORD)에만. 세션은 비밀을 쓰지 못함(차단).
   릴리스는 초안으로만 만들고, 공개는 사용자가 브라우저에서 한다.
-- 노트북: install-72(실시간 1~3), install-73(자동 조사) 요청함. 이 세션이 끝날 때 65dd076(공개 해시) CI 대기 중 —
-  성공하면 install-74 로 설치할 것(이 세션이 못 했으면 다음 세션이).
+- 노트북: install-72(실시간 1~3), install-73(자동 조사), install-74(카드 개편 65dd076, CI 전부 성공) 요청함.
+  새 세션은 logs\jobs\install-72~74.txt 결과부터 확인하고, 이야기 화면(자동 조사 결론·Chrome 보조 프로그램 판단)을 볼 것.
 - 이번 세션 커밋(비공개 해시): 5ac5402 늦은 ProcessStart 이름 넘겨받기 · eee9302 fmt 되돌림 · 3ec6e72/f2fa5d2 카드 지금 상태 ·
   c66ae4b Windows 알림 · eb89c0f 판정 15초 · 4ea9cc0 자동 조사(story.investigate, NativeMessagingHosts) ·
   6aebc29/c69416c 카드 개편(UI 3판 초안).
