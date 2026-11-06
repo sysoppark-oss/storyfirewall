@@ -66,6 +66,7 @@ fn method_table_roles_and_idempotency_keys() {
     assert_eq!(
         admin,
         vec![
+            "story.triage_set",
             "judge.feedback_normal",
             "policy.apply",
             "policy.confirm",
