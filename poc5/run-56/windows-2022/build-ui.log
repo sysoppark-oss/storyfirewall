@@ -1,7 +1,0 @@
-        Info Looking up installed tauri packages to check mismatched versions...
-     Running beforeBuildCommand `npm run build`
-
-> story-firewall-ui@0.1.0 build
-> tsc --noEmit && vite build
-
-[36mvite v7.3.7 [32mbuilding client environment for production...[36m[39m
