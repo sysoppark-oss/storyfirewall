@@ -312,7 +312,7 @@ impl Engine {
         let mut weight_box: Box<u64> = Box::new(0);
         match (spec.action, spec.weight) {
             (Action::Permit, w) => {
-                *weight_box = w.unwrap_or(0xF000_0000_0000_0000);
+                *weight_box = w.unwrap_or(crate::spec::PERMIT_DEFAULT_WEIGHT);
                 f.weight.r#type = FWP_UINT64;
                 f.weight.Anonymous.uint64 = &mut *weight_box;
             }
@@ -321,7 +321,11 @@ impl Engine {
                 f.weight.r#type = FWP_UINT64;
                 f.weight.Anonymous.uint64 = &mut *weight_box;
             }
-            (Action::Block, None) => f.weight.r#type = FWP_EMPTY,
+            // 번호 없는 차단: 범위 식별자 14(상위 4비트), 하위 60비트는 BFE 자동 — ACL 명시 weight 보다 늘 위
+            (Action::Block, None) => {
+                f.weight.r#type = FWP_UINT8;
+                f.weight.Anonymous.uint8 = crate::spec::BLOCK_RANGE_ID;
+            }
         }
         f.numFilterConditions = conds.len() as u32;
         f.filterCondition = conds.as_mut_ptr();

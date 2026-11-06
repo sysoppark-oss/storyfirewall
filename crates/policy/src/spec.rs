@@ -89,6 +89,16 @@ pub enum IpFamily {
     V6,
 }
 
+/// WFP weight 구간(같은 Sublayer 안에서 높은 weight 가 먼저 판정, 첫 종결 동작이 이긴다).
+/// - 번호 없는 차단(끊기·첫 실행 관찰·주소 차단·직접 쓴 정책): FWP_UINT8 범위 식별자 14 → [14·2^60, 15·2^60).
+///   전에는 FWP_EMPTY(자동, [0, 2^60))였는데 ACL 명시 weight(≈2^63)보다 낮아 ACL "허용" 한 줄이 끊기 차단을 이겼다
+///   (37차 의뢰서 Q1 작성 중 발견, Microsoft Learn "Filter Weight Assignment" 로 범위 확인).
+/// - 번호 없는 허용(process_not 예외): 0xF000_0000_0000_0000 — 같은 정책의 차단(구간 14)보다 위.
+/// - ACL 번호 n: `ACL_WEIGHT_TOP − n<<40` — 늘 구간 14 아래(ACL 허용은 보안 차단을 뚫지 못한다).
+pub const BLOCK_RANGE_ID: u8 = 14;
+pub const PERMIT_DEFAULT_WEIGHT: u64 = 0xF000_0000_0000_0000;
+pub const ACL_WEIGHT_TOP: u64 = 0x8000_0000_0000_0000;
+
 fn default_action() -> Action {
     Action::Block
 }
@@ -212,6 +222,9 @@ mod tests {
         });
         assert_eq!((l4.wants_v4(), l4.wants_v6()), (true, false));
         // 인터페이스만 있으면 PC 전체가 아니다
+        // weight 구간: ACL 최상위(번호 1)도 번호 없는 차단 구간의 바닥보다 낮다
+        assert!(ACL_WEIGHT_TOP - (1u64 << 40) < (u64::from(BLOCK_RANGE_ID) << 60));
+        assert!(PERMIT_DEFAULT_WEIGHT >= (u64::from(BLOCK_RANGE_ID) + 1) << 60);
         let mut ifc = BlockSpec::app("y", "", Direction::Out);
         ifc.app_path = None;
         assert!(ifc.is_empty_match());

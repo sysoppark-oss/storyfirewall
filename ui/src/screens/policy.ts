@@ -90,15 +90,18 @@ export function policy(): HTMLElement {
       dlg.addEventListener("close", () => dlg.remove());
     });
 
-  const apply = async (yaml: string = ta.value) => {
+  const apply = async (yaml: string = ta.value): Promise<boolean> => {
     const requestId = uuid(); // 재시도해도 같은 id (멱등)
     let r = await mutation("policy.apply", { yaml }, requestId);
     if (!r.ok && r.error.code === -32003) {
       const items = ((r.error.data as { items?: [string, string][] } | undefined)?.items) ?? [];
-      if (!(await askAck(items))) return;
+      if (!(await askAck(items))) return false;
       r = await mutation("policy.apply", { yaml, acknowledge: items }, requestId);
     }
-    if (!r.ok) return out.replaceChildren(errorBox(`적용 실패: ${r.error.message}`));
+    if (!r.ok) {
+      out.replaceChildren(errorBox(`적용 실패: ${r.error.message}`));
+      return false;
+    }
     const a = r.result as ApplyReply;
     showValidation({ errors: [], warnings: a.warnings, needs_ack: [] });
     if (a.address_block_notice) out.append(el("div", "warn", ext("span", a.address_block_notice)));
@@ -107,6 +110,7 @@ export function policy(): HTMLElement {
       pending.append(approvalBox(r.approval));
     } else startCountdown(a);
     void refreshList();
+    return true;
   };
 
   const startCountdown = (a: ApplyReply) => {
@@ -115,7 +119,7 @@ export function policy(): HTMLElement {
   };
 
   // ACL 표(위): 처음 목록을 받을 때 한 번만 지금 걸린 ACL 을 읽는다(편집 중인 표를 새로 고침이 덮지 않게)
-  const acl = aclEditor((y) => void apply(y), (y) => void validate(y));
+  const acl = aclEditor((y) => void apply(y).then((ok) => { if (ok) acl.markApplied(y); }), (y) => void validate(y));
   let aclLoaded = false;
   const refreshList = async () => {
     const r = await rpc<{ items: PolicyRow[]; address_blocks?: number; address_block_items?: AddressBlock[] }>("policy.list", {});

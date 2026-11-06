@@ -15,14 +15,17 @@ export interface ApplyReply {
 export function countdown(a: ApplyReply, owner: HTMLElement, onDone: () => void, label = ""): HTMLElement {
   const box = el("div", "card alert");
   const txt = el("div", "big");
-  box.append(el("h3", undefined, `${label}정책 #${a.policy_id} 판 ${a.version} 적용됨 (필터 ${a.filters}개)`), txt, el("p", "muted", "60초 안에 확인하지 않으면 서비스가 자동으로 되돌립니다."));
+  // 검수 A5: 내부 번호·WFP 용어("필터")를 제목에 내지 않는다 — 번호는 툴팁에
+  const h = el("h3", undefined, `${label}적용했습니다 (판 ${a.version}) — 자동 되돌림까지`);
+  h.title = `정책 번호 #${a.policy_id} · WFP 필터 ${a.filters}개`;
+  box.append(h, txt, el("p", "muted", "60초 안에 ‘유지’를 누르지 않으면 서비스가 자동으로 되돌립니다."));
   let t = 0;
   const stop = () => window.clearInterval(t);
   const confirm = button("유지 (확인)", async () => {
     const r = await mutation("policy.confirm", { policy_id: a.policy_id, version: a.version });
     if (!r.ok) return txt.replaceChildren(errorBox(`확인 실패: ${r.error.message}`));
     stop();
-    box.replaceChildren(el("div", "ok", `정책 #${a.policy_id} 확인됨`));
+    box.replaceChildren(el("div", "ok", "유지했습니다"));
     onDone();
   }, "btn primary");
   const rollback = button("되돌리기", async () => {

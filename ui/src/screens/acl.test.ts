@@ -46,16 +46,17 @@ describe("ACL 표 ↔ 정책 YAML", () => {
   it("목록·표기", () => {
     expect(splitList(" 1.1.1.1,  8.8.8.8 ")).toEqual(["1.1.1.1", "8.8.8.8"]);
     expect(endText("", "")).toBe("모두");
-    expect(endText("10.0.0.1", "443")).toBe("10.0.0.1 : 443");
+    expect(endText("10.0.0.1", "443")).toBe("10.0.0.1:443");
+    expect(endText("10.0.0.1, 10.0.0.2", "443")).toBe("10.0.0.1, 10.0.0.2 · 포트 443");
     expect(endText("", "3389")).toBe("포트 3389");
   });
 });
 
 describe("규칙 미리보기·칸 검사", () => {
   it("조사 병기 없이 화살표 꼴", () => {
-    expect(ruleSentence(r({ dstIp: "1.1.1.1", dstPort: "443", proto: "tcp" }))).toBe("이 PC → 1.1.1.1 : 443 · TCP · 나가는 통신 차단");
+    expect(ruleSentence(r({ dstIp: "1.1.1.1", dstPort: "443", proto: "tcp" }))).toBe("이 PC → 1.1.1.1:443 · TCP · 나가는 통신 차단");
     const inAllow = ruleSentence(r({ action: "allow", dir: "in", srcIp: "192.168.0.0/24", dstPort: "3389" }));
-    expect(inAllow).toBe("192.168.0.0/24 → 이 PC 포트 3389 · TCP·UDP · 들어오는 통신 허용");
+    expect(inAllow).toBe("192.168.0.0/24 → 이 PC 포트 3389 · TCP·UDP · 들어오는 통신 허용 (Windows 방화벽 규칙은 그대로)");
     expect(inAllow).not.toMatch(/\(으\)|\(이\)|\(을\)/);
     expect(ruleSentence(r({ dir: "both", iface: "Wi-Fi" }))).toBe("이 PC ↔ 모든 상대 · TCP·UDP · 양방향 통신 차단 · Wi-Fi에서만");
   });

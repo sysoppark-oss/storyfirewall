@@ -295,7 +295,7 @@ table.grid.empty thead { display: none; }
 .acl-grid tbody tr:hover { background: color-mix(in srgb, var(--brand) 6%, transparent); }
 .acl-no { width: 2em; color: var(--muted); font-variant-numeric: tabular-nums; }
 .acl-act { display: inline-block; min-width: 3.2em; text-align: center; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; border: 1px solid; }
-.acl-act.block { color: var(--bad); border-color: var(--bad); }
+.acl-act.block { color: var(--fg); border-color: var(--fg); } /* 빨강은 판정에만(E1) — 차단 동작은 진한 기본색 */
 .acl-act.allow { color: var(--ok); border-color: var(--ok); }
 .acl-end { min-width: 9em; }
 .acl-end-role { display: block; font-size: 11px; color: var(--muted); }
@@ -312,7 +312,7 @@ table.grid.empty thead { display: none; }
 .seg-opt { border: 0; border-right: 1px solid var(--line); background: var(--card); color: var(--fg); padding: 7px 12px; cursor: pointer; font: inherit; font-size: 13px; white-space: pre; }
 .seg-opt:last-child { border-right: 0; }
 .seg-opt.on { background: var(--brand-strong); color: var(--on-brand); font-weight: 600; }
-.seg-opt.bad.on { background: transparent; color: var(--bad); box-shadow: inset 0 0 0 2px var(--bad); }
+.seg-opt.bad.on { background: var(--fg); color: var(--card); }
 .seg-opt.ok.on { background: transparent; color: var(--ok); box-shadow: inset 0 0 0 2px var(--ok); }
 .seg-opt:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 /* 규칙 편집 대화상자 */
@@ -330,11 +330,12 @@ dialog.acl-dialog { border: 1px solid var(--line); border-radius: 12px; backgrou
 .acl-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .acl-input input { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); font-family: Consolas, 'Cascadia Mono', monospace; font-size: 13px; }
 .acl-input input:disabled { opacity: .5; }
-.acl-input input.invalid { border-color: var(--bad); }
+.acl-input input.invalid, .acl-input input.invalid:focus { border: 2px solid var(--bad); padding: 5px 7px; outline-color: var(--bad); }
 .acl-err { color: var(--bad); font-size: 12px; min-height: 0; }
 .acl-dlg-preview { margin: 4px 20px 0; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--brand) 7%, var(--card)); }
 .acl-preview { margin: 2px 0 0; font-size: 14px; font-weight: 600; }
-.acl-preview.block { color: var(--bad); }
+.acl-preview.block { color: var(--fg); }
+.acl-preview.invalid { color: var(--warn); font-weight: 500; }
 .acl-preview.allow { color: var(--ok); }
 dialog.acl-dialog > .actions { padding: 12px 20px 16px; display: flex; gap: 8px; }
 @media (max-width: 640px) {

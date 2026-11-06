@@ -60,7 +60,7 @@ export async function runScenario(page, outDir, must, opts = {}) {
     must(secs > 0 && secs <= 60, `cut countdown within 60s (saw "${left?.trim()}")`);
     await page.screenshot({ path: `${outDir}/4-cut-applied.png`, fullPage: true });
     await page.click(".cut-result >> text=유지 (확인)");
-    await page.waitForSelector(".cut-result >> text=확인됨");
+    await page.waitForSelector(".cut-result >> text=유지했습니다");
     must(true, "cut policy confirmed");
   }
 

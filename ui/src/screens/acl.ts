@@ -84,11 +84,12 @@ export function yamlToAcl(yaml: string): AclRule[] | null {
   return out.sort((a, b) => a.n - b.n).map((x) => x.r);
 }
 
-/// 한 줄 요약(표 셀): "192.168.0.10 : 443" / "포트 3389"(주소 모두) / "모두"
+/// 한 줄 요약(표 셀): "192.168.0.10:443" / "10.0.0.1, 10.0.0.2 · 포트 443" / "포트 3389"(주소 모두) / "모두"
 export function endText(ip: string, port: string): string {
-  const a = splitList(ip).join(", ");
+  const al = splitList(ip);
+  const a = al.join(", ");
   const p = splitList(port).join(", ");
-  if (a && p) return `${a} : ${p}`;
+  if (a && p) return al.length === 1 && !p.includes(",") ? `${a}:${p}` : `${a} · 포트 ${p}`;
   if (p) return `포트 ${p}`;
   return a || "모두";
 }
@@ -137,7 +138,8 @@ export function ruleSentence(r: AclRule): string {
   const therePart = there === "모두" ? "모든 상대" : there;
   const proto = PROTO_TEXT[r.proto];
   const what = r.action === "block" ? "차단" : "허용";
-  const via = r.iface ? ` · ${r.iface}에서만` : "";
+  // 허용은 Story Firewall 차단의 예외일 뿐 — Windows 방화벽을 열지 않는다(검수: 원격 데스크톱 허용을 연다고 오해)
+  const via = (r.iface ? ` · ${r.iface}에서만` : "") + (r.action === "allow" ? " (Windows 방화벽 규칙은 그대로)" : "");
   if (r.dir === "out") return `${herePart} → ${therePart} · ${proto} · 나가는 통신 ${what}${via}`;
   if (r.dir === "in") return `${therePart} → ${herePart} · ${proto} · 들어오는 통신 ${what}${via}`;
   return `${herePart} ↔ ${therePart} · ${proto} · 양방향 통신 ${what}${via}`;
@@ -187,7 +189,7 @@ function segmented<T extends string>(opts: [T, string, string?][], value: T, on:
 }
 
 /// ACL 표 편집기. onApply(yaml) 는 정책 화면의 적용 흐름(확인·승인 창·60초 유지)을 그대로 쓴다
-export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: string) => void): { root: HTMLElement; load: (yaml: string | null) => void } {
+export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: string) => void): { root: HTMLElement; load: (yaml: string | null) => void; markApplied: (yaml: string) => void } {
   const root = el("section", "card acl");
   let rules: AclRule[] = [];
   let applied = "";
@@ -219,7 +221,7 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
     } else {
       const t = el("table", "acl-grid");
       const hr = el("tr");
-      for (const h of ["#", "동작", "출발지", "", "목적지", "프로토콜", "인터페이스", ""]) hr.append(el("th", undefined, h));
+      for (const h of ["#", "동작", "출발지", "방향", "목적지", "프로토콜", "인터페이스", ""]) hr.append(el("th", undefined, h));
       t.append(el("thead", undefined, hr));
       const tb = el("tbody");
       rules.forEach((r, i) => {
@@ -252,7 +254,7 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
           icon("↑", "위로(먼저 판정)", () => { [rules[i - 1], rules[i]] = [rules[i]!, rules[i - 1]!]; draw(); }, i === 0),
           icon("↓", "아래로", () => { [rules[i + 1], rules[i]] = [rules[i]!, rules[i + 1]!]; draw(); }, i === rules.length - 1),
           button("수정", () => openDialog(i), "btn small"),
-          icon("✕", `acl.${i + 1} 삭제`, () => { rules.splice(i, 1); draw(); }, false, " danger-outline"),
+          button("삭제", () => { rules.splice(i, 1); draw(); }, "btn small danger-outline"),
         );
         tr.append(ops);
         tb.append(tr);
@@ -282,9 +284,11 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
       draw();
     }, "btn primary");
     const refresh = () => {
-      preview.textContent = ruleSentence(r);
-      preview.className = `acl-preview ${r.action}`;
-      save.disabled = errs.size > 0;
+      const bad = errs.size > 0;
+      // 잘못된 입력이면 규칙 문장을 보이지 않는다(검수: 1.1.1.999 를 정상 규칙처럼 보여 줌)
+      preview.textContent = bad ? `입력을 고치면 규칙 문장이 여기에 나옵니다 — ${[...errs.values()][0]}` : ruleSentence(r);
+      preview.className = `acl-preview ${bad ? "invalid" : r.action}`;
+      save.disabled = bad;
     };
     const row = (label: string, ctl: HTMLElement, hint?: string) => {
       const d = el("div", "acl-row", el("div", "acl-row-label", label), el("div", "acl-row-ctl", ctl));
@@ -347,12 +351,16 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
     const dstPort = field("dstPort", r.dstPort, "모두", portListError, (v) => (r.dstPort = v));
     const card = (title: HTMLElement, ip: { wrap: HTMLElement }, port: { wrap: HTMLElement }) =>
       el("fieldset", "acl-end-card", el("legend", undefined, title), el("label", "acl-sub", "IP 주소"), ip.wrap, el("label", "acl-sub", "포트"), port.wrap);
-    // 이 PC 쪽·상대 쪽 예시는 방향에 따라 바뀐다(이 PC 쪽에 internet 은 쓸 수 없다)
-    const LOCAL_PH = "모두  예: 192.168.0.10, lan";
-    const REMOTE_PH = "모두  예: 203.0.113.9, 10.0.0.0/8, internet";
+    // 이 PC 쪽·상대 쪽 예시는 방향에 따라 바뀐다(이 PC 쪽에 internet 은 쓸 수 없다). 짧게 — 칸에서 잘리지 않게
+    const LOCAL_PH = "모두 (예: 192.168.0.10)";
+    const REMOTE_PH = "모두 (예: 203.0.113.9, 10.0.0.0/8)";
     const relabelPh = () => {
-      srcIp.input.placeholder = localIsSrc() ? LOCAL_PH : REMOTE_PH;
-      dstIp.input.placeholder = localIsSrc() ? REMOTE_PH : LOCAL_PH;
+      const srcLocal = localIsSrc();
+      srcIp.input.placeholder = srcLocal ? LOCAL_PH : REMOTE_PH;
+      dstIp.input.placeholder = srcLocal ? REMOTE_PH : LOCAL_PH;
+      // 포트: 접속하는 쪽(출발지)의 포트는 보통 임의 번호라 비워 둔다. 받는 쪽(목적지)은 서비스 포트
+      srcPort.input.placeholder = "모두 (보통 비워 둠)";
+      dstPort.input.placeholder = r.dir === "in" ? "모두 (예: 3389)" : "모두 (예: 443)";
     };
     const relabel0 = relabel;
     relabel = () => { relabel0(); relabelPh(); };
@@ -401,5 +409,10 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
   void rpc<{ items: NetIf[] }>("net.interfaces", {}).then((r) => {
     if (r.ok) ifaces = r.result.items;
   });
-  return { root, load };
+  // 적용이 받아들여지면 "적용하지 않은 변경" 표시를 지운다(검수 B3: 적용 직후에도 변경 있음으로 보였다)
+  const markApplied = (yaml: string) => {
+    applied = yaml;
+    draw();
+  };
+  return { root, load, markApplied };
 }

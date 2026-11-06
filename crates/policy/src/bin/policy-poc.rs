@@ -272,6 +272,16 @@ fn main() {
             check(!reach(), "block #1 above allow #2: blocked");
             eng.delete(&ids.iter().map(|x| x.0).collect::<Vec<_>>())
                 .unwrap_or_else(|e| fail(&e));
+            // ③' 번호 없는 보안 차단(끊기 등, weight 구간 14)은 ACL 허용 1번보다 위 — ACL 로 끊기를 뚫지 못한다
+            let mut allow1 = base.clone();
+            allow1.action = policy::spec::Action::Permit;
+            allow1.weight = Some(w(1));
+            let mut sec = base.clone();
+            sec.weight = None;
+            let ids = eng.apply(&[allow1, sec]).unwrap_or_else(|e| fail(&e));
+            check(!reach(), "unnumbered security block beats ACL allow #1");
+            eng.delete(&ids.iter().map(|x| x.0).collect::<Vec<_>>())
+                .unwrap_or_else(|e| fail(&e));
             // ④ ICMPv4 필터(1.1.1.1 만, 앱 조건 없음)
             let mut ic = base.clone();
             ic.app_path = None;

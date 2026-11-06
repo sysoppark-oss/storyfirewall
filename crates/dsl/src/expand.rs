@@ -121,7 +121,7 @@ fn exclude_v4(ranges: &mut Vec<V4Range>, lo: Ipv4Addr, hi: Ipv4Addr) -> bool {
 
 /// ACL 번호 → WFP weight. 번호 1 이 가장 높다. 번호 사이 간격 2^40 (같은 번호 안의 V4·V6·방향 필터는 같은 weight)
 pub fn acl_weight(n: u32) -> u64 {
-    0x8000_0000_0000_0000u64 - (u64::from(n.min(9999)) << 40)
+    policy::spec::ACL_WEIGHT_TOP - (u64::from(n.min(9999)) << 40)
 }
 
 pub fn expand(p: &Policy, resolver: &dyn Resolver) -> Result<Expanded> {
