@@ -1,4 +1,4 @@
-// 화면 테마(D011): 기본 = Windows 설정을 따름(prefers-color-scheme). 설정 화면에서 밝게/어둡게 고정할 수 있다(이 브라우저에 기억).
+// 화면 테마(D011): 기본 = 어둡게(B안 그물 지도 겉모양, D049 사용자 채택 2026-11-06). 설정에서 밝게·Windows 따라가기로 바꿀 수 있다(이 브라우저에 기억).
 export type Theme = "system" | "light" | "dark";
 
 export function loadTheme(): Theme {
@@ -6,7 +6,7 @@ export function loadTheme(): Theme {
     const v = localStorage.getItem("sf.theme");
     if (v === "light" || v === "dark" || v === "system") return v;
   } catch { /* 저장소 없음 */ }
-  return "system";
+  return "dark";
 }
 
 /// 문서에 적용하고, 캔버스로 그리는 화면(마인드맵)이 다시 칠하도록 알린다

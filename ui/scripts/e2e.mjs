@@ -132,6 +132,30 @@ page.on("console", (m) => {
 });
 await page.addInitScript(shim);
 await page.goto(base);
+if (mode === "flow") {
+  // D049 B안 겉모양 확인: 흐름 보기·대시보드를 어둡게(기본)·밝게 둘 다 찍는다
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate((t) => { localStorage.setItem("sf.theme", t); }, theme);
+    await page.goto(base);
+    await page.setViewportSize({ width: 1393, height: 1300 });
+    await page.waitForSelector(".status.ok", { timeout: 20000 });
+    await page.screenshot({ path: path.join(outDir, `b-dashboard-${theme}.png`) });
+    await page.click("button.nav-btn[data-key=story]");
+    await page.waitForSelector(".card.event");
+    const pay = page.locator(".card.event", { has: page.locator("h3", { hasText: "payload.exe" }) }).first();
+    await pay.locator("button", { hasText: "흐름 보기" }).click();
+    await page.waitForSelector(".flowview .flow-box", { timeout: 10000 });
+    await page.waitForTimeout(600);
+    await page.locator(".flowview").evaluate((e) => e.scrollIntoView({ block: "start" }));
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: path.join(outDir, `b-flow-${theme}.png`) });
+    must(true, `flow ${theme} captured`);
+  }
+  console.log(results.join("\n"));
+  await browser.close();
+  server.close();
+  process.exit(0);
+}
 if (mode === "acl") {
   // ACL 정책 관리 화면(2026-11-06 개편): 빈 표 → 규칙 창 두 번(차단·허용) → 표 → 적용 → 다시 열어 표로 읽기
   await page.setViewportSize({ width: 1393, height: 997 });

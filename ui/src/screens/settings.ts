@@ -105,7 +105,7 @@ export function settings(): HTMLElement {
   const geoSrc = el("p", "muted");
   // D011: 화면 테마 — Windows 따라가기 / 밝게 / 어둡게 (이 브라우저에 기억, 서비스 설정 아님)
   const theme = el("select");
-  for (const [v, l] of [["system", "Windows 따라가기"], ["light", "밝게"], ["dark", "어둡게"]] as const) {
+  for (const [v, l] of [["dark", "어둡게(기본)"], ["light", "밝게"], ["system", "Windows 따라가기"]] as const) {
     const o = el("option", undefined, l);
     o.value = v;
     theme.append(o);

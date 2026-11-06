@@ -178,7 +178,7 @@ export function flowView(ev: {
   }
   map.append(svg, grid);
   const boxes = new Map<number, HTMLElement>();
-  let links: { src: number; dst: number; chapter: boolean; eid: number; rel: string }[] = [];
+  let links: { src: number; dst: number; chapter: boolean; destroy: boolean; eid: number; rel: string }[] = [];
 
   const drawLines = () => {
     const base = map.getBoundingClientRect();
@@ -200,7 +200,8 @@ export function flowView(ev: {
       const path = document.createElementNS(SVG, "path");
       const mx = (x1 + x2) / 2;
       path.setAttribute("d", sameCol ? `M${x1},${y1} L${x2},${y2}` : `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
-      path.setAttribute("class", l.chapter ? "flow-line chapter" : "flow-line");
+      // B안: 빨간 선은 파괴 징후(5장)로 이어지는 선에만. 판정(1~4장) 선은 굵은 청록, 나머지는 점선
+      path.setAttribute("class", l.destroy ? "flow-line destroy" : l.chapter ? "flow-line chapter" : "flow-line");
       const title = document.createElementNS(SVG, "title");
       title.textContent = REL[l.rel] ?? l.rel;
       path.append(title);
@@ -248,7 +249,7 @@ export function flowView(ev: {
       if (!list.length) col.append(el("div", "muted small flow-empty", "기록 없음"));
       for (const b of list.slice(0, PER_COL)) {
         const t = boxText(b);
-        const box = el("button", `flow-box kind-${b.node.kind}${b.depth === 0 ? " hero" : ""}${b.via?.chapter != null ? " chapter" : ""}${b.node.kind === "command" ? " command" : ""}`);
+        const box = el("button", `flow-box kind-${b.node.kind}${b.depth === 0 ? " hero" : ""}${b.via?.chapter != null ? " chapter" : ""}${b.via?.chapter === 5 ? " destroy" : ""}${b.node.kind === "command" ? " command" : ""}`);
         box.type = "button";
         const titleEl = ext("span", t.title);
         titleEl.className = t.mono ? "flow-box-title path" : "flow-box-title";
@@ -275,7 +276,7 @@ export function flowView(ev: {
     }
     if (r.result.truncated) map.append(el("p", "badge warn", `축약됨: 가지가 많아 ${r.result.cap}개까지만 — 전체 그림이 아닙니다`));
     const nid = (id: number) => alias.get(id) ?? id;
-    links = [...best.values()].filter((b) => b.via).map((b) => ({ src: nid(b.via!.src), dst: nid(b.via!.dst), chapter: b.via!.chapter != null, eid: b.via!.id, rel: b.via!.rel })).filter((l) => l.src !== l.dst);
+    links = [...best.values()].filter((b) => b.via).map((b) => ({ src: nid(b.via!.src), dst: nid(b.via!.dst), chapter: b.via!.chapter != null, destroy: b.via!.chapter === 5, eid: b.via!.id, rel: b.via!.rel })).filter((l) => l.src !== l.dst);
     // 처음 선택 = 주인공
     const hero = [...best.values()].find((b) => b.depth === 0);
     if (hero) showSide(hero);
