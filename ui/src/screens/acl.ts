@@ -84,11 +84,13 @@ export function yamlToAcl(yaml: string): AclRule[] | null {
   return out.sort((a, b) => a.n - b.n).map((x) => x.r);
 }
 
-/// 한 줄 요약(표 셀): "192.168.0.10:443" / "모두"
+/// 한 줄 요약(표 셀): "192.168.0.10 : 443" / "포트 3389"(주소 모두) / "모두"
 export function endText(ip: string, port: string): string {
-  const a = splitList(ip).join(", ") || "모두";
+  const a = splitList(ip).join(", ");
   const p = splitList(port).join(", ");
-  return p ? `${a} : ${p}` : a;
+  if (a && p) return `${a} : ${p}`;
+  if (p) return `포트 ${p}`;
+  return a || "모두";
 }
 
 /// 출발지·목적지 머리글(방향에 따라 이 PC/상대를 밝힌다)
@@ -98,6 +100,49 @@ export function endLabels(dir: AclDir): [string, string] {
 
 const EMPTY: AclRule = { action: "block", dir: "out", iface: "", proto: "any", srcIp: "", srcPort: "", dstIp: "", dstPort: "" };
 
+/// 화살표: 나감 →, 들어옴 ←, 양방향 ↔
+export const DIR_ARROW: Record<AclDir, string> = { out: "→", in: "←", both: "↔" };
+
+/// 주소 목록 칸 검사(화면에서 바로 알려 주기 — 최종 검사는 서비스): IPv4·CIDR·범위·IPv6·lan·internet
+export function addrListError(s: string, local: boolean): string | null {
+  for (const a of splitList(s)) {
+    if (a === "lan") continue;
+    if (a === "internet") {
+      if (local) return "이 PC 쪽에는 internet 을 쓸 수 없습니다";
+      continue;
+    }
+    const v4 = /^(\d{1,3})(\.\d{1,3}){3}(\/\d{1,2})?$/.test(a) && a.split("/")[0]!.split(".").every((x) => Number(x) <= 255) && (!a.includes("/") || Number(a.split("/")[1]) <= 32);
+    const v4range = /^(\d{1,3}\.){3}\d{1,3}-(\d{1,3}\.){3}\d{1,3}$/.test(a);
+    const v6 = /^[0-9a-fA-F:]+(\/\d{1,3})?$/.test(a) && a.includes(":");
+    if (!v4 && !v4range && !v6) return `주소 형식이 아닙니다: ${a}`;
+  }
+  return null;
+}
+export function portListError(s: string): string | null {
+  for (const p of splitList(s)) {
+    const m = /^(\d{1,5})(?:-(\d{1,5}))?$/.exec(p);
+    if (!m || Number(m[1]) > 65535 || (m[2] != null && (Number(m[2]) > 65535 || Number(m[2]) < Number(m[1])))) return `포트는 1~65535 또는 범위(8000-8100): ${p}`;
+  }
+  return null;
+}
+
+/// 규칙 한 줄(편집 창 아래 미리보기). 조사를 붙이지 않는 화살표 꼴(조사 병기 금지 A6):
+/// "이 PC → 1.1.1.1 : 443 · TCP · 나가는 통신 차단"
+export function ruleSentence(r: AclRule): string {
+  const s = sides(r);
+  const noPort = r.proto === "icmp";
+  const there = endText(s.remoteIp, noPort ? "" : s.remotePort);
+  const here = endText(s.localIp, noPort ? "" : s.localPort);
+  const herePart = here === "모두" ? "이 PC" : `이 PC ${here}`;
+  const therePart = there === "모두" ? "모든 상대" : there;
+  const proto = PROTO_TEXT[r.proto];
+  const what = r.action === "block" ? "차단" : "허용";
+  const via = r.iface ? ` · ${r.iface}에서만` : "";
+  if (r.dir === "out") return `${herePart} → ${therePart} · ${proto} · 나가는 통신 ${what}${via}`;
+  if (r.dir === "in") return `${therePart} → ${herePart} · ${proto} · 들어오는 통신 ${what}${via}`;
+  return `${herePart} ↔ ${therePart} · ${proto} · 양방향 통신 ${what}${via}`;
+}
+
 interface NetIf {
   alias: string;
   description: string;
@@ -105,138 +150,251 @@ interface NetIf {
   addrs: string[];
 }
 
+/// 여러 선택지 중 하나(분할 단추). 키보드: 좌우 화살표
+function segmented<T extends string>(opts: [T, string, string?][], value: T, on: (v: T) => void, label: string): HTMLElement {
+  const g = el("div", "seg");
+  g.setAttribute("role", "radiogroup");
+  g.setAttribute("aria-label", label);
+  const btns: HTMLButtonElement[] = [];
+  const pick = (v: T, fire = true) => {
+    for (const b of btns) {
+      const on2 = b.dataset["v"] === v;
+      b.setAttribute("aria-checked", String(on2));
+      b.classList.toggle("on", on2);
+      b.tabIndex = on2 ? 0 : -1;
+    }
+    if (fire) on(v);
+  };
+  opts.forEach(([v, t, cls], i) => {
+    const b = el("button", `seg-opt${cls ? " " + cls : ""}`, t);
+    b.type = "button";
+    b.dataset["v"] = v;
+    b.setAttribute("role", "radio");
+    b.addEventListener("click", () => pick(v));
+    b.addEventListener("keydown", (e) => {
+      const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      if (!d) return;
+      e.preventDefault();
+      const n = opts[(i + d + opts.length) % opts.length]![0];
+      pick(n);
+      btns.find((x) => x.dataset["v"] === n)?.focus();
+    });
+    btns.push(b);
+    g.append(b);
+  });
+  pick(value, false);
+  return g;
+}
+
 /// ACL 표 편집기. onApply(yaml) 는 정책 화면의 적용 흐름(확인·승인 창·60초 유지)을 그대로 쓴다
 export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: string) => void): { root: HTMLElement; load: (yaml: string | null) => void } {
-  const root = el("div", "card acl");
+  const root = el("section", "card acl");
   let rules: AclRule[] = [];
+  let applied = "";
   let ifaces: NetIf[] = [];
-  const table = el("div", "acl-table");
-  const form = el("div", "acl-form");
-  const note = el("p", "muted small", "번호가 작은 규칙부터 판정합니다(위 규칙이 먼저). 표 전체가 정책 'ACL' 하나로 한 번에 적용·되돌림됩니다. 허용은 이 표와 다른 Story Firewall 차단 사이의 예외일 뿐, Windows 방화벽이 막은 것을 열지는 못합니다.");
-  root.append(el("h2", undefined, "보안 정책 (ACL)"), note, table, form);
+  const head = el("div", "acl-head");
+  const body = el("div", "acl-body");
+  const foot = el("div", "acl-foot");
+  root.append(head, body, foot);
+
+  const dirty = () => aclToYaml(rules) !== applied;
 
   const draw = () => {
-    clear(table);
+    clear(head);
+    clear(body);
+    clear(foot);
+    const title = el("div", "acl-title", el("h2", undefined, "보안 정책 (ACL)"), el("span", "badge count", String(rules.length)));
+    head.append(title, button("+ 규칙 추가", () => openDialog(-1)));
+    head.append(el("p", "muted small acl-note", "위 규칙부터 판정합니다. 표 전체가 한 번에 적용되고 한 번에 되돌려집니다. ‘허용’은 Story Firewall 차단에 대한 예외이며 Windows 방화벽이 막은 것을 열지는 않습니다."));
     if (!rules.length) {
-      table.append(el("p", "muted", "아직 규칙이 없습니다. 아래 '규칙 추가'로 acl.1 부터 만듭니다."));
+      body.append(
+        el(
+          "div",
+          "acl-empty",
+          el("p", undefined, "아직 규칙이 없습니다."),
+          el("p", "muted small", "예: “이 PC → 1.1.1.1:443 TCP 차단”, “상대 203.0.113.0/24 → 이 PC 원격 데스크톱(3389) 차단”"),
+          button("첫 규칙 만들기", () => openDialog(-1), "btn primary"),
+        ),
+      );
     } else {
-      const t = el("table", "grid acl-grid");
+      const t = el("table", "acl-grid");
       const hr = el("tr");
-      for (const h of ["번호", "인터페이스", "방향", "프로토콜", "출발지", "목적지", "동작", ""]) hr.append(el("th", undefined, h));
+      for (const h of ["#", "동작", "출발지", "", "목적지", "프로토콜", "인터페이스", ""]) hr.append(el("th", undefined, h));
       t.append(el("thead", undefined, hr));
       const tb = el("tbody");
       rules.forEach((r, i) => {
         const tr = el("tr");
+        tr.addEventListener("dblclick", () => openDialog(i));
         const [sl, dl] = endLabels(r.dir);
-        const src = el("td", "path", endText(r.srcIp, r.srcPort));
-        src.title = sl;
-        const dst = el("td", "path", endText(r.dstIp, r.dstPort));
-        dst.title = dl;
+        const end = (ip: string, port: string, label: string) => {
+          const td = el("td", "acl-end");
+          td.append(el("span", "acl-end-role", label), el("span", "acl-end-addr", endText(ip, r.proto === "icmp" ? "" : port)));
+          return td;
+        };
         tr.append(
-          el("td", undefined, `acl.${i + 1}`),
-          ext("td", r.iface || "모두"),
-          el("td", undefined, DIR_TEXT[r.dir]),
+          el("td", "acl-no", String(i + 1)),
+          el("td", undefined, el("span", `acl-act ${r.action}`, r.action === "block" ? "차단" : "허용")),
+          end(r.srcIp, r.srcPort, sl),
+          el("td", "acl-arrow", el("span", undefined, DIR_ARROW[r.dir]), el("span", "muted small", DIR_TEXT[r.dir])),
+          end(r.dstIp, r.dstPort, dl),
           el("td", undefined, PROTO_TEXT[r.proto]),
-          src,
-          dst,
-          el("td", undefined, el("span", `chip ${r.action === "block" ? "bad" : "ok"}`, r.action === "block" ? "차단" : "허용")),
+          ext("td", r.iface || "모두"),
         );
         const ops = el("td", "acl-ops");
-        const up = button("▲", () => { if (i > 0) { [rules[i - 1], rules[i]] = [rules[i]!, rules[i - 1]!]; draw(); } }, "btn small");
-        up.title = "위로(먼저 판정)";
-        up.disabled = i === 0;
-        const dn = button("▼", () => { if (i < rules.length - 1) { [rules[i + 1], rules[i]] = [rules[i]!, rules[i + 1]!]; draw(); } }, "btn small");
-        dn.title = "아래로";
-        dn.disabled = i === rules.length - 1;
-        ops.append(up, dn, button("수정", () => openForm(i), "btn small"), button("삭제", () => { rules.splice(i, 1); draw(); }, "btn small danger-outline"));
+        const icon = (t: string, tip: string, fn: () => void, dis = false, cls = "") => {
+          const b = button(t, fn, `btn icon${cls}`);
+          b.title = tip;
+          b.setAttribute("aria-label", tip);
+          b.disabled = dis;
+          return b;
+        };
+        ops.append(
+          icon("↑", "위로(먼저 판정)", () => { [rules[i - 1], rules[i]] = [rules[i]!, rules[i - 1]!]; draw(); }, i === 0),
+          icon("↓", "아래로", () => { [rules[i + 1], rules[i]] = [rules[i]!, rules[i + 1]!]; draw(); }, i === rules.length - 1),
+          button("수정", () => openDialog(i), "btn small"),
+          icon("✕", `acl.${i + 1} 삭제`, () => { rules.splice(i, 1); draw(); }, false, " danger-outline"),
+        );
         tr.append(ops);
         tb.append(tr);
       });
       t.append(tb);
-      table.append(t);
+      body.append(el("div", "acl-scroll", t));
     }
-    // 단추 줄: 보조(추가·검증) → 주(적용)
-    table.append(
-      el(
-        "div",
-        "actions",
-        button("규칙 추가", () => openForm(-1)),
-        button("검증", () => onValidate(aclToYaml(rules))),
-        el("span", "spacer"),
-        Object.assign(button("ACL 적용…", () => onApply(aclToYaml(rules)), "btn primary"), { disabled: !rules.length }),
-      ),
-    );
+    // 아래 줄: 상태(적용 안 된 변경) · 보조(검증) → 주(적용)
+    const state = dirty() ? el("span", "acl-dirty", "● 적용하지 않은 변경이 있습니다") : el("span", "muted small", applied ? "지금 걸린 ACL 과 같습니다" : "");
+    const applyBtn = button(dirty() ? "변경 적용…" : "적용…", () => onApply(aclToYaml(rules)), "btn primary");
+    applyBtn.disabled = !rules.length || !dirty();
+    foot.append(state, el("span", "spacer"), button("검증", () => onValidate(aclToYaml(rules))), applyBtn);
   };
 
-  const openForm = (idx: number) => {
-    clear(form);
+  const openDialog = (idx: number) => {
     const r: AclRule = { ...(idx >= 0 ? rules[idx]! : EMPTY) };
-    const sel = (opts: [string, string][], value: string, on: (v: string) => void) => {
-      const s = el("select");
-      for (const [v, t] of opts) {
-        const o = el("option", undefined, t);
-        o.value = v;
-        if (v === value) o.selected = true;
-        s.append(o);
-      }
-      s.addEventListener("change", () => on(s.value));
-      return s;
+    const dlg = el("dialog", "acl-dialog");
+    const n = idx >= 0 ? idx + 1 : rules.length + 1;
+    dlg.append(el("div", "acl-dlg-head", el("h3", undefined, idx >= 0 ? `규칙 acl.${n} 수정` : `새 규칙 acl.${n}`), el("p", "muted small", "빈 칸은 ‘모두’입니다. 여러 값은 쉼표로 나눕니다.")));
+    const preview = el("p", "acl-preview");
+    const errs = new Map<string, string>();
+    const save = button(idx >= 0 ? "저장" : "표에 추가", () => {
+      if (r.proto === "icmp") { r.srcPort = ""; r.dstPort = ""; }
+      if (idx >= 0) rules[idx] = r;
+      else rules.push(r);
+      dlg.close();
+      draw();
+    }, "btn primary");
+    const refresh = () => {
+      preview.textContent = ruleSentence(r);
+      preview.className = `acl-preview ${r.action}`;
+      save.disabled = errs.size > 0;
     };
-    const input = (value: string, ph: string, on: (v: string) => void) => {
+    const row = (label: string, ctl: HTMLElement, hint?: string) => {
+      const d = el("div", "acl-row", el("div", "acl-row-label", label), el("div", "acl-row-ctl", ctl));
+      if (hint) d.querySelector(".acl-row-ctl")!.append(el("div", "muted small", hint));
+      return d;
+    };
+    const field = (key: string, value: string, ph: string, check: (v: string) => string | null, on: (v: string) => void) => {
+      const wrap = el("div", "acl-input");
       const i = el("input");
       i.value = value;
       i.placeholder = ph;
       i.spellcheck = false;
-      i.addEventListener("input", () => on(i.value));
-      return i;
+      i.autocomplete = "off";
+      const msg = el("div", "acl-err");
+      const run = () => {
+        const e = check(i.value);
+        msg.textContent = e ?? "";
+        i.classList.toggle("invalid", !!e);
+        i.setAttribute("aria-invalid", String(!!e));
+        if (e) errs.set(key, e); else errs.delete(key);
+        on(i.value);
+        refresh();
+      };
+      i.addEventListener("input", run);
+      wrap.append(i, msg);
+      queueMicrotask(run);
+      return { wrap, input: i };
     };
-    const ifaceOpts: [string, string][] = [["", "모든 인터페이스"], ...ifaces.map((f): [string, string] => [f.alias, `${f.alias}${f.up ? "" : " (꺼짐)"} — ${f.addrs.filter((a) => a.includes(".")).join(", ") || f.description}`])];
-    if (r.iface && !ifaces.some((f) => f.alias === r.iface)) ifaceOpts.push([r.iface, `${r.iface} (지금 없음)`]);
-    const srcL = el("span"), dstL = el("span");
-    const relabel = () => { const [a, b] = endLabels(r.dir); srcL.textContent = a; dstL.textContent = b; };
+    // 동작
+    const act = segmented<"block" | "allow">([["block", "차단", "bad"], ["allow", "허용", "ok"]], r.action, (v) => { r.action = v; refresh(); }, "동작");
+    // 방향
+    const srcTitle = el("span"), dstTitle = el("span");
+    let relabel = () => { const [a, b] = endLabels(r.dir); srcTitle.textContent = a; dstTitle.textContent = b; };
+    const dir = segmented<AclDir>([["out", "나감  이 PC → 상대"], ["in", "들어옴  상대 → 이 PC"], ["both", "양방향"]], r.dir, (v) => {
+      r.dir = v;
+      relabel();
+      // 방향을 바꾸면 이 PC/상대 칸이 서로 바뀌므로 주소 검사를 다시 한다
+      srcIp.input.dispatchEvent(new Event("input"));
+      dstIp.input.dispatchEvent(new Event("input"));
+      refresh();
+    }, "방향");
+    // 프로토콜
+    const portNote = el("div", "muted small");
+    const proto = segmented<AclProto>([["any", "TCP·UDP"], ["tcp", "TCP"], ["udp", "UDP"], ["icmp", "ICMP"]], r.proto, (v) => {
+      r.proto = v;
+      const icmp = v === "icmp";
+      for (const f of [srcPort, dstPort]) {
+        if (!f) continue;
+        f.input.disabled = icmp;
+        if (icmp) { f.input.value = ""; f.input.dispatchEvent(new Event("input")); }
+      }
+      portNote.textContent = icmp ? "ICMP 는 IPv4 만 다룹니다(IPv6 ICMP 는 이웃 탐색에 필요해 막지 않습니다). 포트는 없습니다." : "";
+      refresh();
+    }, "프로토콜");
+    // 출발지·목적지 카드
+    const localIsSrc = () => r.dir !== "in";
+    const srcIp = field("srcIp", r.srcIp, "모두  예: 192.168.0.10, 10.0.0.0/8, lan", (v) => addrListError(v, localIsSrc()), (v) => (r.srcIp = v));
+    const srcPort = field("srcPort", r.srcPort, "모두  예: 443, 8000-8100", portListError, (v) => (r.srcPort = v));
+    const dstIp = field("dstIp", r.dstIp, "모두  예: 203.0.113.9, internet", (v) => addrListError(v, !localIsSrc()), (v) => (r.dstIp = v));
+    const dstPort = field("dstPort", r.dstPort, "모두", portListError, (v) => (r.dstPort = v));
+    const card = (title: HTMLElement, ip: { wrap: HTMLElement }, port: { wrap: HTMLElement }) =>
+      el("fieldset", "acl-end-card", el("legend", undefined, title), el("label", "acl-sub", "IP 주소"), ip.wrap, el("label", "acl-sub", "포트"), port.wrap);
+    // 이 PC 쪽·상대 쪽 예시는 방향에 따라 바뀐다(이 PC 쪽에 internet 은 쓸 수 없다)
+    const LOCAL_PH = "모두  예: 192.168.0.10, lan";
+    const REMOTE_PH = "모두  예: 203.0.113.9, 10.0.0.0/8, internet";
+    const relabelPh = () => {
+      srcIp.input.placeholder = localIsSrc() ? LOCAL_PH : REMOTE_PH;
+      dstIp.input.placeholder = localIsSrc() ? REMOTE_PH : LOCAL_PH;
+    };
+    const relabel0 = relabel;
+    relabel = () => { relabel0(); relabelPh(); };
     relabel();
-    const portNote = el("span", "muted small");
-    const field = (label: Node | string, ...c: Node[]) => el("label", "acl-field", el("span", "acl-label", label), ...c);
-    const srcIp = input(r.srcIp, "모두 (예: 192.168.0.10, 10.0.0.0/8, lan)", (v) => (r.srcIp = v));
-    const srcPort = input(r.srcPort, "모두 (예: 443, 8000-8100)", (v) => (r.srcPort = v));
-    const dstIp = input(r.dstIp, "모두 (예: 203.0.113.9, internet)", (v) => (r.dstIp = v));
-    const dstPort = input(r.dstPort, "모두", (v) => (r.dstPort = v));
-    const protoSel = sel(Object.entries(PROTO_TEXT) as [string, string][], r.proto, (v) => { r.proto = v as AclProto; ports(); });
-    const ports = () => {
-      const icmp = r.proto === "icmp";
-      srcPort.disabled = dstPort.disabled = icmp;
-      portNote.textContent = icmp ? "ICMP 에는 포트가 없습니다. IPv6 의 ICMP 는 이웃 탐색에 필요해 막지 않습니다." : "";
-    };
-    ports();
-    form.append(
-      el("h3", undefined, idx >= 0 ? `acl.${idx + 1} 수정` : `acl.${rules.length + 1} 추가`),
-      field("인터페이스", sel(ifaceOpts, r.iface, (v) => (r.iface = v))),
-      field("방향", sel([["out", "나감 (이 PC → 상대)"], ["in", "들어옴 (상대 → 이 PC)"], ["both", "양방향"]], r.dir, (v) => { r.dir = v as AclDir; relabel(); })),
-      field("프로토콜", protoSel, portNote),
-      el("div", "acl-pair", field(srcL, srcIp), field("포트", srcPort)),
-      el("div", "acl-pair", field(dstL, dstIp), field("포트", dstPort)),
-      field("동작", sel([["block", "차단"], ["allow", "허용"]], r.action, (v) => (r.action = v as "block" | "allow"))),
+    // 인터페이스
+    const ifSel = el("select");
+    const opt = (v: string, t: string) => { const o = el("option", undefined, t); o.value = v; if (v === r.iface) o.selected = true; ifSel.append(o); };
+    opt("", "모든 인터페이스");
+    for (const f of ifaces) opt(f.alias, `${f.alias}${f.up ? "" : " (연결 안 됨)"}${f.addrs.some((a) => a.includes(".")) ? " · " + f.addrs.filter((a) => a.includes(".")).map((a) => a.split("/")[0]).join(", ") : ""}`);
+    if (r.iface && !ifaces.some((f) => f.alias === r.iface)) opt(r.iface, `${r.iface} (지금 없음)`);
+    ifSel.addEventListener("change", () => { r.iface = ifSel.value; refresh(); });
+
+    dlg.append(
       el(
         "div",
-        "actions",
-        button("취소", () => clear(form)),
-        button(idx >= 0 ? "고치기" : "표에 넣기", () => {
-          if (r.proto === "icmp") { r.srcPort = ""; r.dstPort = ""; }
-          if (idx >= 0) rules[idx] = r;
-          else rules.push(r);
-          clear(form);
-          draw();
-        }, "btn primary"),
+        "acl-dlg-body",
+        row("동작", act),
+        row("방향", dir),
+        row("프로토콜", proto, undefined),
+        portNote,
+        el("div", "acl-ends", card(srcTitle, srcIp, srcPort), el("div", "acl-ends-arrow", "→"), card(dstTitle, dstIp, dstPort)),
+        row("인터페이스", ifSel, "특정 네트워크(예: Wi-Fi)에서만 적용하려면 고르세요."),
       ),
-      el("p", "muted small", "빈 칸은 '모두'입니다. 여러 값은 쉼표로. 표에 넣은 뒤 'ACL 적용…'을 눌러야 실제로 걸립니다."),
+      el("div", "acl-dlg-preview", el("div", "muted small", "이 규칙은"), preview),
+      el("div", "actions", button("취소", () => dlg.close()), el("span", "spacer"), save),
     );
+    proto.querySelector<HTMLButtonElement>(".seg-opt.on")?.click();
+    document.body.append(dlg);
+    dlg.addEventListener("close", () => dlg.remove());
+    dlg.showModal();
+    refresh();
   };
 
   const load = (yaml: string | null) => {
     if (yaml) {
       const back = yamlToAcl(yaml);
-      if (back) rules = back;
-      else table.append(el("p", "warn", "지금 걸린 ACL 을 표로 읽지 못했습니다(고급 편집에서 손으로 쓴 꼴). 아래 '고급'에서 원문을 보세요."));
+      if (back) {
+        rules = back;
+        applied = aclToYaml(back);
+      } else {
+        body.append(el("p", "warn", "지금 걸린 ACL 을 표로 읽지 못했습니다(고급 편집에서 손으로 쓴 꼴). 아래 ‘고급’에서 원문을 보세요."));
+      }
     }
     draw();
   };

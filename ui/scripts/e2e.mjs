@@ -132,6 +132,63 @@ page.on("console", (m) => {
 });
 await page.addInitScript(shim);
 await page.goto(base);
+if (mode === "acl") {
+  // ACL 정책 관리 화면(2026-11-06 개편): 빈 표 → 규칙 창 두 번(차단·허용) → 표 → 적용 → 다시 열어 표로 읽기
+  await page.setViewportSize({ width: 1393, height: 997 });
+  await page.waitForSelector(".status", { timeout: 20000 });
+  await page.click("button.nav-btn[data-key=policy]");
+  await page.waitForSelector(".acl", { timeout: 10000 });
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: path.join(outDir, "acl-0-empty.png") });
+  const addRule = async (o) => {
+    await page.click(".acl-head button:has-text('규칙 추가')");
+    await page.waitForSelector("dialog.acl-dialog[open]");
+    if (o.allow) await page.click("dialog.acl-dialog .seg-opt:has-text('허용')");
+    if (o.dir) await page.click(`dialog.acl-dialog .seg-opt:has-text('${o.dir}')`);
+    if (o.proto) await page.click(`dialog.acl-dialog .seg-opt:text-is('${o.proto}')`);
+    const inputs = page.locator("dialog.acl-dialog .acl-input input");
+    if (o.srcIp) await inputs.nth(0).fill(o.srcIp);
+    if (o.dstIp) await inputs.nth(2).fill(o.dstIp);
+    if (o.dstPort) await inputs.nth(3).fill(o.dstPort);
+    await page.waitForTimeout(200);
+    if (o.shot) await page.screenshot({ path: path.join(outDir, o.shot) });
+    await page.click("dialog.acl-dialog .actions .btn.primary");
+  };
+  await addRule({ dstIp: "1.1.1.1", dstPort: "443", proto: "TCP", shot: "acl-1-dialog-block.png" });
+  await addRule({ allow: true, dir: "들어옴", srcIp: "192.168.0.0/24", dstPort: "3389", proto: "TCP", shot: "acl-2-dialog-allow-in.png" });
+  // 잘못된 주소는 저장 단추가 꺼진다
+  await page.click(".acl-head button:has-text('규칙 추가')");
+  await page.locator("dialog.acl-dialog .acl-input input").nth(2).fill("1.1.1.999");
+  await page.waitForTimeout(200);
+  const disabled = await page.locator("dialog.acl-dialog .actions .btn.primary").isDisabled();
+  must(disabled, "acl: invalid address disables save");
+  await page.screenshot({ path: path.join(outDir, "acl-3-dialog-invalid.png") });
+  await page.click("dialog.acl-dialog .actions .btn:has-text('취소')");
+  must((await page.locator(".acl-grid tbody tr").count()) === 2, "acl: two rules in table");
+  await page.screenshot({ path: path.join(outDir, "acl-4-table.png") });
+  await page.click(".acl-foot .btn.primary");
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: path.join(outDir, "acl-5-applied.png"), fullPage: true });
+  const listed = await page.evaluate(() => document.body.innerText.includes("ACL 규칙 2개"));
+  must(listed, "acl: applied policy listed as 'ACL 규칙 2개'");
+  // 화면을 다시 열면 걸린 ACL 을 표로 읽는다
+  await page.click("button.nav-btn[data-key=dashboard]");
+  await page.waitForTimeout(500);
+  await page.click("button.nav-btn[data-key=policy]");
+  await page.waitForTimeout(1500);
+  must((await page.locator(".acl-grid tbody tr").count()) === 2, "acl: reload reads applied ACL back");
+  await page.setViewportSize({ width: 760, height: 900 });
+  await page.click(".acl-grid tbody tr >> nth=1 >> button:has-text('수정')");
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(outDir, "acl-6-dialog-narrow.png") });
+  await page.click("dialog.acl-dialog .actions .btn:has-text('취소')");
+  console.log(results.join("\n"));
+  if (errors.length) console.log("page errors:", errors.join(" | "));
+  if (cspViolations.length) console.log("csp:", cspViolations.join(" | "));
+  await browser.close();
+  server.close();
+  process.exit(results.some((r) => r.startsWith("FAIL")) || errors.length || cspViolations.length ? 1 : 0);
+}
 if (mode.startsWith("shots:")) {
   // D013 상태 캡처: svc-dev --force empty|error / --health stalled 와 짝. 화면 넷을 찍고 끝낸다(시나리오 없음)
   const label = mode.slice(6);
