@@ -139,6 +139,8 @@ if (mode === "flow") {
     await page.goto(base);
     await page.setViewportSize({ width: 1393, height: 1300 });
     await page.waitForSelector(".status.ok", { timeout: 20000 });
+    await page.waitForSelector(".card.alert", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(1500);
     await page.screenshot({ path: path.join(outDir, `b-dashboard-${theme}.png`) });
     await page.click("button.nav-btn[data-key=story]");
     await page.waitForSelector(".card.event");

@@ -3,7 +3,7 @@
 // 원칙: 모든 상자·선은 출처 그래프의 노드·선 하나에 대응하고 선을 누르면 근거가 나온다. 늘 움직이는 장식은 없다.
 // 외부 문자열(파일명·도메인·명령줄)은 텍스트 노드로만 넣는다(innerHTML 금지).
 import { rpc } from "../rpc";
-import { el, clear, errorBox, ext, button, fmtShortSec, filetimeToUnix, fmtTs } from "../ui";
+import { el, clear, errorBox, ext, button, fmtShort, fmtShortSec, filetimeToUnix, fmtTs } from "../ui";
 import { sanitize } from "../sanitize";
 import { REL, hostOf, portOf, type Branch } from "./mindmap";
 import { placeName, flagPath } from "./connections";
@@ -119,11 +119,10 @@ export function flowView(ev: {
   const map = el("div", "flow-map");
   const side = el("aside", "flow-side");
   const tail = el("div", "flow-tail");
-  root.append(
-    el("p", "muted small flow-hint", "이야기 카드 · 마인드맵 · 흐름 보기는 같은 사실의 다른 보기입니다. 상자를 누르면 오른쪽에 그 사실, 선을 누르면 근거가 나옵니다."),
-    el("div", "flow-body", rail, map, side),
-    tail,
-  );
+  // B안 제목 줄: "○○ 에서 시작한 일" · 시각 범위 · 선 N개 · 근거 N건 (불러온 뒤 채움)
+  const titleRow = el("div", "flow-titlebar");
+  const legend = el("div", "flow-legend muted small", el("span", undefined, "굵은 청록 선 = 판정에 쓰인 선"), el("span", undefined, "빨간 선 = 파괴 징후로 이어지는 선"), el("span", undefined, "상자를 누르면 오른쪽에 그 사실"));
+  root.append(titleRow, el("div", "flow-body", rail, map, side), tail);
 
   const explain = async (edgeId: number, into: HTMLElement) => {
     clear(into);
@@ -155,14 +154,38 @@ export function flowView(ev: {
   const showSide = (b: Branch) => {
     clear(side);
     const t = boxText(b);
-    side.append(el("div", "muted small", "선택한 것"), el("div", "flow-side-title", ext("span", t.title)), el("div", "muted small", t.sub));
-    if (b.via) {
+    side.append(el("div", "muted small", "선택한 것"), el("div", "flow-side-title", ext("span", t.title), " ", el("span", "muted small", t.sub)));
+    // B안: 이 상자에 걸린 사실 문장을 시각순으로(주인공이면 사건 전체)
+    const mine = (b.node.id === heroNode ? ev.sentences : ev.sentences.filter((x) => b.via != null && x.edge_ids.includes(b.via.id)))
+      .slice().sort((a, c) => a.ts - c.ts).slice(0, 8);
+    if (mine.length) {
+      const ol = el("ol", "flow-facts");
+      for (const f of mine) {
+        const when = f.ts > 0 && filetimeToUnix(f.ts) > 946684800 ? fmtShort(filetimeToUnix(f.ts)) : "—";
+        ol.append(el("li", f.chapter === 5 ? "destroy" : undefined, el("span", "muted small time", when), ext("span", f.text)));
+      }
+      side.append(ol);
+      const ev_n = new Set(mine.flatMap((x) => x.edge_ids)).size;
+      side.append(el("div", "muted small", `근거 ${ev_n}건`));
+    } else if (b.via) {
       side.append(el("p", undefined, `${REL[b.via.rel] ?? b.via.rel} · ${fmtShortSec(filetimeToUnix(b.via.ts))}`));
+    }
+    if (b.via) {
       const box = el("div", "evidence-box");
       const eid = b.via.id;
-      side.append(button("근거 보기", () => void explain(eid, box), "btn small"), box);
+      side.append(el("div", "flow-side-actions", button("근거 보기", () => void explain(eid, box), "btn small")), box);
     }
-    if (b.node.kind === "process") side.append(processPanel(b.node.id));
+    // 프로그램 자세히는 단추로(늘 펼치면 오른쪽 패널이 길어져 지도가 빈 칸으로 늘어났다 — B안 검수)
+    if (b.node.kind === "process") {
+      const holder = el("div");
+      const btn = button("프로그램 자세히", () => {
+        if (holder.firstChild) { clear(holder); btn.textContent = "프로그램 자세히"; }
+        else { holder.append(processPanel(b.node.id)); btn.textContent = "자세히 접기"; }
+      }, "btn small");
+      const acts = side.querySelector(".flow-side-actions");
+      if (acts) acts.append(btn); else side.append(el("div", "flow-side-actions", btn));
+      side.append(holder);
+    }
   };
 
   // 관계 지도(가운데): 네 열 + 선(SVG). 데이터를 받아 상자를 놓고, 그려진 뒤 상자 위치로 선을 긋는다
@@ -178,6 +201,7 @@ export function flowView(ev: {
   }
   map.append(svg, grid);
   const boxes = new Map<number, HTMLElement>();
+  let heroNode = -1;
   let links: { src: number; dst: number; chapter: boolean; destroy: boolean; eid: number; rel: string }[] = [];
 
   const drawLines = () => {
@@ -193,6 +217,8 @@ export function flowView(ev: {
       const leftToRight = ra.left <= rb.left;
       const [p, q] = leftToRight ? [ra, rb] : [rb, ra];
       const sameCol = Math.abs(ra.left - rb.left) < 4;
+      // 같은 열 안의 선(예: 출신 열의 조상 사이)은 끝이 상자에 닿지 않아 끊긴 선처럼 보였다 — 긋지 않는다(근거는 마인드맵)
+      if (sameCol) continue;
       const x1 = sameCol ? ra.left + 16 - base.left : p.right - base.left;
       const y1 = sameCol ? ra.bottom - base.top : p.top + p.height / 2 - base.top;
       const x2 = sameCol ? rb.left + 16 - base.left : q.left - base.left;
@@ -229,6 +255,7 @@ export function flowView(ev: {
       const p = [...best.values()].find((b) => b.side === "action" && b.depth === 1 && b.node.kind === "process" && b.via?.rel === "executed_as");
       if (p) heroId = p.node.id;
     }
+    heroNode = heroId;
     // 접속지는 주인공의 것과 판정 근거만 상자로. 다른 프로그램(조상 브라우저 등)의 접속은 그 상자 안 "접속 N" 으로 접는다(마인드맵 D007-5)
     const foldN = new Map<number, number>();
     for (const b of [...best.values()]) {
@@ -249,7 +276,7 @@ export function flowView(ev: {
       if (!list.length) col.append(el("div", "muted small flow-empty", "기록 없음"));
       for (const b of list.slice(0, PER_COL)) {
         const t = boxText(b);
-        const box = el("button", `flow-box kind-${b.node.kind}${b.depth === 0 ? " hero" : ""}${b.via?.chapter != null ? " chapter" : ""}${b.via?.chapter === 5 ? " destroy" : ""}${b.node.kind === "command" ? " command" : ""}`);
+        const box = el("button", `flow-box kind-${b.node.kind}${b.node.id === heroId ? " hero" : ""}${b.via?.chapter != null ? " chapter" : ""}${b.via?.chapter === 5 ? " destroy" : ""}${b.node.kind === "command" ? " command" : ""}`);
         box.type = "button";
         const titleEl = ext("span", t.title);
         titleEl.className = t.mono ? "flow-box-title path" : "flow-box-title";
@@ -262,7 +289,7 @@ export function flowView(ev: {
           box.prepend(img);
         }
         const fold = foldN.get(b.node.id);
-        if (fold) box.append(el("span", "flow-box-sub", `접속 ${fold}곳 — 마인드맵에서`));
+        if (fold) box.append(el("span", "flow-box-sub", `접속 ${fold}곳 · 마인드맵에`));
         box.title = b.node.label || b.node.key;
         box.addEventListener("click", () => {
           for (const x of boxes.values()) x.classList.remove("selected");
@@ -278,8 +305,17 @@ export function flowView(ev: {
     const nid = (id: number) => alias.get(id) ?? id;
     links = [...best.values()].filter((b) => b.via).map((b) => ({ src: nid(b.via!.src), dst: nid(b.via!.dst), chapter: b.via!.chapter != null, destroy: b.via!.chapter === 5, eid: b.via!.id, rel: b.via!.rel })).filter((l) => l.src !== l.dst);
     // 처음 선택 = 주인공
-    const hero = [...best.values()].find((b) => b.depth === 0);
-    if (hero) showSide(hero);
+    const hero = best.get(heroId) ?? [...best.values()].find((b) => b.depth === 0);
+    if (hero) {
+      showSide(hero);
+      boxes.get(hero.node.id)?.classList.add("selected");
+      // 제목 줄: 주인공 이름 · 시각 범위 · 선 수 · 근거 수
+      const tsv = ev.sentences.map((x) => x.ts).filter((x) => x > 0 && filetimeToUnix(x) > 946684800).sort((a, c) => a - c);
+      const span = tsv.length ? (tsv.length > 1 && tsv[0] !== tsv[tsv.length - 1] ? `${fmtShort(filetimeToUnix(tsv[0]!))} – ${fmtShort(filetimeToUnix(tsv[tsv.length - 1]!))}` : fmtShort(filetimeToUnix(tsv[0]!))) : "";
+      const evn = new Set(ev.sentences.flatMap((x) => x.edge_ids)).size;
+      titleRow.append(el("h3", "flow-title", ext("span", boxText(hero).title), " 에서 시작한 일"), el("span", "muted small", [span, `선 ${links.length}개`, `근거 ${evn}건`].filter(Boolean).join(" · ")));
+    }
+    map.append(legend);
     requestAnimationFrame(drawLines);
   };
 
