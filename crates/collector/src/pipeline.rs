@@ -322,16 +322,38 @@ pub fn start(cfg: Config, sink: Option<Sender<Vec<Event>>>) -> Result<Session> {
             let poller = thread::spawn(move || -> (u64, Vec<session_stats::SessionStats>) {
                 let mut reported: HashSet<(u32, String, u16)> = HashSet::new();
                 let mut last_services: HashMap<u32, Vec<String>> = HashMap::new();
+                // 34차 Q1 보강: 모든 서비스 이름(5초마다 비교). None = 아직 기준 없음(처음 읽은 목록은 새 등록으로 치지 않는다)
+                let mut all_services: Option<HashSet<String>> = None;
+                let mut tick: u64 = 0;
                 let mut missed = 0u64;
                 let mut stats = Vec::new();
                 while !poll_stop.load(Ordering::Relaxed) {
                     thread::sleep(Duration::from_secs(1));
                     poll_ctx.sample_clock();
                     let ts = now_filetime();
+                    tick += 1;
+                    if tick % 5 == 0 {
+                        if let Ok(names) = scm::all_names() {
+                            if let Some(prev) = &all_services {
+                                for n in names.difference(prev) {
+                                    if graph::ledger::service_registered(n, ts) {
+                                        poll_ctx.count("ledger_service_register");
+                                    }
+                                }
+                            }
+                            all_services = Some(names);
+                        }
+                    }
                     // SCM 변화분만 ServiceMap 으로
                     if let Ok(map) = scm::map() {
                         for (pid, svcs) in &map {
                             if last_services.get(pid) != Some(svcs) {
+                                // 장부에 이은 서비스가 새 호스트 pid 로 시작됨 → 그 pid 를 물려받음
+                                for sv in svcs {
+                                    if graph::ledger::service_launched(sv, *pid, ts) {
+                                        poll_ctx.count("ledger_service_launch");
+                                    }
+                                }
                                 let tok = token::system_token(*pid);
                                 let _ = poll_tx.try_send(Event::new(
                                     ts,

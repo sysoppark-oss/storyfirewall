@@ -233,6 +233,16 @@ pub fn task_launched(name: &str, pid: u32, now_ft: i64) -> bool {
     })
 }
 
+/// 서비스가 새로 생김(서비스 목록 비교, 수집기가 5초마다). 작업과 같은 규칙: 관찰 대상이 하나뿐일 때만 잇는다
+pub fn service_registered(name: &str, now_ft: i64) -> bool {
+    task_registered(&format!("svc:{name}"), now_ft)
+}
+
+/// 이은 서비스가 시작돼 호스트 pid 가 생김(서비스 대조표). 그 pid 를 추정으로 물려받는다
+pub fn service_launched(name: &str, pid: u32, now_ft: i64) -> bool {
+    task_launched(&format!("svc:{name}"), pid, now_ft)
+}
+
 /// 물려받은 방법
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Inherit {

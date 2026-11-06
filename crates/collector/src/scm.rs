@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use windows_sys::Win32::Foundation::{GetLastError, ERROR_MORE_DATA};
 use windows_sys::Win32::System::Services::{
     CloseServiceHandle, EnumServicesStatusExW, OpenSCManagerW, ENUM_SERVICE_STATUS_PROCESSW,
-    SC_ENUM_PROCESS_INFO, SC_MANAGER_ENUMERATE_SERVICE, SERVICE_ACTIVE, SERVICE_WIN32,
+    SC_ENUM_PROCESS_INFO, SC_MANAGER_ENUMERATE_SERVICE, SERVICE_ACTIVE, SERVICE_STATE_ALL,
+    SERVICE_WIN32,
 };
 
 fn pwstr_to_string(p: *const u16) -> String {
@@ -24,6 +25,25 @@ fn pwstr_to_string(p: *const u16) -> String {
 }
 
 pub fn map() -> Result<HashMap<u32, Vec<String>>, u32> {
+    enum_services(SERVICE_ACTIVE).map(|rows| {
+        let mut out: HashMap<u32, Vec<String>> = HashMap::new();
+        for (pid, name) in rows {
+            if pid != 0 {
+                out.entry(pid).or_default().push(name);
+            }
+        }
+        out
+    })
+}
+
+/// 34차 Q1 보강: 멈춰 있는 것까지 모든 Win32 서비스 이름. 새 이름이 생기면 "서비스 등록"(도구 없이 New-Service·COM 으로 만든 것도).
+/// 서비스 제어 관리자 7045 는 실시간 ETW 에 남지 않아(러너 실측) 목록을 비교한다
+pub fn all_names() -> Result<std::collections::HashSet<String>, u32> {
+    enum_services(SERVICE_STATE_ALL).map(|rows| rows.into_iter().map(|(_, n)| n).collect())
+}
+
+/// (호스트 PID, 서비스 이름). 멈춘 서비스는 PID 0
+fn enum_services(state: u32) -> Result<Vec<(u32, String)>, u32> {
     let scm = unsafe {
         OpenSCManagerW(
             std::ptr::null(),
@@ -34,7 +54,7 @@ pub fn map() -> Result<HashMap<u32, Vec<String>>, u32> {
     if scm.is_null() {
         return Err(unsafe { GetLastError() });
     }
-    let mut out: HashMap<u32, Vec<String>> = HashMap::new();
+    let mut out: Vec<(u32, String)> = Vec::new();
     let mut buf: Vec<u8> = Vec::new();
     let mut needed = 0u32;
     let mut returned = 0u32;
@@ -46,7 +66,7 @@ pub fn map() -> Result<HashMap<u32, Vec<String>>, u32> {
                 scm,
                 SC_ENUM_PROCESS_INFO,
                 SERVICE_WIN32,
-                SERVICE_ACTIVE,
+                state,
                 buf.as_mut_ptr(),
                 buf.len() as u32,
                 &mut needed,
@@ -63,13 +83,7 @@ pub fn map() -> Result<HashMap<u32, Vec<String>>, u32> {
                 )
             };
             for r in rows {
-                let pid = r.ServiceStatusProcess.dwProcessId;
-                if pid == 0 {
-                    continue;
-                }
-                out.entry(pid)
-                    .or_default()
-                    .push(pwstr_to_string(r.lpServiceName));
+                out.push((r.ServiceStatusProcess.dwProcessId, pwstr_to_string(r.lpServiceName)));
             }
             break;
         }
