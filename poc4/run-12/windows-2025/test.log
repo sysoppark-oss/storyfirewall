@@ -1,174 +1,16 @@
-    Updating crates.io index
- Downloading crates ...
-  Downloaded cpufeatures v0.2.17
-  Downloaded deranged v0.5.9
-  Downloaded cfg-if v1.0.5
-  Downloaded equivalent v1.0.3
-  Downloaded crypto-common v0.1.7
-  Downloaded block-buffer v0.10.4
-  Downloaded indexmap v2.14.2
-  Downloaded memoffset v0.9.1
-  Downloaded windows-implement v0.57.0
-  Downloaded powerfmt v0.2.1
-  Downloaded fallible-streaming-iterator v0.1.9
-  Downloaded windows-link v0.2.1
-  Downloaded autocfg v1.5.1
-  Downloaded digest v0.10.7
-  Downloaded generic-array v0.14.7
-  Downloaded time-core v0.1.9
-  Downloaded itoa v1.0.18
-  Downloaded version_check v0.9.5
-  Downloaded num v0.4.3
-  Downloaded num-conv v0.2.2
-  Downloaded num-derive v0.4.2
-  Downloaded windows-result v0.1.2
-  Downloaded windows-targets v0.52.6
-  Downloaded num-iter v0.1.46
-  Downloaded windows-interface v0.57.0
-  Downloaded bitflags v1.3.2
-  Downloaded num-integer v0.1.47
-  Downloaded ipnetwork v0.21.1
-  Downloaded byteorder v1.5.0
-  Downloaded fallible-iterator v0.3.0
-  Downloaded foldhash v0.2.0
-  Downloaded rand_core v0.6.4
-  Downloaded shlex v2.0.1
-  Downloaded thiserror v2.0.21
-  Downloaded ppv-lite86 v0.2.21
-  Downloaded num-complex v0.4.6
-  Downloaded quote v1.0.47
-  Downloaded zmij v1.0.23
-  Downloaded find-msvc-tools v0.1.15
-  Downloaded sha2 v0.10.9
-  Downloaded thiserror-impl v2.0.21
-  Downloaded hashlink v0.12.2
-  Downloaded unicode-ident v1.0.27
-  Downloaded pkg-config v0.3.34
-  Downloaded getrandom v0.2.17
-  Downloaded once_cell v1.21.4
-  Downloaded smallvec v1.16.4
-  Downloaded num-rational v0.4.2
-  Downloaded rand_chacha v0.3.1
-  Downloaded serde_yaml_ng v0.10.0
-  Downloaded time-macros v0.2.32
-  Downloaded windows-core v0.57.0
-  Downloaded log v0.4.34
-  Downloaded bitflags v2.13.2
-  Downloaded maxminddb v0.32.0
-  Downloaded ryu v1.0.23
-  Downloaded serde_derive v1.0.229
-  Downloaded num-traits v0.2.19
-  Downloaded proc-macro2 v1.0.107
-  Downloaded unsafe-libyaml v0.2.11
-  Downloaded serde v1.0.229
-  Downloaded rand v0.8.8
-  Downloaded serde_core v1.0.229
-  Downloaded widestring v1.2.1
-  Downloaded memchr v2.8.3
-  Downloaded typenum v1.20.1
-  Downloaded num-bigint v0.4.8
-  Downloaded cc v1.10.0
-  Downloaded serde_json v1.0.154
-  Downloaded rusqlite v0.41.1
-  Downloaded hashbrown v0.17.1
-  Downloaded zerocopy v0.7.35
-  Downloaded vcpkg v0.2.15
-  Downloaded time v0.3.55
-  Downloaded zerocopy v0.8.63
-  Downloaded syn v2.0.119
-  Downloaded syn v3.0.9
-  Downloaded windows_x86_64_msvc v0.52.6
-  Downloaded windows-sys v0.61.2
-  Downloaded libsqlite3-sys v0.39.1
-  Downloaded windows v0.57.0
-   Compiling proc-macro2 v1.0.107
-   Compiling quote v1.0.47
-   Compiling unicode-ident v1.0.27
-   Compiling serde_core v1.0.229
-   Compiling serde v1.0.229
-   Compiling thiserror v2.0.21
-   Compiling memchr v2.8.3
-   Compiling zmij v1.0.23
-   Compiling itoa v1.0.18
-   Compiling serde_json v1.0.154
-   Compiling syn v3.0.9
-   Compiling foldhash v0.2.0
-   Compiling shlex v2.0.1
-   Compiling hashbrown v0.17.1
-   Compiling find-msvc-tools v0.1.15
-   Compiling cc v1.10.0
-   Compiling pkg-config v0.3.34
-   Compiling vcpkg v0.2.15
-   Compiling serde_derive v1.0.229
-   Compiling thiserror-impl v2.0.21
-   Compiling libsqlite3-sys v0.39.1
-   Compiling version_check v0.9.5
-   Compiling generic-array v0.14.7
-   Compiling cfg-if v1.0.5
-   Compiling hashlink v0.12.2
-   Compiling bitflags v2.13.2
-   Compiling smallvec v1.16.4
-   Compiling fallible-streaming-iterator v0.1.9
-   Compiling fallible-iterator v0.3.0
-   Compiling typenum v1.20.1
-   Compiling autocfg v1.5.1
-   Compiling cpufeatures v0.2.17
    Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
-   Compiling crypto-common v0.1.7
-   Compiling block-buffer v0.10.4
-   Compiling digest v0.10.7
-   Compiling num-traits v0.2.19
-   Compiling sha2 v0.10.9
-   Compiling windows_x86_64_msvc v0.52.6
-   Compiling windows-link v0.2.1
-   Compiling windows-sys v0.61.2
-   Compiling syn v2.0.119
-   Compiling equivalent v1.0.3
-   Compiling zerocopy v0.8.63
-   Compiling indexmap v2.14.2
-   Compiling num-integer v0.1.47
-   Compiling unsafe-libyaml v0.2.11
-   Compiling ryu v1.0.23
-   Compiling serde_yaml_ng v0.10.0
    Compiling policy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\policy)
-   Compiling windows-targets v0.52.6
-   Compiling getrandom v0.2.17
-   Compiling rand_core v0.6.4
-   Compiling windows-result v0.1.2
-   Compiling dsl v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\dsl)
-   Compiling num-bigint v0.4.8
-   Compiling ppv-lite86 v0.2.21
-   Compiling windows-interface v0.57.0
-   Compiling windows-implement v0.57.0
-   Compiling memoffset v0.9.1
-   Compiling windows-core v0.57.0
-   Compiling rand_chacha v0.3.1
-   Compiling num-rational v0.4.2
-   Compiling num-iter v0.1.46
-   Compiling num-complex v0.4.6
-   Compiling ipnetwork v0.21.1
-   Compiling byteorder v1.5.0
-   Compiling zerocopy v0.7.35
-   Compiling maxminddb v0.32.0
-   Compiling num v0.4.3
-   Compiling rand v0.8.8
-   Compiling windows v0.57.0
-   Compiling num-derive v0.4.2
-   Compiling rusqlite v0.41.1
    Compiling api v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\api)
-   Compiling bitflags v1.3.2
-   Compiling widestring v1.2.1
-   Compiling graph v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\graph)
-   Compiling engine v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\engine)
-   Compiling once_cell v1.21.4
-   Compiling log v0.4.34
    Compiling ferrisetw v1.2.0 (D:\a\storyfirewall\storyfirewall\third_party\ferrisetw)
+   Compiling graph v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\graph)
+   Compiling dsl v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\dsl)
+   Compiling engine v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\engine)
    Compiling judge v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\judge)
    Compiling geo v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\geo)
    Compiling story v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\story)
    Compiling collector v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\collector)
    Compiling svc v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\svc)
-    Finished `release` profile [optimized] target(s) in 2m 38s
+    Finished `release` profile [optimized] target(s) in 1m 27s
      Running unittests src\lib.rs (target\release\deps\api-a9b3e9ecc075ffd7.exe)
 
 running 0 tests
@@ -177,18 +19,19 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
      Running tests\messages.rs (target\release\deps\messages-fd8ee3b74bfbae8a.exe)
 
-running 9 tests
+running 10 tests
+test method_table_roles_and_idempotency_keys ... ok
 test first_run_watch_settings_are_validated ... ok
 test change_stage_validates_inner_method_and_params ... ok
-test method_table_roles_and_idempotency_keys ... ok
 test error_codes_roundtrip_and_response_lines ... ok
 test omitted_cursor_defaults_to_page_max_both_ways ... ok
 test pages_are_capped_and_cursor_normalized ... ok
 test per_method_param_validation ... ok
+test remote_trusted_tools_are_validated ... ok
 test version_negotiation ... ok
 test request_envelope_parses_and_rejects_bad_shapes ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
      Running unittests src\lib.rs (target\release\deps\engine-f4cd0a0c7b8cd487.exe)
 
@@ -219,25 +62,42 @@ test self_heal_with_circuit_breaker_never_stops ... ok
 test unconfirmed_policy_auto_rolls_back_after_60s ... ok
 test version_swap_is_one_transaction_and_failure_keeps_previous_version ... ok
 test legacy_rows_without_ip_family_converge ... ok
-test reconcile_restores_missing_and_removes_orphans ... ok
 test restart_rolls_back_unconfirmed_policies ... ok
+test reconcile_restores_missing_and_removes_orphans ... ok
 
-test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.06s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.64s
 
      Running unittests src\lib.rs (target\release\deps\graph-b1ea64b10da7ded3.exe)
 
-running 9 tests
-test install::tests::installer_names ... ok
+running 17 tests
+test agent::tests::names_and_markers ... ok
 test ingest::normalize_tests::ip_forms_converge ... ok
+test install::tests::installer_names ... ok
 test install::tests::persistence_from_commands_and_tools ... ok
+test remote::tests::counter_reset_does_not_fake_burst ... ok
+test remote::tests::idle_relay_is_not_a_session ... ok
+test ledger::tests::ledger_rules ... ok
+test hash::tests::known_vector_and_missing_file ... ok
+test remote::tests::process_exit_ends_session ... ok
+test remote::tests::screen_streaming_starts_and_ends ... ok
+test remote::tests::tool_names ... ok
+test remote::tests::viewer_side_is_not_alarm ... ok
 test vault::tests::browser_needs_name_and_install_dir ... ok
 test vault::tests::debug_flags_are_kept_and_the_rest_dropped ... ok
 test vault::tests::decoy_candidates ... ok
 test vault::tests::shadow_copy_and_long_path_prefix_are_still_vault_files ... ok
-test hash::tests::known_vector_and_missing_file ... ok
 test vault::tests::vault_files_are_classified ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\agent.rs (target\release\deps\agent-431143674dff10b0.exe)
+
+running 3 tests
+test roots_skip_children_of_agents ... ok
+test activity_collects_subtree_facts ... ok
+test busy_descendants_survive_cap ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
      Running tests\boot_clamp.rs (target\release\deps\boot_clamp-af30a4a41efa74c8.exe)
 
@@ -249,12 +109,13 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
      Running tests\install.rs (target\release\deps\install-2e0a980bdcab37d6.exe)
 
-running 3 tests
+running 4 tests
 test xray_collects_files_autoruns_remotes_origin ... ok
 test finds_outer_installer_only ... ok
 test detached_setup_started_soon_after_is_grouped_by_time ... ok
+test install_cache_matches_live_and_picks_up_new_installs ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
      Running tests\poc1b_rewind.rs (target\release\deps\poc1b_rewind-1628d83b817c35fc.exe)
 
@@ -263,14 +124,14 @@ test capi2_attributes_crl_fetch_deterministically_and_replaces_window_rule ... o
 test scm_map_overrides_image_name_heuristic ... ok
 test signature_updates_file_node_and_service_judgement ... ok
 test projection_marks_repeated_nodes_as_seen ... ok
-되감기: ["remote:www.rust-lang.org:443", "process:curl.exe", "process:알 수 없는 프로그램(PID 6732)", "file:curl.exe"]
 test snapshot_and_process_start_dedupe_on_create_time ... ok
+되감기: ["remote:www.rust-lang.org:443", "process:curl.exe", "process:알 수 없는 프로그램(PID 6732)", "file:curl.exe"]
 test ingests_run2_and_rewinds_curl_chain ... ok
 CRL 노드로 들어오는 선: ["connected", "connected_via"]
 curl 의 행동 가지: ["www.rust-lang.org", "www.rust-lang.org:443", "x1.c.lencr.org:80", "yr.c.lencr.org:80", "yr1.c.lencr.org:80"]
 test attributes_cryptsvc_crl_lookup_to_curl ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
 
      Running tests\query_plans.rs (target\release\deps\query_plans-4cca658430de9252.exe)
 
@@ -281,6 +142,17 @@ test latest_process_by_pid_uses_key_index ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
+     Running tests\remote.rs (target\release\deps\remote-ca2c93184bb416bc.exe)
+
+running 5 tests
+test sent_recv_excludes_loopback ... ok
+test renamed_tool_found_by_valid_signer ... ok
+test running_tools_finds_live_remote_tools_only ... ok
+test session_facts_collects_whole_pc_in_window ... ok
+test session_facts_skip_service_session ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
      Running tests\retention.rs (target\release\deps\retention-2c4f871bf7cd9c55.exe)
 
 running 9 tests
@@ -289,8 +161,8 @@ test policy_round_trips_through_json_and_sanitizes ... ok
 test ordinary_edges_compact_into_daily_summary_and_raw_expire ... ok
 test size_cap_evicts_oldest_ordinary_raw_but_keeps_suspicious ... ok
 test suspicious_edges_survive_daily_compaction ... ok
-test timeline_buckets_cover_all_edges ... ok
 test suspicious_raw_kept_longer_than_ordinary_raw ... ok
+test timeline_buckets_cover_all_edges ... ok
 test chunked_apply_matches_single_apply ... ok
 test new_file_db_uses_incremental_auto_vacuum ... ok
 
@@ -309,26 +181,26 @@ test process_detail_has_signature_origin_children_and_autoruns ... ok
 test inflated_origin_side_cannot_push_out_actions ... ok
 test project_is_capped_at_hub_nodes ... ok
 test deferred_upgrade_fails_but_begin_write_waits ... ok
-busy batches=500 worst engine wait=152.9µs
+busy batches=500 worst engine wait=165.7µs
 test rare_writer_is_not_starved_by_busy_writer ... ok
 test two_connections_open_same_file_concurrently ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.53s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.17s
 
      Running unittests src\lib.rs (target\release\deps\svc-d1188d21890e1807.exe)
 
 running 19 tests
 test change::tests::sections_are_capped_so_later_sections_stay_visible ... ok
+test change::tests::lines_are_cleaned_tail_kept_and_digest_covers_full_content ... ok
 test change::tests::uuid_shape_and_uniqueness ... ok
 test change::tests::book_caps_and_expires ... ok
-test change::tests::lines_are_cleaned_tail_kept_and_digest_covers_full_content ... ok
 test defender::tests::cmdline_counts_pick ... ok
 test defender::tests::iso ... ok
 test defender::tests::modes_and_policy_wins ... ok
-test defender::tests::select_bookmark ... ok
 test defender::tests::parse_1123 ... ok
-test first_run::tests::settings_defaults_and_bad_values ... ok
+test defender::tests::select_bookmark ... ok
 test first_run::tests::story_line_is_facts_only ... ok
+test first_run::tests::settings_defaults_and_bad_values ... ok
 test policy_view::address_tests::address_text_shows_host_port_proto ... ok
 test policy_view::tests::long_paths_are_shortened_and_cut_names_give_root ... ok
 test policy_view::tests::summary_reads_like_a_sentence ... ok
@@ -384,28 +256,30 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
      Running tests\first_run.rs (target\release\deps\first_run-5e739f387572fd7e.exe)
 
-running 10 tests
+running 11 tests
 test downloaded_with_unknown_signature_becomes_target_at_expiry ... ok
 test downloaded_unsigned_first_run_is_target_second_run_is_not ... ok
 test overwritten_same_path_is_first_run_again ... ok
 test hash_change_without_write_edge_is_first_run_again ... ok
 test preexisting_snapshot_process_is_not_a_first_run ... ok
 test umbrella_auto_rollback_pause_and_off_stop_blocking ... ok
+test rerun_of_watched_path_waits_for_fresh_hash ... ok
 test umbrella_must_be_confirmed_before_child_blocks_and_children_expire ... ok
-test unsigned_installer_is_blocked_but_system_image_and_our_service_are_not ... ok
 test signed_local_installer_and_user_normal_are_handled ... ok
+test unsigned_installer_is_blocked_but_system_image_and_our_service_are_not ... ok
 test umbrella_child_filters_are_capped ... ok
 
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
      Running tests\integration.rs (target\release\deps\integration-6dbe51757c988b5a.exe)
 
-running 19 tests
+running 20 tests
 test a23_staged_change_expires ... ok
 test a19_connections_listeners_and_process_detail ... ok
 test a23_change_stage_get_commit_and_digest_guard ... ok
 test a24_flooded_children_do_not_push_addresses_out_of_approval_summary ... ok
 test admin_is_rechecked_per_mutation ... ok
+test agents_list_reads_precomputed_cache ... ok
 test apply_needs_ack_then_ack_confirm_and_auto_rollback_notification ... ok
 test baseline_uses_filetime_and_learns_daily ... ok
 test duplicate_time_changed_is_coalesced_without_swallowing_commands ... ok
@@ -421,49 +295,49 @@ test first_run_watch_settings_notify_and_story_line ... ok
 test ingest_judge_story_events_and_suspicious_notification ... ok
 test hello_answers_while_engine_is_busy ... ok
 
-test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.83s
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.84s
 
      Running tests\perf_scale.rs (target\release\deps\perf_scale-23660cf65dcf7ef8.exe)
 
 running 1 test
 test screen_queries_within_two_seconds has been running for over 60 seconds
-PERF ingest ms=103984
+PERF ingest ms=141176
 PERF scale n=20000 raw=28044 edges=36024 db_mb=13
 PERF latest_process_by_pid x200 (process nodes 20k) ms=5
-PERF judge.run(periodic) ms=97
-PERF judge.incremental(first = full) ms=93
-PERF judge.incremental(+1 minute) ms=9
-PERF judge.incremental(+1 minute) ms=9
-PERF judge.incremental(+1 minute) ms=9
-PERF judge.incremental(+1 minute) ms=9
+PERF judge.run(periodic) ms=110
+PERF judge.incremental(first = full) ms=112
 PERF judge.incremental(+1 minute) ms=8
-PERF judge periodic: full_ms=97 incremental_first_full_ms=93 incremental_steady_avg_ms=8 max_ms=9
-PERF story.today(24h, cold) ms=209
-PERF connections.list(300s) ms=12
-PERF connections.list(86400s) ms=20
-PERF connections.list(604800s) ms=20
-PERF process.detail(busiest) ms=8
+PERF judge.incremental(+1 minute) ms=9
+PERF judge.incremental(+1 minute) ms=9
+PERF judge.incremental(+1 minute) ms=9
+PERF judge.incremental(+1 minute) ms=9
+PERF judge periodic: full_ms=110 incremental_first_full_ms=112 incremental_steady_avg_ms=8 max_ms=9
+PERF story.today(24h, cold) ms=215
+PERF connections.list(300s) ms=15
+PERF connections.list(86400s) ms=21
+PERF connections.list(604800s) ms=21
+PERF process.detail(busiest) ms=9
 PERF collector.health gaps(24h) ms=0
 PERF stories=20 scores=[(55, "tool0.exe"), (55, "tool1.exe"), (55, "tool2.exe"), (55, "tool3.exe"), (55, "tool4.exe"), (55, "tool5.exe"), (55, "tool6.exe"), (55, "tool7.exe"), (55, "tool8.exe"), (55, "tool9.exe"), (55, "tool10.exe"), (55, "tool11.exe"), (55, "tool12.exe"), (55, "tool13.exe"), (55, "tool14.exe"), (55, "tool15.exe"), (55, "tool16.exe"), (55, "tool17.exe"), (55, "tool18.exe"), (55, "tool19.exe")]
 PERF story.events narrate(cold, 20 stories) ms=18
 PERF installs.list ms=23
 PERF story.events root_exec(file root 8k executions) ms=0
-PERF judge.assess(read path, startup only) ms=99
-PERF reader thread story.today(cold) ms=196
-PERF retention.apply(+4d, first run) ms=7690
+PERF judge.assess(read path, startup only) ms=108
+PERF reader thread story.today(cold) ms=206
+PERF retention.apply(+4d, first run) ms=6772
 PERF retention compacted=21200 summaries=3837 raw_deleted=0
-PERF retention.apply(again, steady) ms=27
-PERF summary n=20000 judge_ms=97 assess_ms=99 retention_first_ms=7690 retention_steady_ms=27 screen_max_ms=209
+PERF retention.apply(again, steady) ms=20
+PERF summary n=20000 judge_ms=110 assess_ms=108 retention_first_ms=6772 retention_steady_ms=20 screen_max_ms=215
 test screen_queries_within_two_seconds ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 139.74s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 166.03s
 
      Running tests\reader.rs (target\release\deps\reader-65a9ca8e087e3a27.exe)
 
 running 1 test
 test reader_matches_inline_and_cannot_write ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
 
    Doc-tests api
 
