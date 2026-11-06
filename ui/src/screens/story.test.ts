@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardNote, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned, liveText, recommendText } from "./story";
+import { cardNote, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned, liveText, recommendText, chainKids, chainTitle, adjustForDestroy } from "./story";
 import { hostOf, portOf, REL } from "./mindmap";
 // 그래프 관계 이름의 원본(Rust) — vite ?raw 로 글자 그대로 읽는다
 import graphLib from "../../../crates/graph/src/lib.rs?raw";
@@ -139,5 +139,19 @@ describe("자동 조사: 권장 조치 문장", () => {
     expect(recommendText({ recommend: "mark_normal" })).toBe("권장: 알려진 정상 모양 — 끊지 마세요");
     expect(recommendText({ recommend: "cut" })).toBe("권장: 여기서부터 끊기");
     expect(recommendText({ recommend: "review" })).toBe("권장: 아래 사실을 보고 정하세요");
+  });
+});
+
+describe("UI 3판 초안: 카드 제목 사슬·파괴 징후 권장", () => {
+  it("부모 → 주인공 → 자식(최대 3 + 외 N)", () => {
+    expect(chainTitle("cmd.exe", { parent: "chrome.exe", children: ["conhost.exe", "chrome-native-host.exe"], children_total: 2 })).toBe("chrome.exe → cmd.exe → conhost.exe, chrome-native-host.exe");
+    expect(chainKids(["a", "b", "c", "d"], 9)).toBe("a, b, c 외 6");
+    expect(chainTitle("x.exe", null)).toBe("x.exe");
+  });
+  it("파괴 징후가 있으면 정상 모양이 아닌 한 끊기를 권한다", () => {
+    const base = { root: 1, facts: [], verdict: "unknown" as const, recommend: "review" as const, reason: "r" };
+    expect(adjustForDestroy(base, true).recommend).toBe("cut");
+    expect(adjustForDestroy({ ...base, verdict: "known_normal", recommend: "mark_normal" }, true).recommend).toBe("mark_normal");
+    expect(adjustForDestroy(base, false).recommend).toBe("review");
   });
 });

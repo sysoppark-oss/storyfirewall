@@ -224,7 +224,7 @@ pub fn investigate(store: &Store, host: &dyn Host, root: i64) -> graph::Result<I
     }
     Ok(Investigation {
         root,
-        reason: "알려진 정상 모양으로 확인되지 않았습니다. 위 사실(경로·서명·부모)을 보고 정하세요.".into(),
+        reason: "알려진 정상 모양으로 확인되지 않았습니다.".into(),
         facts,
         verdict: Verdict::Unknown,
         recommend: Action::Review,

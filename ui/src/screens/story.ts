@@ -74,6 +74,8 @@ interface StoryEvent {
   root_signature?: { signer?: string | null; sig_status?: string | null } | null;
   /// D039-2: 뿌리가 파일이면 그 파일의 실행 횟수·처음·마지막(FILETIME)·가장 최근 프로세스 노드
   root_exec?: { count: number; first_ts: number; last_ts: number; latest_proc: number | null } | null;
+  /// UI 3판 초안: 카드 제목 사슬(부모 → 주인공 → 실행한 프로그램)
+  root_chain?: { parent?: string | null; children: string[]; children_total: number } | null;
   /// 실시간 1: 주인공 프로세스가 지금 실행 중인지(서비스가 카드를 줄 때 조회)
   root_live?: { running: boolean; pid: number; ended: boolean } | null;
   /// D022-4: 가장 늦은 외부 접속지와 그 나라
@@ -325,24 +327,8 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     const stale = r.result.items.filter((ev) => ev.fresh === false);
     // D020-2: 같은 프로그램·같은 판정은 한 장 + "N건" + 발생 시각 목록(최신 먼저)
     for (const g of groupStories(r.result.items.filter((ev) => ev.fresh !== false))) {
-      // 근거 배지는 묶음 합계(대표만이 아니라 N건 전부)
-      const card = buildCard(sumGroupSources(g.head, g.members));
-      if (g.members.length > 1) {
-        // D022-1: 제목 바로 오른쪽(제목 칸 안)에 중립 칩
-        card.querySelector(".card-head h3")?.append(el("span", "badge count", `${g.members.length}건`));
-        const det = el("details", "occurrences");
-        det.append(el("summary", undefined, `발생 시각 (${g.members.length}건 · ${fmtRange(filetimeToUnix(g.first_ts), filetimeToUnix(g.last_ts))})`));
-        for (const m of g.members) {
-          const slot = el("div", "stale-card");
-          const row = el("div", "stale-row", el("span", "muted", m.last_ts ? fmtShort(filetimeToUnix(m.last_ts)) : ""));
-          row.dataset["root"] = String(m.root);
-          // D022-4: 그 사건의 접속지 — 같은 판정이라도 접속지가 다르면 바로 보이게
-          if (m.egress) row.append(ext("span", `${m.egress}${m.egress_where?.country ? ` (${m.egress_where.country})` : ""}`, "occ-where"));
-          row.append(button("이 사건 보기", () => (slot.firstChild ? clear(slot) : void slot.append(buildCard(m))), "btn small"));
-          det.append(row, slot);
-        }
-        card.querySelector(".actions")?.before(det);
-      }
+      // 근거 배지는 묶음 합계(대표만이 아니라 N건 전부). 발생 목록은 카드의 "발생 N번" 탭(UI 3판 초안)
+      const card = buildCard(sumGroupSources(g.head, g.members), g.members);
       cards.append(card);
     }
     if (stale.length) {
@@ -385,6 +371,16 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       setTimeout(() => x.classList.remove("flash", "flash-out"), 2300);
     };
     let target = [...cards.querySelectorAll<HTMLElement>(".card.event")].find((c) => c.dataset["root"] === key);
+    if (!target) {
+      // 묶인 사건(발생 N번 탭 안): 그 카드의 탭을 연다
+      for (const c of cards.querySelectorAll<HTMLElement>(".card.event")) {
+        const occ = c.querySelector<HTMLButtonElement>(".tab-btn[data-tab=occ]");
+        if (occ && !c.querySelector(".detail-panel[data-tab=occ]")) {
+          occ.click();
+          if (![...c.querySelectorAll<HTMLElement>(".stale-row")].some((r) => r.dataset["root"] === key)) occ.click();
+        }
+      }
+    }
     if (!target) {
       const row = [...cards.querySelectorAll<HTMLElement>(".stale-row")].find((r) => r.dataset["root"] === key);
       if (row) {
@@ -438,7 +434,9 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       } else today.append(line);
     }
   };
-  const buildCard = (ev: StoryEvent): HTMLElement => {
+  // UI 3판 초안(사용자 "좋음" 2026-11-07): 요약(사슬 한 줄) → 결론(자동 조사) → 조치(권장 단추 하나) → 자세히(한 번에 하나).
+  // 카드 안에 카드를 넣지 않는다 — 같은 모양의 반복은 "발생 N번" 탭의 줄로
+  const buildCard = (ev: StoryEvent, members: StoryEvent[] = []): HTMLElement => {
     {
       const card = el("div", `card event ${ev.level.toLowerCase()}`);
       card.dataset["root"] = String(ev.root);
@@ -446,120 +444,157 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       const lastTs = ev.last_ts || ev.sentences.find((s) => s.ts)?.ts;
       const when = el("span", "muted when", lastTs ? fmtShort(filetimeToUnix(lastTs)) : "");
       if (lastTs) when.title = `마지막 활동 ${fmtTs(filetimeToUnix(lastTs))}`;
-      const head = el("div", "card-head", levelChip(ev.level), ext("h3", bareTitle(ev.title)), when);
-      // D025-A5: 뿌리가 프로세스면(경로를 안다) 이름을 눌러 프로그램 상세
-      // D039-2: 뿌리가 파일이면 그 파일로 실행된 가장 최근 프로세스의 상세 + 머리에 "이 파일로 실행 N번 · 처음~마지막"
       const fileRoot = ev.root_exec?.latest_proc != null ? ev.root_exec : null;
-      if (ev.root_image) {
-        // D030-4: 제목 안에 실제 button(키보드·UIA Invoke 가능)
-        const h3 = head.querySelector("h3")!;
-        h3.classList.add("clickable");
-        const nameBtn = button(h3.textContent ?? "", () =>
-          fileRoot ? openProcessDrawer(fileRoot.latest_proc!, execRange(fileRoot)) : openProcessDrawer(ev.root), "cell-btn");
-        nameBtn.title = "프로그램 상세";
-        h3.replaceChildren(nameBtn);
+      // 1) 요약: 부모 → 주인공 → 실행한 프로그램. 주인공 이름은 프로그램 상세 단추(D025-A5·D030-4)
+      const h3 = el("h3");
+      const name = bareTitle(ev.title);
+      const nameNode: Node = ev.root_image
+        ? (() => {
+            const b = button(name, () => (fileRoot ? openProcessDrawer(fileRoot.latest_proc!, execRange(fileRoot)) : openProcessDrawer(ev.root)), "cell-btn hero-name");
+            b.title = "프로그램 상세";
+            h3.classList.add("clickable");
+            return b;
+          })()
+        : ext("span", name, "hero-name");
+      const ch = ev.root_chain;
+      if (ch?.parent) h3.append(ext("span", ch.parent, "chain-part"), el("span", "chain-arrow", " → "));
+      h3.append(nameNode);
+      if (ch?.children.length) {
+        h3.append(el("span", "chain-arrow", " → "), ext("span", chainKids(ch.children, ch.children_total), "chain-part"));
       }
+      h3.title = chainTitle(name, ch);
+      if (members.length > 1) h3.append(el("span", "badge count", `${members.length}번`));
+      const head = el("div", "card-head", levelChip(ev.level), h3, when);
       card.append(head);
-      // 실시간 1(2026-11-07): 사건 시각과 지금 상태를 나눠 — "이게 지금인가?"를 카드에서 바로
+      if (members.length > 1) {
+        const first = members.reduce((a, m) => Math.min(a, m.last_ts || a), Infinity);
+        if (Number.isFinite(first) && lastTs) card.append(el("div", "since", `같은 모양 ${members.length}번 · ${fmtRange(filetimeToUnix(first), filetimeToUnix(lastTs))}`));
+      }
+      // 실시간 1: 지금 상태(시각은 오른쪽 위 하나만)
       if (ev.root_live) {
-        // 검수(2026-11-07): 시각은 오른쪽 위(마지막 활동) 하나만 — 이 줄은 상태만. 모르면 이유를 툴팁으로
         const line = el("div", ev.root_live.running ? "since live on" : "since live", el("span", "dot"), " ", liveText(ev.root_live));
         if (!ev.root_live.running && !ev.root_live.ended) line.title = "끝난 기록이 없고, 지금 같은 번호(PID)로 떠 있는 프로세스가 같은 프로그램인지 확인되지 않았습니다(번호는 다른 프로그램이 다시 쓸 수 있음).";
         card.append(line);
       }
-      // 수집 전부터 살아 있던 프로세스(L024·D004): 유입·실행 칸은 "기록 없음", 시작 시각은 따로 밝힌다
       card.append(chapterSteps(ev.reached ?? [], ev.score, ev.running_since ? [1, 2] : []));
       if (ev.destroy) card.append(destroyLine(ev.destroy));
-      if (ev.first_run_watch) {
-        const fw = el("div", "since", ext("span", ev.first_run_watch.text));
-        fw.title = `관찰 끝 ${fmtTs(ev.first_run_watch.until_ts)}`;
-        card.append(fw);
-      }
-      // D014-1: 기록 없는 구간에 시작했으면 "수집 시작 전부터"가 아니다 — 🕒 줄 대신 ⚠ 줄에 시작 시각을 합친다
-      if (ev.running_since && !ev.started_in_gap) {
-        const since = el("div", "since", el("span", "clock", "🕒"), " ", sinceText(filetimeToUnix(ev.running_since)));
-        since.title = fmtTs(filetimeToUnix(ev.running_since));
-        card.append(since);
-      }
-      if (ev.started_in_gap) {
-        const [gf, gt] = ev.started_in_gap;
-        const gap = el("div", "since gap", el("span", "clock", "⚠"), " ", gapStartText(gf, gt, ev.running_since));
-        gap.title = `${fmtTs(filetimeToUnix(gf))} ~ ${fmtTs(filetimeToUnix(gt))}`;
-        card.append(gap);
-      }
-      // 본문: 항목형(D002). 항목이 없는 예전 서비스면 문장 그대로
-      // D020-1: 핵심 프로세스는 서명·위치를 맨 위에 — 사칭(같은 이름 다른 폴더·서명 없음)과 가르는 핵심 사실
-      // D039-2: 파일 뿌리는 위치(경로)를 맨 위에. 판정 항목에 "위치"(폴더 종류)가 있으면 한 줄로 합친다(같은 이름 두 줄 방지)
-      const hasPlace = (ev.items ?? []).some((it) => it.label === "위치");
-      if (fileRoot && ev.root_image && !hasPlace) {
-        card.append(el("div", "sentence item", el("b", undefined, "위치: "), dataPath("span", ev.root_image)));
-      }
-      if (ev.root_core && ev.root_image) {
-        const sig = ev.root_signature;
-        const signer = sig?.signer ? `${sig.signer}${sig.sig_status && sig.sig_status !== "valid" ? ` (${sig.sig_status})` : ""}` : sig?.sig_status ? `없음 (${sig.sig_status})` : "확인 전";
-        card.append(el("div", "sentence item", el("b", undefined, "위치: "), extPath("span", ev.root_image)));
-        card.append(el("div", "sentence item", el("b", undefined, "서명: "), ext("span", signer)));
-      }
-      const rows: { text: Node; edge?: number; sources?: [string, number][] }[] = ev.items?.length
-        ? mergeItems(ev.items, isWindowsSigned(ev)).map((it0) => (fileRoot && ev.root_image && it0.label === "위치" ? { ...it0, value: `${ev.root_image} · ${it0.value}` } : it0)).map((it) => ({
-            // D039-2: "이 파일이 N번 실행됨"에 지역 시각 범위를 붙인다
-            text: el("span", undefined, el("b", undefined, `${it.label}: `), (["위치", "자동 실행"].includes(it.label) ? dataPath : extPath)("span", fileRoot && it.value.startsWith("이 파일이 ") && fileRoot.count > 1 ? it.value.replace(/번 실행됨/, `번 실행됨 (${fmtRange(filetimeToUnix(fileRoot.first_ts), filetimeToUnix(fileRoot.last_ts))})`) : it.value)),
-            edge: it.edge_ids[0],
-            sources: it.sources,
-          }))
-        : ev.sentences.map((s) => ({ text: extPath("span", s.text), edge: s.edge_ids[0], sources: s.sources }));
-      for (const r of rows) {
-        const line = el("div", "sentence item");
-        line.append(r.text);
-        // D043-2·D044-1: "복구 수단: 종류"(사람 말) + 근거 배지가 첫 줄, 그 아래 명령줄 원문(문장의 원문 첨부)
-        const cmd = ev.destroy && r.edge === ev.destroy.edge_id ? cmdlineLine(ev.destroy.cmdline) : null;
-        if (r.edge != null) {
-          const box = el("div", "evidence-box");
-          const edge = r.edge;
-          // B1: 근거 배지(출처별 수). 출처를 모르는 예전 서비스면 "왜?"
-          const toggle = () => (box.firstChild ? clear(box) : void explain(edge, box));
-          line.append(" ", r.sources?.length ? evidenceBadge(r.sources, toggle) : button("왜?", toggle, "btn small"));
-          if (cmd) line.append(cmd);
-          line.append(box);
-        } else if (cmd) line.append(cmd);
-        card.append(line);
-      }
-      // 자동 조사(2026-11-07 사용자): 실물·서명·알려진 정상 모양을 서비스가 확인하고 판단과 권장 조치를 붙인다
-      card.append(investigateBox(ev.root));
-      // 단추 위계(D002): 보조 "이건 정상입니다"(왼쪽) · 주 "마인드맵"(채움) · 파괴적 "끊기"(빨간 테두리, 맨 오른쪽)
+      // 2) 결론: 자동 조사(판단 + 근거). 권장 조치가 정해지면 3)의 그 단추만 강조한다
       const actions = el("div", "actions");
-      // 정상 처리는 파일에서 시작한 사건만(서비스 feedback_ok). 프로세스에서 시작한 사건은 단추를 보이지 않는다
+      let normalBtn: HTMLButtonElement | null = null;
       if (ev.feedback_ok !== false) {
-        actions.append(button("이건 정상입니다", async () => {
+        normalBtn = button("이건 정상입니다", async () => {
           const r2 = await mutation("judge.feedback_normal", { root: ev.root });
           if (!r2.ok) alert(`실패: ${r2.error.message}`);
           void load();
-        }));
+        });
       }
-      // D043-3·D044-3: 정상 처리를 못 하는 사건은 단추 줄 아래 회색 한 줄(단추 줄 순서는 그대로)
-      actions.append(
-        // D049: 흐름 보기(장 레일 + 관계 지도 + 선택한 것 + 오늘 한 일 꼬리). 보조 단추 — 주 단추(마인드맵) 왼쪽(D1)
-        button("흐름 보기", () => {
-          const old = card.querySelector(".flowview");
-          if (old) return old.remove();
-          card.append(flowView(ev));
-        }),
-        button("마인드맵", () => {
-          const old = card.querySelector(".mindmap");
-          if (old) return old.remove();
-          card.append(mindmap(ev.root));
-        }, "btn primary"),
-        el("span", "spacer"),
-        // D020-1: 핵심 프로세스는 끝내지 않는다 — 같은 자리에 "이 접속지만 차단"(서비스의 끊기 계획도 접속지만 막는다)
-        ev.root_core
-          ? button("이 접속지만 차단…", () => void cutDialog(ev.root, card, "이 접속지만 차단"), "btn danger-outline")
-          : button("여기서부터 끊기…", () => void cutDialog(ev.root, card), "btn danger-outline"),
-      );
-      card.append(actions);
+      // D020-1: 핵심 프로세스는 끝내지 않는다 — 같은 자리에 "이 접속지만 차단"
+      const cutBtn = ev.root_core
+        ? button("이 접속지만 차단…", () => void cutDialog(ev.root, card, "이 접속지만 차단"), "btn danger-outline")
+        : button("여기서부터 끊기…", () => void cutDialog(ev.root, card), "btn danger-outline");
+      card.append(investigateBox(ev.root, !!ev.destroy, (rec) => {
+        // D1: 빨간 채움 단추는 쓰지 않는다 — 권장이면 테두리를 굵게 하고 "권장" 표시만
+        if (rec === "cut") { cutBtn.classList.add("recommended"); cutBtn.prepend("권장 · "); }
+        if (rec === "mark_normal" && normalBtn) normalBtn.classList.add("primary");
+      }));
+      // 3) 조치 + 4) 자세히(탭 단추: 누르면 아래 한 칸에 하나만)
+      const panel = el("div", "detail-panel");
+      const tabs: HTMLButtonElement[] = [];
+      const tab = (label: string, key: string, make: () => HTMLElement) => {
+        const b = button(label, () => {
+          const open = panel.dataset["tab"] === key;
+          clear(panel);
+          tabs.forEach((t) => t.classList.remove("on"));
+          if (open) { delete panel.dataset["tab"]; return; }
+          panel.dataset["tab"] = key;
+          b.classList.add("on");
+          panel.append(make());
+        }, "btn tab-btn");
+        b.dataset["tab"] = key;
+        tabs.push(b);
+        return b;
+      };
+      // D1 단추 순서: 보조(자세히 탭) 왼쪽 → 주(정상) → 파괴적(끊기, 빨간 테두리) 오른쪽 끝
+      actions.append(el("span", "muted small", "자세히"),
+        tab("사실", "facts", () => factsPanel(ev, fileRoot)),
+        // D049: 흐름 보기(장 레일 + 관계 지도 + 선택한 것 + 오늘 한 일 꼬리)
+        tab("흐름 보기", "flow", () => flowView(ev)),
+        tab("마인드맵", "mindmap", () => mindmap(ev.root)));
+      if (members.length > 1) actions.append(tab(`발생 ${members.length}번`, "occ", () => occurrencesPanel(members)));
+      actions.append(el("span", "spacer"));
+      if (normalBtn) actions.append(normalBtn);
+      actions.append(cutBtn);
+      card.append(actions, panel);
       const note = cardNote(!!ev.root_core, ev.feedback_ok === false);
       if (note) card.append(el("p", "muted small core-note", note));
       return card;
     }
+  };
+  /// "사실" 탭: 판정 항목(근거 배지) + 위치·서명 + 시작 시각 줄
+  const factsPanel = (ev: StoryEvent, fileRoot: StoryEvent["root_exec"] | null): HTMLElement => {
+    const box = el("div", "facts-panel");
+    if (ev.first_run_watch) {
+      const fw = el("div", "since", ext("span", ev.first_run_watch.text));
+      fw.title = `관찰 끝 ${fmtTs(ev.first_run_watch.until_ts)}`;
+      box.append(fw);
+    }
+    // D014-1: 기록 없는 구간에 시작했으면 "수집 시작 전부터"가 아니다 — 🕒 줄 대신 ⚠ 줄에 시작 시각을 합친다
+    if (ev.running_since && !ev.started_in_gap) {
+      const since = el("div", "since", el("span", "clock", "🕒"), " ", sinceText(filetimeToUnix(ev.running_since)));
+      since.title = fmtTs(filetimeToUnix(ev.running_since));
+      box.append(since);
+    }
+    if (ev.started_in_gap) {
+      const [gf, gt] = ev.started_in_gap;
+      const gap = el("div", "since gap", el("span", "clock", "⚠"), " ", gapStartText(gf, gt, ev.running_since));
+      gap.title = `${fmtTs(filetimeToUnix(gf))} ~ ${fmtTs(filetimeToUnix(gt))}`;
+      box.append(gap);
+    }
+    const hasPlace = (ev.items ?? []).some((it) => it.label === "위치");
+    if (fileRoot && ev.root_image && !hasPlace) box.append(el("div", "sentence item", el("b", undefined, "위치: "), dataPath("span", ev.root_image)));
+    if (ev.root_core && ev.root_image) {
+      const sig = ev.root_signature;
+      const signer = sig?.signer ? `${sig.signer}${sig.sig_status && sig.sig_status !== "valid" ? ` (${sig.sig_status})` : ""}` : sig?.sig_status ? `없음 (${sig.sig_status})` : "확인 전";
+      box.append(el("div", "sentence item", el("b", undefined, "위치: "), extPath("span", ev.root_image)));
+      box.append(el("div", "sentence item", el("b", undefined, "서명: "), ext("span", signer)));
+    }
+    const rows: { text: Node; edge?: number; sources?: [string, number][] }[] = ev.items?.length
+      ? mergeItems(ev.items, isWindowsSigned(ev)).map((it0) => (fileRoot && ev.root_image && it0.label === "위치" ? { ...it0, value: `${ev.root_image} · ${it0.value}` } : it0)).map((it) => ({
+          text: el("span", undefined, el("b", undefined, `${it.label}: `), (["위치", "자동 실행"].includes(it.label) ? dataPath : extPath)("span", fileRoot && it.value.startsWith("이 파일이 ") && fileRoot.count > 1 ? it.value.replace(/번 실행됨/, `번 실행됨 (${fmtRange(filetimeToUnix(fileRoot.first_ts), filetimeToUnix(fileRoot.last_ts))})`) : it.value)),
+          edge: it.edge_ids[0],
+          sources: it.sources,
+        }))
+      : ev.sentences.map((s) => ({ text: extPath("span", s.text), edge: s.edge_ids[0], sources: s.sources }));
+    for (const r of rows) {
+      const line = el("div", "sentence item");
+      line.append(r.text);
+      const cmd = ev.destroy && r.edge === ev.destroy.edge_id ? cmdlineLine(ev.destroy.cmdline) : null;
+      if (r.edge != null) {
+        const ebox = el("div", "evidence-box");
+        const edge = r.edge;
+        const toggle = () => (ebox.firstChild ? clear(ebox) : void explain(edge, ebox));
+        line.append(" ", r.sources?.length ? evidenceBadge(r.sources, toggle) : button("왜?", toggle, "btn small"));
+        if (cmd) line.append(cmd);
+        line.append(ebox);
+      } else if (cmd) line.append(cmd);
+      box.append(line);
+    }
+    return box;
+  };
+  /// "발생 N번" 탭: 줄마다 시각·접속지 + 그 발생의 흐름 보기(카드를 다시 넣지 않는다)
+  const occurrencesPanel = (members: StoryEvent[]): HTMLElement => {
+    const box = el("div", "occurrences");
+    for (const m of members) {
+      const slot = el("div", "stale-card");
+      const row = el("div", "stale-row", el("span", "muted", m.last_ts ? fmtShort(filetimeToUnix(m.last_ts)) : ""));
+      row.dataset["root"] = String(m.root);
+      if (m.root_live) row.append(el("span", "muted small", liveText(m.root_live)));
+      // D022-4: 그 사건의 접속지 — 같은 판정이라도 접속지가 다르면 바로 보이게
+      if (m.egress) row.append(ext("span", `${m.egress}${m.egress_where?.country ? ` (${m.egress_where.country})` : ""}`, "occ-where"));
+      row.append(button("이 발생의 흐름", () => (slot.firstChild ? clear(slot) : void slot.append(flowView(m))), "btn small"));
+      box.append(row, slot);
+    }
+    return box;
   };
   /// 끊기: 미리보기(무엇을 막고·끊고·남기는지) → 적용 → 정책마다 60초 확인
   const cutDialog = async (rootId: number, card: HTMLElement, title = "여기서부터 끊기") => {
@@ -678,6 +713,25 @@ export interface Investigation {
   native_host?: { browser: string; name: string; scope: string; manifest: string; path: string } | null;
 }
 
+/// 파괴 징후(5장)가 있는 사건은 조사로 정상 모양이 확인되지 않은 한 "끊기"를 권한다(검수 2026-11-07: vssadmin 복원 지점 삭제에 "보고 정하세요"가 나옴)
+export function adjustForDestroy(v: Investigation, destroy: boolean): Investigation {
+  if (!destroy || v.verdict === "known_normal") return v;
+  return { ...v, verdict: "risky", recommend: "cut", reason: "복구 수단을 지우는 명령(파괴 징후)이 실행됐고, 알려진 정상 모양으로 확인되지 않았습니다." };
+}
+
+/// 카드 제목 사슬의 자식 부분: 최대 3개 + "외 N"
+export function chainKids(children: string[], total: number): string {
+  const shown = children.slice(0, 3);
+  const rest = Math.max(total, children.length) - shown.length;
+  return shown.join(", ") + (rest > 0 ? ` 외 ${rest}` : "");
+}
+
+/// 카드 제목 사슬 전체(툴팁·접근성)
+export function chainTitle(name: string, ch?: { parent?: string | null; children: string[]; children_total: number } | null): string {
+  if (!ch) return name;
+  return [ch.parent, name, ch.children.length ? chainKids(ch.children, ch.children_total) : null].filter(Boolean).join(" → ");
+}
+
 /// 권장 조치 문장(사실 판단은 서비스가, 화면은 말로만)
 export function recommendText(r: Pick<Investigation, "recommend">): string {
   return r.recommend === "mark_normal" ? "권장: 알려진 정상 모양 — 끊지 마세요"
@@ -686,9 +740,9 @@ export function recommendText(r: Pick<Investigation, "recommend">): string {
 }
 
 /// 카드의 "자동 조사" 칸. 열 때 한 번 조회(서비스는 DB 에 쓰지 않는다)
-function investigateBox(root: number): HTMLElement {
+function investigateBox(root: number, destroy = false, onRecommend: (r: Investigation["recommend"]) => void = () => {}): HTMLElement {
   const box = el("details", "investigate");
-  const sum = el("summary", undefined, "자동 조사 중…");
+  const sum = el("summary", undefined, "결론: 자동 조사 중…");
   box.append(sum);
   void (async () => {
     const r = await rpc<Investigation>("story.investigate", { root });
@@ -697,9 +751,10 @@ function investigateBox(root: number): HTMLElement {
       box.append(el("p", "muted small", r.error.message));
       return;
     }
-    const v = r.result;
+    const v = adjustForDestroy(r.result, destroy);
     box.classList.add(v.verdict);
     sum.replaceChildren(el("b", undefined, recommendText(v)), " · ", ext("span", v.reason));
+    onRecommend(v.recommend);
     box.open = v.verdict !== "unknown";
     const list = el("ul", "facts");
     for (const f of v.facts) {

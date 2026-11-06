@@ -484,6 +484,34 @@ fn live_state(world: &World, d: &graph::views::ProcessDetail) -> serde_json::Val
     serde_json::json!({ "running": running, "pid": d.pid, "ended": d.ended })
 }
 
+/// 카드 제목 사슬(UI 3판 초안, 사용자 "좋음" 2026-11-07): 부모 → 주인공 → 실행한 프로그램(최대 6개 + 전체 수).
+/// 그래프에서 읽기만. 이름은 노드 표시 이름(파일 이름)
+fn chain_line(g: &graph::Store, proc_id: i64) -> serde_json::Value {
+    let parent: Option<String> = g
+        .conn()
+        .query_row(
+            "SELECT n.label FROM edges e JOIN nodes n ON n.id = e.src WHERE e.dst = ?1 AND e.rel = 'spawned' AND n.kind = 'process' ORDER BY e.ts LIMIT 1",
+            [proc_id],
+            |r| r.get(0),
+        )
+        .ok();
+    let mut kids: Vec<String> = Vec::new();
+    let mut total = 0i64;
+    if let Ok(mut st) = g.conn().prepare(
+        "SELECT n.label FROM edges e JOIN nodes n ON n.id = e.dst WHERE e.src = ?1 AND e.rel = 'spawned' AND n.kind = 'process' ORDER BY e.ts",
+    ) {
+        if let Ok(rows) = st.query_map([proc_id], |r| r.get::<_, String>(0)) {
+            for l in rows.flatten() {
+                total += 1;
+                if kids.len() < 6 && !kids.iter().any(|k| k.eq_ignore_ascii_case(&l)) {
+                    kids.push(l);
+                }
+            }
+        }
+    }
+    serde_json::json!({ "parent": parent, "children": kids, "children_total": total })
+}
+
 fn handle(
     world: &mut World,
     method: Method,
@@ -744,6 +772,7 @@ fn handle(
                     // 프로세스 뿌리만 process_detail(파일 노드에도 Ok 를 돌려주지만 경로가 빈다 — L046 "위치 줄 없음")
                     let pd = if root_kind == "process" { graph::views::process_detail(&world.graph, n.root, 0).ok() } else { None };
                     if let Some(d) = pd {
+                        v["root_chain"] = chain_line(&world.graph, n.root);
                         v["root_live"] = live_state(world, &d);
                         v["root_core"] = serde_json::json!(graph::views::is_system_image(&d.image));
                         v["root_image"] = serde_json::json!(d.image);
@@ -765,6 +794,7 @@ fn handle(
                             if let Some((c, first, last, latest)) = ex {
                                 if let Some(d) = graph::views::process_detail(&world.graph, latest, 0).ok().filter(|_| latest > 0) {
                                     v["root_live"] = live_state(world, &d);
+                                    v["root_chain"] = chain_line(&world.graph, latest);
                                 }
                                 v["root_exec"] = serde_json::json!({ "count": c, "first_ts": first, "last_ts": last, "latest_proc": latest });
                             }

@@ -7,7 +7,7 @@ import { el, clear, errorBox, ext, button, fmtShort, fmtShortSec, filetimeToUnix
 import { sanitize } from "../sanitize";
 import { REL, hostOf, portOf, type Branch } from "./mindmap";
 import { placeName, flagPath } from "./connections";
-import { processPanel } from "./process";
+import { openProcessDrawer } from "./process";
 
 /// 관계 지도의 네 열(B안): 출신 → 파일 → 프로세스 → 한 일
 export type FlowCol = "origin" | "file" | "process" | "did";
@@ -176,15 +176,11 @@ export function flowView(ev: {
       side.append(el("div", "flow-side-actions", button("근거 보기", () => void explain(eid, box), "btn small")), box);
     }
     // 프로그램 자세히는 단추로(늘 펼치면 오른쪽 패널이 길어져 지도가 빈 칸으로 늘어났다 — B안 검수)
+    // UI 3판 초안(2026-11-07): 좁은 옆 칸에 넣으면 한 단어씩 줄이 바뀐다 — 넓은 오른쪽 서랍으로 연다
     if (b.node.kind === "process") {
-      const holder = el("div");
-      const btn = button("프로그램 자세히", () => {
-        if (holder.firstChild) { clear(holder); btn.textContent = "프로그램 자세히"; }
-        else { holder.append(processPanel(b.node.id)); btn.textContent = "자세히 접기"; }
-      }, "btn small");
+      const btn = button("프로그램 자세히", () => openProcessDrawer(b.node.id), "btn small");
       const acts = side.querySelector(".flow-side-actions");
       if (acts) acts.append(btn); else side.append(el("div", "flow-side-actions", btn));
-      side.append(holder);
     }
   };
 

@@ -1986,5 +1986,7 @@ fn story_card_says_whether_root_process_is_running_now() {
         .unwrap_or_else(|| panic!("payload 사건 {v}"));
     assert_eq!(it["root_live"]["running"], serde_json::json!(true), "{it}");
     assert_eq!(it["root_live"]["ended"], serde_json::json!(false));
+    // UI 3판 초안: 카드 제목 사슬(부모 → 주인공 → 실행한 프로그램)
+    assert!(it["root_chain"]["children"].as_array().is_some(), "{it}");
     rt.shutdown();
 }

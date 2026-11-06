@@ -461,3 +461,15 @@ details.where-panel { border-radius: 16px; }
 .investigate .facts li.ok .mark { color: var(--ok); }
 .investigate .facts li.bad .mark { color: var(--bad); }
 .investigate .facts .mark { display: inline-block; width: 1em; }
+/* UI 3판 초안(2026-11-07): 카드 = 요약(사슬) → 결론 → 조치 → 자세히(탭 하나씩) */
+.card-head h3 .chain-part { color: var(--muted); font-weight: 500; }
+.card-head h3 .chain-arrow { color: var(--muted); font-weight: 400; }
+.card-head h3 .hero-name { font-weight: 700; }
+.actions .tab-btn { padding: 4px 10px; font-size: 13px; }
+.actions .tab-btn.on { border-color: var(--brand-strong); color: var(--brand-strong); }
+.detail-panel:empty { display: none; }
+.detail-panel { margin-top: 8px; }
+.facts-panel { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+.occurrences { border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
+.occurrences .stale-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0; }
+.btn.danger-outline.recommended { border-width: 2px; font-weight: 600; box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 18%, transparent); }
