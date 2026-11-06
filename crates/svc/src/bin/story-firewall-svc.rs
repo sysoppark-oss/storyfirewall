@@ -23,6 +23,14 @@ fn main() {
 
 #[cfg(any(windows, feature = "host-check"))]
 mod real {
+/// 화면 상태 줄·service.log 에 보이는 판 번호. 릴리스 빌드는 태그(v0.1.3 → 0.1.3)를 SF_VERSION 으로 넘긴다 —
+/// 전에는 크레이트 판(0.1.0)이 그대로 보여 v0.1.3 으로 업데이트해도 "0.1.0판"이었다(사용자 제보 2026-11-07)
+const SVC_VERSION: &str = match option_env!("SF_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
+
     use std::io::Write;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -195,7 +203,7 @@ mod real {
         let log = Log::open(&dir.join("service.log"));
         log.w(format!(
             "service: start v{} dir={}",
-            env!("CARGO_PKG_VERSION"),
+            SVC_VERSION,
             dir.display()
         ));
         // 자기 구성요소: 설치 폴더(관리자만 쓰기)의 우리 파일은 서명 내용이 온전하면 판정 뿌리로 삼지 않는다(L015)
@@ -238,7 +246,7 @@ mod real {
                 dir: dir.clone(),
                 log: log.clone(),
             }),
-            env!("CARGO_PKG_VERSION"),
+            SVC_VERSION,
             Some(Box::new(process::WinHost)),
         );
         if let Some(why) = &chosen.fallback {

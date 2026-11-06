@@ -47,6 +47,8 @@ jobs:
       - name: Build service (product, pin compiled in) and test clients
         shell: pwsh
         run: |
+          # 서비스 판 번호 = 태그(상태 줄 "0.1.3판"). 없으면 크레이트 판
+          $env:SF_VERSION = "${{ inputs.tag }}".TrimStart('v')
           cargo build --release --locked -p svc --bin story-firewall-svc --bin svc-poc 2>&1 | Tee-Object -FilePath build-svc.log
           if ($LASTEXITCODE -ne 0) { exit 1 }
           New-Item -ItemType Directory -Force ui\src-tauri\binaries | Out-Null
