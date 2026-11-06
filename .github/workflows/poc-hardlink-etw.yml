@@ -1,0 +1,39 @@
+name: PoC hardlink ETW (Kernel-File event ids)
+
+# 30th review Q3-b: which Microsoft-Windows-Kernel-File event ids appear when a hard link is created
+# (fsutil hardlink create / CreateHardLinkW)? Uses only built-in logman + tracerpt on a throw-away runner.
+# Result: the event id counts and the first matching rows are printed in the log.
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/poc-hardlink-etw.yml"]
+  workflow_dispatch:
+
+jobs:
+  hardlink:
+    runs-on: windows-2025
+    steps:
+      - name: Capture Kernel-File events around hard link creation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $d = "C:\hl-test"
+          New-Item -ItemType Directory -Force $d | Out-Null
+          Set-Content -Path "$d\target.txt" -Value "x"
+          # Kernel-File: all keywords (0xFFFFFFFF), level 5
+          logman create trace hl -p "Microsoft-Windows-Kernel-File" 0xffffffff 5 -o "$d\hl.etl" -ets | Out-Null
+          Start-Sleep -Seconds 2
+          fsutil hardlink create "$d\link1.txt" "$d\target.txt"
+          cmd /c mklink /H "$d\link2.txt" "$d\target.txt"
+          Start-Sleep -Seconds 2
+          logman stop hl -ets | Out-Null
+          tracerpt "$d\hl.etl" -o "$d\hl.csv" -of CSV -y | Out-Null
+          $rows = Import-Csv "$d\hl.csv"
+          "== event id counts (rows mentioning link1 or link2) =="
+          $hits = $rows | Where-Object { ($_ | Out-String) -match 'link1|link2' }
+          $hits | Group-Object -Property 'Event ID' | Sort-Object Count -Descending | ForEach-Object { "{0} x{1}" -f $_.Name, $_.Count }
+          "== first rows =="
+          $hits | Select-Object -First 12 | Format-List | Out-String -Width 400
+          "== all event id counts =="
+          $rows | Group-Object -Property 'Event ID' | Sort-Object Name | ForEach-Object { "{0} x{1}" -f $_.Name, $_.Count }
