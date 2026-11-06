@@ -2,7 +2,7 @@
 
 use graph::event::{Event, EventKind};
 use graph::ingest::Ingester;
-use graph::remote::{running_tools, sent_recv_by_pid, Sample};
+use graph::remote::{facts_text, running_tools, sent_recv_by_pid, session_facts, Sample};
 use graph::Store;
 
 const T: i64 = 133_800_000_000_000_000;
@@ -80,5 +80,57 @@ fn sent_recv_excludes_loopback() {
                 recv: 0
             },
         ]
+    );
+}
+
+#[test]
+fn session_facts_collects_whole_pc_in_window() {
+    let st = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&st);
+    ing.ingest(&snap(1000, r"C:\Windows\explorer.exe")).unwrap();
+    let start = |ts: i64, pid: u32, image: &str| Event {
+        ts,
+        source: "etw:process".into(),
+        kind: EventKind::ProcessStart {
+            pid,
+            ppid: 1000,
+            image: image.into(),
+            create_time: Some(ts),
+        },
+    };
+    // 세션 전(빠짐), 세션 중 셸·설치 프로그램·평범한 프로그램, 세션 뒤(빠짐)
+    ing.ingest(&start(T + 5 * S, 1100, r"C:\Windows\System32\notepad.exe"))
+        .unwrap();
+    ing.ingest(&start(
+        T + 20 * S,
+        1200,
+        r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+    ))
+    .unwrap();
+    ing.ingest(&start(
+        T + 30 * S,
+        1300,
+        r"C:\Users\u\Downloads\BankSetup.exe",
+    ))
+    .unwrap();
+    ing.ingest(&start(T + 40 * S, 1400, r"C:\Windows\System32\calc.exe"))
+        .unwrap();
+    ing.ingest(&start(T + 90 * S, 1500, r"C:\Windows\System32\cmd.exe"))
+        .unwrap();
+    let f = session_facts(&st, T + 10 * S, T + 60 * S).unwrap();
+    assert_eq!(f.processes, 3);
+    assert_eq!(f.shells, vec!["powershell.exe".to_string()]);
+    assert_eq!(f.installers.len(), 1);
+    let t = facts_text(&f);
+    assert!(
+        t.contains("새 프로그램 실행 3번")
+            && t.contains("powershell.exe")
+            && t.contains("banksetup.exe"),
+        "{t}"
+    );
+    // 아무 일 없으면 빈 문장
+    assert_eq!(
+        facts_text(&session_facts(&st, T + 100 * S, T + 200 * S).unwrap()),
+        ""
     );
 }

@@ -113,12 +113,20 @@ pub fn sample(world: &mut World) -> bool {
                 sent_total,
                 process_gone,
             } => {
-                let target = target_of(
+                let mut target = target_of(
                     world.remote.nodes.get(&pid).copied(),
                     pid,
                     tool,
                     Some(started_ts),
                 );
+                // 2단계: 세션 동안 이 PC 에서 일어난 일(사실만)
+                let facts = remote::session_facts(
+                    &world.graph,
+                    unix_to_filetime(started_ts),
+                    unix_to_filetime(ended_ts),
+                )
+                .unwrap_or_default();
+                target["facts"] = serde_json::to_value(&facts).unwrap_or_default();
                 if !world.remote.alive.contains_key(&pid) {
                     world.remote.nodes.remove(&pid);
                 }
@@ -131,7 +139,7 @@ pub fn sample(world: &mut World) -> bool {
                         ended_ts,
                         sent_total,
                         process_gone,
-                    ),
+                    ) + &remote::facts_text(&facts),
                     Some(target.to_string()),
                 );
                 any = true;

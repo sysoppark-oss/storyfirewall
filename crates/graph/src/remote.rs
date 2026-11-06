@@ -374,6 +374,101 @@ pub fn running_tools(store: &Store, since_ts: i64) -> Result<Vec<(u32, i64, &'st
     Ok(out)
 }
 
+/// 세션 동안 PC 에서 일어난 일(사실만). 세션 끝 문장과 화면이 쓴다.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+pub struct SessionFacts {
+    /// 새로 시작된 프로세스 수
+    pub processes: usize,
+    /// 그중 명령 프롬프트·PowerShell·Windows 터미널
+    pub shells: Vec<String>,
+    /// 그중 설치 프로그램(설치 엑스레이 기준)
+    pub installers: Vec<String>,
+    /// 내려받은 파일(MOTW)
+    pub downloads: Vec<String>,
+    /// 자동 실행 등록 수
+    pub autoruns: usize,
+}
+
+const SHELLS: &[&str] = &[
+    "cmd.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "windowsterminal.exe",
+    "wt.exe",
+];
+const FACTS_CAP: usize = 20;
+
+/// `from_ts`~`to_ts`(FILETIME) 동안의 사실을 모은다. 원격 도구의 자손만이 아니라 PC 전체 —
+/// 원격 조작은 이 PC 의 탐색기·브라우저로 일을 시키므로 자손으로 좁히면 놓친다.
+pub fn session_facts(store: &Store, from_ts: i64, to_ts: i64) -> Result<SessionFacts> {
+    let mut f = SessionFacts::default();
+    let conn = store.conn();
+    {
+        let mut st = conn.prepare_cached(
+            "SELECT json_extract(n.attrs_json, '$.image') FROM edges e JOIN nodes n ON n.id = e.dst
+             WHERE e.rel = 'spawned' AND e.ts >= ?1 AND e.ts <= ?2",
+        )?;
+        let rows = st.query_map(params![from_ts, to_ts], |r| r.get::<_, Option<String>>(0))?;
+        for img in rows.filter_map(|r| r.ok()).flatten() {
+            f.processes += 1;
+            let b = base_lower(&img);
+            if SHELLS.contains(&b.as_str()) && f.shells.len() < FACTS_CAP && !f.shells.contains(&b)
+            {
+                f.shells.push(b);
+            } else if crate::install::is_installer_image(&img)
+                && f.installers.len() < FACTS_CAP
+                && !f.installers.contains(&img)
+            {
+                f.installers.push(img);
+            }
+        }
+    }
+    {
+        let mut st = conn.prepare_cached(
+            "SELECT DISTINCT n.key FROM edges e JOIN nodes n ON n.id = e.dst
+             WHERE e.rel = 'downloaded' AND e.ts >= ?1 AND e.ts <= ?2 LIMIT ?3",
+        )?;
+        f.downloads = st
+            .query_map(params![from_ts, to_ts, FACTS_CAP as i64], |r| {
+                r.get::<_, String>(0)
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+    }
+    f.autoruns = conn.query_row(
+        "SELECT COUNT(*) FROM edges WHERE rel = 'registered' AND ts >= ?1 AND ts <= ?2",
+        params![from_ts, to_ts],
+        |r| r.get::<_, i64>(0),
+    )? as usize;
+    Ok(f)
+}
+
+/// 세션 사실 한 줄(없으면 빈 문자열)
+pub fn facts_text(f: &SessionFacts) -> String {
+    let mut parts = Vec::new();
+    if f.processes > 0 {
+        parts.push(format!("새 프로그램 실행 {}번", f.processes));
+    }
+    if !f.shells.is_empty() {
+        parts.push(format!("명령 창 실행({})", f.shells.join(", ")));
+    }
+    if !f.installers.is_empty() {
+        let names: Vec<String> = f.installers.iter().map(|i| base_lower(i)).collect();
+        parts.push(format!("설치 프로그램 실행({})", names.join(", ")));
+    }
+    if !f.downloads.is_empty() {
+        parts.push(format!("파일 내려받기 {}개", f.downloads.len()));
+    }
+    if f.autoruns > 0 {
+        parts.push(format!("자동 실행 등록 {}건", f.autoruns));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" 그동안 이 PC 에서: {}.", parts.join(", "))
+    }
+}
+
 /// key → 표시 이름
 pub fn display_of(key: &str) -> &'static str {
     TOOLS
