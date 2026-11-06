@@ -1,0 +1,29 @@
+groups: Users
+ui pid=6496 owner=runnervmquqza\sfuiuser
+node:internal/modules/cjs/loader:1430
+  const err = new Error(message);
+              ^
+
+Error: Cannot find module 'playwright'
+Require stack:
+- D:\a\storyfirewall\storyfirewall\ui\scripts\e2e-tauri.mjs
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1040:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1045:22)
+    at Function._load (node:internal/modules/cjs/loader:1216:25)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    at Module.require (node:internal/modules/cjs/loader:1527:12)
+    at require (node:internal/modules/helpers:147:16)
+    at file:///D:/a/storyfirewall/storyfirewall/ui/scripts/e2e-tauri.mjs:11:52
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [ 'D:\\a\\storyfirewall\\storyfirewall\\ui\\scripts\\e2e-tauri.mjs' ]
+}
+
+Node.js v22.23.4
+PASS ui process owner is sfuiuser
+--- stand-in ---
+--- svc-user.out ---
+server: waiting connection 1
+--- svc-user.err ---
