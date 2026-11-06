@@ -1,0 +1,145 @@
+name: Release build (open source, per-release key, draft)
+
+# 오픈소스 공개 빌드(OV 인증서 무기한 보류, 2026-11-06). 수동 실행만.
+# - 공개 빌드마다 일회용 자체 서명 키를 만들고, 잎 SHA-256 을 SF_RELEASE_PIN 으로 서비스에 컴파일해 넣는다.
+# - 서비스는 test-signer 없이(제품 빌드) 빌드한다: 설치 폴더 + 지문 둘 다 맞는 UI 만 받는다.
+# - 러너에서 설치 → 인증 시험(폴더 안 서명 클라이언트 통과, 폴더 밖·다른 키 거부) → 제거.
+# - 결과는 GitHub 릴리스 **초안(draft)** 으로만 올린다. 공개(publish)는 사람이 확인한 뒤 손으로 한다.
+# - 키는 이 작업 안에서만 존재하고 끝에서 지운다(보관하는 비밀 없음).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "release tag, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch geo data
+        uses: actions/checkout@v4
+        with:
+          ref: geo-data
+          path: ui/src-tauri/geo
+
+      - name: Per-release certificate (not trusted as a root)
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=StoryFirewall Release" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(5)
+          $pin = -join ([Security.Cryptography.SHA256]::Create().ComputeHash($cert.RawData) | ForEach-Object { $_.ToString("x2") })
+          "SF_REL_CERT_THUMB=$($cert.Thumbprint)" | Add-Content $env:GITHUB_ENV
+          "SF_RELEASE_PIN=$pin" | Add-Content $env:GITHUB_ENV
+          "pin=$pin"
+
+      - name: Build service (product, pin compiled in) and test clients
+        shell: pwsh
+        run: |
+          cargo build --release --locked -p svc --bin story-firewall-svc --bin svc-poc 2>&1 | Tee-Object -FilePath build-svc.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          New-Item -ItemType Directory -Force ui\src-tauri\binaries | Out-Null
+          Copy-Item target\release\story-firewall-svc.exe ui\src-tauri\binaries\story-firewall-svc-x86_64-pc-windows-msvc.exe
+          Copy-Item target\release\svc-poc.exe target\release\svc-poc-signed.exe
+          & ui\scripts\sign-release.ps1 -Path (Resolve-Path target\release\svc-poc-signed.exe).Path
+
+      - name: Build NSIS installer (UI and sidecar signed via signCommand)
+        working-directory: ui
+        shell: pwsh
+        run: |
+          $sign = (Resolve-Path scripts\sign-release.ps1).Path
+          if ($sign -match ' ') { throw "sign script path has a space: $sign" }
+          $c = Get-Content src-tauri\tauri.installer.conf.json -Raw | ConvertFrom-Json
+          $c.bundle.windows | Add-Member -NotePropertyName signCommand -NotePropertyValue ("pwsh -NoProfile -ExecutionPolicy Bypass -File $sign %1") -Force
+          $c | ConvertTo-Json -Depth 10 | Set-Content src-tauri\tauri.release.conf.json -Encoding utf8
+          npm ci
+          npx tauri build --config src-tauri/tauri.release.conf.json 2>&1 | Tee-Object -FilePath ../build-installer.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Install on the runner and check authentication
+        shell: pwsh
+        run: |
+          $log = "release-test.txt"
+          $bad = 0
+          function Log($s) { $s | Tee-Object -FilePath $log -Append }
+          function Check($ok, $msg) { if ($ok) { Log "PASS  $msg" } else { Log "FAIL  $msg"; $script:bad++ } }
+          $setup = (Get-ChildItem ui\src-tauri\target\release\bundle\nsis\*-setup.exe | Select-Object -First 1).FullName
+          $dir = Join-Path $env:ProgramFiles "Story Firewall"
+          $svcExe = Join-Path $dir "story-firewall-svc.exe"
+          $uiExe = Join-Path $dir "story-firewall-ui.exe"
+          Check (-not (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Thumbprint -eq $env:SF_REL_CERT_THUMB)) "release cert is not a trusted root"
+          $p = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
+          Log "install exit=$($p.ExitCode)"
+          $s = Get-AuthenticodeSignature $uiExe
+          Check ($s.SignerCertificate.Thumbprint -eq $env:SF_REL_CERT_THUMB) "installed UI signed with the release cert ($($s.Status))"
+          if (-not (Get-Service StoryFirewall -ErrorAction SilentlyContinue)) { & $svcExe install 2>&1 | ForEach-Object { Log $_ } }
+          & $svcExe stop 2>&1 | ForEach-Object { Log $_ }
+          & $svcExe start 2>&1 | ForEach-Object { Log $_ }
+          Start-Sleep -Seconds 5
+          Check ((Get-Service StoryFirewall).Status -eq 'Running') "service running"
+          # signed with the release key but outside the install folder -> rejected (sideloading guard)
+          $out = & .\target\release\svc-poc-signed.exe client 2>&1 | Out-String
+          Log $out
+          Check (($out -match 'closed by server|connect failed: .*0xe9') -and ($out -notmatch '"result"')) "signed client outside install dir rejected"
+          # inside the install folder -> accepted
+          $inside = Join-Path $dir "svc-poc-test.exe"
+          Copy-Item .\target\release\svc-poc-signed.exe $inside
+          $in = & $inside client 2>&1 | Out-String
+          Log $in
+          Check ($in -match '"id":1,"result":\{"api":\[1,0\]') "signed client inside install dir accepted (hello)"
+          # same CN, different key, inside the folder -> rejected (pin, not name)
+          $other = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=StoryFirewall Release" -CertStoreLocation Cert:\CurrentUser\My
+          $oexe = Join-Path $dir "svc-poc-other.exe"
+          Copy-Item .\target\release\svc-poc.exe $oexe
+          Set-AuthenticodeSignature -FilePath $oexe -Certificate $other -HashAlgorithm SHA256 | Out-Null
+          $ot = & $oexe client 2>&1 | Out-String
+          Log $ot
+          Check (($ot -match 'closed by server|connect failed: .*0xe9') -and ($ot -notmatch '"result"')) "same-CN different key rejected"
+          # unsigned inside the folder -> rejected
+          $uexe = Join-Path $dir "svc-poc-unsigned.exe"
+          Copy-Item .\target\release\svc-poc.exe $uexe
+          $un = & $uexe client 2>&1 | Out-String
+          Log $un
+          Check (($un -match 'closed by server|connect failed: .*0xe9') -and ($un -notmatch '"result"')) "unsigned client rejected"
+          Remove-Item $inside, $oexe, $uexe -Force
+          $p = Start-Process -FilePath (Join-Path $dir "uninstall.exe") -ArgumentList "/S" -Wait -PassThru
+          Log "uninstall exit=$($p.ExitCode)"
+          Check (-not (Get-Service StoryFirewall -ErrorAction SilentlyContinue)) "service removed by uninstall"
+          Log "assert: $bad failed"
+          Copy-Item $setup ("story-firewall-" + "${{ inputs.tag }}" + "-setup.exe")
+          if ($bad -gt 0) { exit 1 }
+
+      - name: Draft release (not public)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $f = "story-firewall-" + "${{ inputs.tag }}" + "-setup.exe"
+          $sha = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
+          @("$sha  $f", "", "commit $env:GITHUB_SHA", "signing key leaf sha256 $env:SF_RELEASE_PIN (self-signed, per release, key destroyed)") | Set-Content SHA256SUMS.txt -Encoding ascii
+          gh release create "${{ inputs.tag }}" $f SHA256SUMS.txt release-test.txt --draft --target $env:GITHUB_SHA --title "Story Firewall ${{ inputs.tag }}" --notes-file docs/release-notes.md
+
+      - name: Logs
+        if: always()
+        shell: pwsh
+        run: Get-Content release-test.txt -ErrorAction SilentlyContinue
+
+      - name: Delete release keys
+        if: always()
+        shell: pwsh
+        run: |
+          Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq "CN=StoryFirewall Release" | ForEach-Object { Remove-Item $_.PSPath -DeleteKey }
+          $left = @(Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq "CN=StoryFirewall Release").Count
+          "release certs left: $left"
+          if ($left -ne 0) { exit 1 }
