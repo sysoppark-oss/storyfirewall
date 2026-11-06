@@ -73,9 +73,9 @@ async fn connect(app: tauri::AppHandle, state: State<'_, AppState>, endpoint: St
                 link2.up.store(false, std::sync::atomic::Ordering::SeqCst);
             }
             // 14판 20-4: 원격 제어 세션 시작은 창을 열지 않아도 바로 Windows 알림(조용함 원칙의 예외)
-            // 32차 Gemini Q2: 처음 보는 도구는 "경보", 반복은 "알림"으로 제목만 낮춘다(알림 자체는 끄지 않음)
-            if let Some((body, first)) = remote_session_toast(&v) {
-                notify(&app2, if first { "원격 제어 경보 (처음)" } else { "원격 제어 알림" }, &body);
+            // 33차 Gemini Q4: 사용자가 "내가 쓰는 원격 도구"로 표시한 도구만 "알림"으로 낮춘다(알림 자체는 끄지 않음)
+            if let Some((body, alarm)) = remote_session_toast(&v) {
+                notify(&app2, if alarm { "원격 제어 경보" } else { "원격 제어 알림 (내가 쓰는 도구)" }, &body);
             }
             let _ = app2.emit("svc-notify", v);
         }))
