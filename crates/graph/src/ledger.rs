@@ -210,10 +210,14 @@ pub const LATE_WATCH_FT: i64 = 600 * 10_000_000;
 /// 35차 Q2: 이름은 30일 기억해(서비스가 그래프 DB 에도 보관) 관찰이 끝난 뒤·재부팅 뒤 실행돼도 잇는다. 이었으면 true
 pub fn task_registered(name: &str, now_ft: i64) -> bool {
     with(|s| {
-        let roots = live_roots(s, now_ft);
-        if roots.is_empty() || roots.len() > MAX_CO_ROOTS {
+        let mut roots = live_roots(s, now_ft);
+        if roots.is_empty() {
             return false;
         }
+        // 36차 Q1: 상한을 넘으면 포기하지 않고 가장 늦게 생긴 뿌리 8개로 자른다(미끼 9개로 끊지 못하게).
+        // 뿌리의 생성 시각이 늦을수록 앞, 같으면 pid 순(결과가 늘 같게)
+        roots.sort_by_key(|r| (std::cmp::Reverse(r.0 .1), r.0 .0));
+        roots.truncate(MAX_CO_ROOTS);
         if s.tasks.len() > 256 {
             s.tasks.retain(|_, (_, u)| *u >= now_ft);
         }
@@ -298,7 +302,7 @@ pub fn import_names(rows: Vec<(String, Vec<Root>, i64)>, now_ft: i64) {
     })
 }
 
-/// 서비스가 새로 생김(서비스 목록 비교, 수집기가 5초마다). 작업과 같은 규칙: 관찰 대상이 하나뿐일 때만 잇는다
+/// 서비스가 새로 생기거나 실행 파일이 바뀜(레지스트리 알림·5초 목록 비교). 작업과 같은 규칙(관찰 대상 모두, 최대 8)
 pub fn service_registered(name: &str, now_ft: i64) -> bool {
     task_registered(&format!("svc:{name}"), now_ft)
 }
@@ -580,6 +584,39 @@ mod tests {
         clear();
         proxy_window_infers_scheduler_children();
         clear();
+        co_roots_keep_latest_eight();
+        clear();
+    }
+
+    /// 36차 Q1: 관찰 대상이 상한(8)을 넘어도 끊지 않고 가장 늦게 생긴 8개에 잇는다
+    fn co_roots_keep_latest_eight() {
+        let t = 5_000_000_000i64;
+        // 미끼 9개(생성 시각 1..=9) + 진짜 대상(생성 시각 100, 가장 늦음)
+        for i in 1..=9u32 {
+            watch(7000 + i, i as i64, t + 1000);
+        }
+        watch(7100, 100, t + 1000);
+        assert!(task_registered("EvilTask", t), "상한을 넘어도 잇는다");
+        assert!(task_launched("eviltask", 7200, t + 10));
+        // 첫 뿌리는 가장 늦게 생긴 대상
+        assert_eq!(
+            record_file(7200, r"C:\p\a.exe", t + 20),
+            Write::Each {
+                inferred_root: Some((7100, 100))
+            }
+        );
+        let also = co_roots(7200);
+        assert_eq!(also.len(), MAX_CO_ROOTS - 1);
+        // 가장 먼저 생긴 미끼 둘(생성 시각 1·2)이 잘려 나간다
+        assert!(!also.contains(&(7001, 1)) && !also.contains(&(7002, 2)));
+        assert!(also.contains(&(7009, 9)));
+        // 서비스도 같은 규칙
+        assert!(service_registered("EvilSvc", t));
+        for p in 7001..=7009u32 {
+            on_exit(p);
+        }
+        on_exit(7100);
+        on_exit(7200);
     }
 
     /// 33차 Q1: 대리 창(전역을 쓰므로 위 시험 안에서 차례로 부른다)

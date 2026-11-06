@@ -2,6 +2,10 @@
 //! 알림이 오면 서비스 이름과 ImagePath 를 다시 읽어 비교한다. 새 이름 또는 ImagePath 가 바뀐 서비스를 "등록"으로 본다
 //! (5초 목록 비교는 "만들고·시작하고·지우기"를 놓치고, 이름이 그대로인 ImagePath 바꿔치기는 못 본다).
 //! 호출한 프로세스는 알려 주지 않는다 — 잇는 규칙은 graph::ledger::service_registered(관찰 대상 모두에 공동 추정).
+//! 36차 Q3: ImagePath 만이 아니라 Parameters\ServiceDll(svchost 가 싣는 DLL)도 함께 비교한다 — 기존 svchost 서비스의
+//! DLL 만 바꾸는 순서. 알림은 받자마자 다시 걸고 나서 읽는다(읽는 동안 생긴 변경도 다음 알림으로 잡힘).
+//! 남는 틈: 다시 걸기 전 아주 짧은 사이에 만들고 지운 서비스(실행되지 않았다면 남는 것이 없고, 실행됐다면 프로세스
+//! 시작·서비스 대조표로 보인다).
 //! 드라이버 없음. 읽기만(KEY_READ | KEY_NOTIFY).
 
 use std::collections::HashMap;
@@ -22,7 +26,33 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// 서비스 이름(소문자 아님, 레지스트리 그대로) → ImagePath(없으면 빈 문자열)
+/// 하위 키의 문자열 값 하나(없으면 빈 문자열)
+fn read_str(root: HKEY, sub: &str, value: &str) -> String {
+    let mut buf = [0u16; 1024];
+    let mut cb = (buf.len() * 2) as u32;
+    let sub = wide(sub);
+    let val = wide(value);
+    // SAFETY: 출력 버퍼는 지역 배열
+    let r = unsafe {
+        RegGetValueW(
+            root,
+            sub.as_ptr(),
+            val.as_ptr(),
+            RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr() as *mut _,
+            &mut cb,
+        )
+    };
+    if r == 0 {
+        let k = (cb as usize / 2).saturating_sub(1).min(buf.len());
+        String::from_utf16_lossy(&buf[..k])
+    } else {
+        String::new()
+    }
+}
+
+/// 서비스 이름(레지스트리 그대로) → "ImagePath\u{1f}ServiceDll"(없는 값은 빈 문자열)
 pub fn snapshot(root: HKEY) -> HashMap<String, String> {
     let mut out = HashMap::new();
     let mut i = 0u32;
@@ -47,28 +77,9 @@ pub fn snapshot(root: HKEY) -> HashMap<String, String> {
         }
         i += 1;
         let n = String::from_utf16_lossy(&name[..len as usize]);
-        let mut buf = [0u16; 1024];
-        let mut cb = (buf.len() * 2) as u32;
-        let sub = wide(&n);
-        let val = wide("ImagePath");
-        // SAFETY: 출력 버퍼는 지역 배열
-        let r = unsafe {
-            RegGetValueW(
-                root,
-                sub.as_ptr(),
-                val.as_ptr(),
-                RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND,
-                std::ptr::null_mut(),
-                buf.as_mut_ptr() as *mut _,
-                &mut cb,
-            )
-        };
-        let path = if r == 0 {
-            let k = (cb as usize / 2).saturating_sub(1).min(buf.len());
-            String::from_utf16_lossy(&buf[..k])
-        } else {
-            String::new()
-        };
+        let image = read_str(root, &n, "ImagePath");
+        let dll = read_str(root, &format!(r"{n}\Parameters"), "ServiceDll");
+        let path = format!("{image}\u{1f}{dll}");
         out.insert(n, path);
         if out.len() > 8192 {
             break;
@@ -77,7 +88,7 @@ pub fn snapshot(root: HKEY) -> HashMap<String, String> {
     out
 }
 
-/// 지난번과 지금 사이에 새로 생기거나 ImagePath 가 바뀐 서비스 이름(순수 함수 — 시험 대상)
+/// 지난번과 지금 사이에 새로 생기거나 ImagePath·ServiceDll 이 바뀐 서비스 이름(순수 함수 — 시험 대상)
 pub fn changed(prev: &HashMap<String, String>, cur: &HashMap<String, String>) -> Vec<String> {
     let mut v: Vec<String> = cur
         .iter()
@@ -114,10 +125,9 @@ pub fn watch(stop: Arc<AtomicBool>, mut on_change: impl FnMut(&str)) {
         unsafe { RegCloseKey(key) };
         return;
     }
-    let mut prev = snapshot(key);
-    while !stop.load(Ordering::Relaxed) {
+    let arm = || {
         // SAFETY: 열린 키·이벤트. 비동기 — 바뀌면 이벤트가 선다. 한 번 알리면 다시 걸어야 한다
-        let r = unsafe {
+        unsafe {
             RegNotifyChangeKeyValue(
                 key,
                 1,
@@ -125,10 +135,18 @@ pub fn watch(stop: Arc<AtomicBool>, mut on_change: impl FnMut(&str)) {
                 ev,
                 1,
             )
-        };
-        if r != 0 {
-            break;
         }
+    };
+    // 알림을 먼저 걸고 첫 사진을 찍는다(그 사이 변경도 알림으로 남는다)
+    if arm() != 0 {
+        unsafe {
+            CloseHandle(ev);
+            RegCloseKey(key);
+        }
+        return;
+    }
+    let mut prev = snapshot(key);
+    while !stop.load(Ordering::Relaxed) {
         loop {
             if stop.load(Ordering::Relaxed) {
                 break;
@@ -139,6 +157,10 @@ pub fn watch(stop: Arc<AtomicBool>, mut on_change: impl FnMut(&str)) {
             }
         }
         if stop.load(Ordering::Relaxed) {
+            break;
+        }
+        // 36차 Q3: 읽기 전에 바로 다시 건다 — 기다리고 읽는 동안의 변경은 다음 알림이 된다
+        if arm() != 0 {
             break;
         }
         // 한꺼번에 여러 값이 바뀌는 설치를 한 번에 읽게 잠깐 기다린다
@@ -183,6 +205,18 @@ mod tests {
             changed(&a, &b),
             vec!["EvilSvc".to_string(), "Fax".to_string()]
         );
+        // 36차 Q3: 같은 ImagePath 에 ServiceDll 만 바뀜
+        let mut c = a.clone();
+        c.insert(
+            "Svc1".to_string(),
+            "%SystemRoot%\\system32\\svchost.exe -k netsvcs\u{1f}C:\\Windows\\a.dll".to_string(),
+        );
+        let mut d = c.clone();
+        d.insert(
+            "Svc1".to_string(),
+            "%SystemRoot%\\system32\\svchost.exe -k netsvcs\u{1f}C:\\p\\evil.dll".to_string(),
+        );
+        assert_eq!(changed(&c, &d), vec!["Svc1".to_string()]);
         // 지워진 것은 등록이 아니다
         b.remove("EvilSvc");
         assert_eq!(changed(&b, &a), vec!["Fax".to_string()]);
