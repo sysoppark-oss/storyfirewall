@@ -1,0 +1,11 @@
+﻿b2 run 20261106-183028
+commit=15d7080
+os=Microsoft Windows Server 2025 Datacenter build=26100
+ram_gb=16 free_gb=13.1
+cpu=AMD EPYC 9V74 80-Core Processor                
+sysmon=15.22
+seconds=90 scenario=True
+window_utc=2026-11-06 18:33:25.325 .. 2026-11-06 18:34:40.769
+sysmon_events_exported=462
+collector_exit=0
+mem_free_mb_start=13556 mem_free_mb_end=13468 collector_ws_max_mb=38 product_svc_ws_mb=-
