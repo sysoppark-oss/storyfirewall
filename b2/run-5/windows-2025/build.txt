@@ -1,0 +1,6 @@
+[1m[92m   Compiling[0m decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\story-firewall\crates\decoy)
+[1m[92m   Compiling[0m ferrisetw v1.2.0 (D:\a\storyfirewall\storyfirewall\story-firewall\third_party\ferrisetw)
+[1m[92m   Compiling[0m graph v0.1.0 (D:\a\storyfirewall\storyfirewall\story-firewall\crates\graph)
+[1m[92m   Compiling[0m b2 v0.1.0 (D:\a\storyfirewall\storyfirewall\story-firewall\crates\b2)
+[1m[92m   Compiling[0m collector v0.1.0 (D:\a\storyfirewall\storyfirewall\story-firewall\crates\collector)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 32.52s
