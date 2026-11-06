@@ -462,8 +462,10 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       card.append(head);
       // 실시간 1(2026-11-07): 사건 시각과 지금 상태를 나눠 — "이게 지금인가?"를 카드에서 바로
       if (ev.root_live) {
-        const t = liveText(ev.root_live, lastTs ? filetimeToUnix(lastTs) : null, Date.now() / 1000);
-        card.append(el("div", ev.root_live.running ? "since live on" : "since live", el("span", "dot"), " ", t));
+        // 검수(2026-11-07): 시각은 오른쪽 위(마지막 활동) 하나만 — 이 줄은 상태만. 모르면 이유를 툴팁으로
+        const line = el("div", ev.root_live.running ? "since live on" : "since live", el("span", "dot"), " ", liveText(ev.root_live));
+        if (!ev.root_live.running && !ev.root_live.ended) line.title = "끝난 기록이 없고, 지금 같은 번호(PID)로 떠 있는 프로세스가 같은 프로그램인지 확인되지 않았습니다(번호는 다른 프로그램이 다시 쓸 수 있음).";
+        card.append(line);
       }
       // 수집 전부터 살아 있던 프로세스(L024·D004): 유입·실행 칸은 "기록 없음", 시작 시각은 따로 밝힌다
       card.append(chapterSteps(ev.reached ?? [], ev.score, ev.running_since ? [1, 2] : []));
@@ -657,15 +659,12 @@ function cmdlineLine(cmd: string): HTMLElement {
   line.append(t, " ", copy, done);
   return line;
 }
-/// 카드의 "지금 상태" 한 줄. 마지막 활동은 이 사건에 기록된 마지막 시각(지금 연결이 열려 있는지는 아님)
-export function liveText(l: { running: boolean; pid: number; ended: boolean }, lastSec: number | null, nowSec: number): string {
-  const ago = lastSec == null ? "" : (() => {
-    const d = Math.max(0, Math.floor(nowSec - lastSec));
-    return ` · 마지막 활동 ${d < 60 ? `${d}초 전` : d < 3600 ? `${Math.floor(d / 60)}분 전` : d < 86400 ? `${Math.floor(d / 3600)}시간 전` : `${Math.floor(d / 86400)}일 전`}`;
-  })();
-  if (l.running) return `지금 실행 중 (PID ${l.pid})${ago}`;
-  if (l.ended) return `지금은 끝남 (PID ${l.pid})${ago}`;
-  return `지금은 실행 중이 아님 — 끝났거나 확인하지 못함 (PID ${l.pid})${ago}`;
+/// 카드의 "지금 상태" 한 줄(시각 없음 — 카드 오른쪽 위가 마지막 활동). "수집 시작 전부터 실행 중" 줄과 엇갈려 보이지 않게
+/// 모르는 경우를 "실행 중 아님"으로 쓰지 않는다
+export function liveText(l: { running: boolean; pid: number; ended: boolean }): string {
+  if (l.running) return `지금도 실행 중 (PID ${l.pid})`;
+  if (l.ended) return `지금은 끝남 (PID ${l.pid})`;
+  return `지금 상태 확인 못 함 (PID ${l.pid})`;
 }
 
 export function execRange(x: { count: number; first_ts: number; last_ts: number }): string {

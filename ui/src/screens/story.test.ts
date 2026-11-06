@@ -129,14 +129,7 @@ describe("D030-2 오늘 한 일 같은 줄 묶기", () => {
 });
 
 describe("실시간 1: 카드의 지금 상태 줄", () => {
-  const now = 1_800_000_000;
-  it("실행 중 · 마지막 활동", () => {
-    expect(liveText({ running: true, pid: 16720, ended: false }, now - 180, now)).toBe("지금 실행 중 (PID 16720) · 마지막 활동 3분 전");
-  });
-  it("끝남 기록이 있으면 끝남", () => {
-    expect(liveText({ running: false, pid: 5, ended: true }, now - 7200, now)).toBe("지금은 끝남 (PID 5) · 마지막 활동 2시간 전");
-  });
-  it("끝남 기록 없이 안 보이면 단정하지 않는다", () => {
-    expect(liveText({ running: false, pid: 5, ended: false }, null, now)).toBe("지금은 실행 중이 아님 — 끝났거나 확인하지 못함 (PID 5)");
-  });
+  it("실행 중", () => expect(liveText({ running: true, pid: 16720, ended: false })).toBe("지금도 실행 중 (PID 16720)"));
+  it("끝남 기록이 있으면 끝남", () => expect(liveText({ running: false, pid: 5, ended: true })).toBe("지금은 끝남 (PID 5)"));
+  it("끝남 기록 없이 안 보이면 단정하지 않는다", () => expect(liveText({ running: false, pid: 5, ended: false })).toBe("지금 상태 확인 못 함 (PID 5)"));
 });
