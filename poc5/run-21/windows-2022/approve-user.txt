@@ -15,14 +15,14 @@
 경고: 이 사건이 코드를 주입한 정상 프로그램 1개(chrome.exe)는 통째로 막지 않고, 그 프로그램이 접속한 곳만 막습니다. 주입된 코드는 그 프로그램을 끝내야 사라집니다
 경고: 뿌리 파일이 이미 없습니다(삭제·이동). 경로 차단과 실행 중인 프로세스 종료는 그대로 합니다
 
-요청한 프로그램: pid 1472 D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe
+요청한 프로그램: pid 8072 D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe
 [keep]
 적용했습니다: 정책 #1 판 1
 
 인터넷·원격 접속 등이 정상인지 확인하세요.
 예 = 유지, 아니요 = 지금 되돌리기
 60초 안에 답하지 않으면 서비스가 자동으로 되돌립니다.
-[server] pid=5776 session=2
+[server] pid=6780 session=2
 [exit] 0
 [approve]
 서비스가 계산한 실행 내용입니다. 확인을 누르면 적용합니다.
@@ -37,14 +37,14 @@
     action: block
     match: { direction: out, remote_port: [53], process: ['C:/a/b.exe'] }
 
-요청한 프로그램: pid 1472 D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe
+요청한 프로그램: pid 8072 D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe
 [keep]
 적용했습니다: 정책 #2 판 1
 
 인터넷·원격 접속 등이 정상인지 확인하세요.
 예 = 유지, 아니요 = 지금 되돌리기
 60초 안에 답하지 않으면 서비스가 자동으로 되돌립니다.
-[server] pid=5776 session=2
+[server] pid=6780 session=2
 [exit] 0
 [approve]
 서비스가 계산한 실행 내용입니다. 확인을 누르면 적용합니다.
@@ -57,12 +57,12 @@
     action: block
     match: { direction: out, process: ['C:/helper/test.exe'] }
 
-요청한 프로그램: pid 1472 D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe
+요청한 프로그램: pid 8072 D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe
 [keep]
 적용했습니다: 정책 #3 판 1
 
 인터넷·원격 접속 등이 정상인지 확인하세요.
 예 = 유지, 아니요 = 지금 되돌리기
 60초 안에 답하지 않으면 서비스가 자동으로 되돌립니다.
-[server] pid=5776 session=2
+[server] pid=6780 session=2
 [exit] 0
