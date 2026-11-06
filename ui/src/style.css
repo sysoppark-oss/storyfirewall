@@ -384,3 +384,19 @@ dialog.acl-dialog > .actions { padding: 12px 20px 16px; display: flex; gap: 8px;
 .flow-facts li.destroy { color: var(--bad); }
 .flow-side-actions { margin-top: auto; display: flex; flex-wrap: wrap; gap: 8px; }
 select { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+
+/* D008(3번 목업, 사용자 다시 요청 2026-11-06 21:46) 겉모양 맞춤: C1 수집 상태 줄은 테두리 카드 한 줄 + "자세히 ›" 오른쪽,
+   A3 "어디" 패널은 둥근 카드, 위치 정보 안내는 고정 안내 상자(매번 보이게) */
+.health { border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 10px 14px; margin: 10px 0 14px; font-size: 13px; }
+.health > a:last-child, .health > span:last-child > a { margin-left: auto; }
+.health > span:last-child { flex: 1 1 auto; display: flex; gap: 10px; }
+.health > span:last-child > a { margin-left: auto; }
+.callout { margin: 12px 0 0; padding: 8px 12px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line)); background: color-mix(in srgb, var(--brand) 9%, var(--card)); color: var(--fg); }
+details.where-panel { border-radius: 16px; }
+
+.where-dash { margin-top: 18px; border-radius: 16px; padding: 16px 18px; }
+.where-dash h2 { margin: 0 0 10px; font-size: 16px; }
+.where-dash-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+@media (max-width: 900px) { .where-dash-cols { grid-template-columns: minmax(0, 1fr); } }
+.where-dash .bar-row { cursor: pointer; }
+.where-dash-more { margin-top: 10px; display: flex; justify-content: flex-end; }

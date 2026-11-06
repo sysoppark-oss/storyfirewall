@@ -188,7 +188,7 @@ export function connections(): HTMLElement {
     return b;
   });
   where3.append(el("summary", undefined, "오늘 어디와 통신했나"), el("div", "where-head", el("span", "seg", ...viewBtns)), where3Body,
-    el("p", "muted small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."));
+    el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."));
   root.append(
     el("div", "toolbar", "묶음 ", seg, " · 범위 ", windowSel, el("span", "muted", " · 지금 열린 연결이 아니라 이 범위 안의 접속 기록(이력)입니다")),
     where3,

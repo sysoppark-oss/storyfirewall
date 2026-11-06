@@ -9,6 +9,7 @@ import { watchUntilText } from "./first-run";
 import { buildCard } from "./installs";
 import type { InstallRun } from "./installs-text";
 import { LEDGER_SCOPE, LEDGER_PROXY_NOTE, ledgerSummary } from "./first-run";
+import { bars, type ConnLike } from "./conn-group";
 
 /// 서비스가 남긴 보호 사건 (A29): 파이프 이름 가로채기, 데이터 폴더 점유 등. 대상이 그래프의 프로세스면 상세로 잇는다
 interface ServiceEvent {
@@ -118,11 +119,42 @@ export function dashboard(): HTMLElement {
   const status = el("div", "cards");
   // 목록은 새로 고칠 때마다 비운다 (전에는 알림마다 '지금 봐야 할 것' 목록이 아래에 계속 쌓였다)
   const body = el("div", "dash-body");
-  root.append(status, body);
+  // D008 A3(사용자 다시 요청 2026-11-06): 대시보드 아래 "오늘 어디와 통신했나" — 나라·망(조직) 막대 상위 5. 누르면 연결 화면
+  const where = el("section", "card where-dash");
+  root.append(status, body, where);
+  const drawWhere = async () => {
+    const r = await rpc<{ items: ConnLike[] }>("connections.list", { since_secs: 86400, cursor: { limit: 500 } });
+    clear(where);
+    where.append(el("h2", undefined, "오늘 어디와 통신했나"));
+    if (!r.ok) return void where.append(cardFail(r.error, "연결 기록"));
+    const cols = el("div", "where-dash-cols");
+    for (const [by, title] of [["country", "나라별 (접속 수)"], ["org", "망(조직)별 (접속 수)"]] as const) {
+      const { bars: bs, rest } = bars(r.result.items, by, 5);
+      const col = el("div", "bar-col", el("h4", undefined, title));
+      const max = Math.max(1, ...bs.map((b) => b.value));
+      for (const b of bs) {
+        const row = el("div", `bar-row${b.isNew ? " is-new" : ""}`);
+        const name = ext("span", b.label, "bar-name");
+        name.title = b.label;
+        const fill = el("span", "bar-fill");
+        fill.style.width = `${Math.round((b.value / max) * 100)}%`;
+        row.append(name, el("span", "bar-track", fill), el("span", "bar-val", String(b.value)));
+        if (b.isNew) row.append(el("span", "badge-new", "오늘 처음"));
+        row.addEventListener("click", () => state.go("connections", {}));
+        col.append(row);
+      }
+      if (rest) col.append(el("div", "muted small", `그 밖에 ${rest}곳`));
+      if (!bs.length) col.append(el("div", "muted small", "공인 주소 접속이 없습니다."));
+      cols.append(col);
+    }
+    where.append(cols, el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다."),
+      el("div", "where-dash-more", button("연결 화면에서 자세히", () => state.go("connections", {}), "btn small")));
+  };
   const refresh = async () => {
     clear(status);
     clear(body);
     body.append(loadingBox());
+    void drawWhere();
     // D035-2: 네 조회를 동시에 보내고 칸마다 따로 그린다(rpc 는 던지지 않고 결과로 돌려준다) — 한 조회가 늦거나 실패해도 나머지 칸은 그린다.
     // 전에는 의심 사건 → 정책 → 서비스 사건을 차례로 기다려, 엔진이 바쁘면 카드 하나만 그려진 반쪽 화면이 됐다(L044)
     const [ev, hr, pol, se] = await Promise.all([
