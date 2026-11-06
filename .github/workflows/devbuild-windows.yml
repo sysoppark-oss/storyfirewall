@@ -22,9 +22,11 @@ on:
 permissions:
   contents: write
 
+# Never cancel a running dev build: a later push without [devbuild] also starts a (skipped) run in this group and
+# used to cancel the real build (1e6e4cb, 2026-11-06). Queued runs wait instead.
 concurrency:
   group: devbuild
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   devbuild:
