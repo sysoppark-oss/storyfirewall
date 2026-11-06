@@ -29,6 +29,16 @@ jobs:
           Start-Sleep -Seconds 2
           logman stop hl -ets | Out-Null
           tracerpt "$d\hl.etl" -o "$d\hl.csv" -of CSV -y | Out-Null
+          tracerpt "$d\hl.etl" -o "$d\hl.xml" -of XML -y | Out-Null
+          [xml]$x = Get-Content "$d\hl.xml" -Raw
+          "== events 28 / 29 (fields) =="
+          foreach ($e in $x.Events.Event) {
+            $id = [string]$e.System.EventID
+            if ($id -eq "28" -or $id -eq "29" -or $id -eq "17") {
+              $fields = @($e.EventData.Data | ForEach-Object { "{0}={1}" -f $_.Name, $_.'#text' }) -join " | "
+              "id=$id task=$($e.RenderingInfo.Task) opcode=$($e.RenderingInfo.Opcode) :: $fields"
+            }
+          }
           $rows = Import-Csv "$d\hl.csv"
           "== event id counts (rows mentioning link1 or link2) =="
           $hits = $rows | Where-Object { ($_ | Out-String) -match 'link1|link2' }
