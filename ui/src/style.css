@@ -162,6 +162,11 @@ svg.worldmap .on { stroke: var(--select); stroke-width: 2; }
 .map-legend .lg.new { background: transparent; border: 2px solid var(--warn); }
 /* 25차 Q1: 기록 없는 구간에 시작한 프로세스 — 사실 표시, 주의색 글자 */
 .since.gap { color: var(--warn); }
+/* 실시간 1: 카드의 "지금 상태" 줄 — 실행 중이면 점과 글씨를 강조색, 아니면 회색 */
+.since.live { display: flex; align-items: center; gap: 4px; }
+.since.live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.since.live.on { color: var(--brand-strong); }
+.since.live.on .dot { background: var(--brand); }
 /* D013 목록 상태: 불러오는 중(뼈대) / 불러오지 못함·수집 안 됨(주황) */
 .loading .sk { height: 12px; margin: 8px 0; border-radius: 4px; background: var(--line); }
 .loading .sk:nth-child(2) { width: 80%; } .loading .sk:nth-child(3) { width: 60%; }

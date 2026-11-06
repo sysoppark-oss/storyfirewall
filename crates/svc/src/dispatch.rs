@@ -476,6 +476,14 @@ pub fn dispatch(
     }
 }
 
+/// 실시간 1(사용자 "실시간으로 문제를 찾아야 바로 해결가능함" 2026-11-07): 이야기 카드의 주인공 프로세스가 지금도 실행 중인가.
+/// 끝남 기록이 있으면 끝남. 없으면 지금 그 PID 로 살아 있는 프로세스가 같은 것(생성 시각 일치 또는 처음 본 시각 이전 생성)인지 조회한다.
+/// 읽기 경로라 DB 에 쓰지 않는다. 조회는 카드 한 쪽(보이는 것)만 — OpenProcess 한 번씩
+fn live_state(world: &World, d: &graph::views::ProcessDetail) -> serde_json::Value {
+    let running = !d.ended && world.host.live_image(d.pid, d.create_ts, d.node.first_ts).is_some();
+    serde_json::json!({ "running": running, "pid": d.pid, "ended": d.ended })
+}
+
 fn handle(
     world: &mut World,
     method: Method,
@@ -736,6 +744,7 @@ fn handle(
                     // 프로세스 뿌리만 process_detail(파일 노드에도 Ok 를 돌려주지만 경로가 빈다 — L046 "위치 줄 없음")
                     let pd = if root_kind == "process" { graph::views::process_detail(&world.graph, n.root, 0).ok() } else { None };
                     if let Some(d) = pd {
+                        v["root_live"] = live_state(world, &d);
                         v["root_core"] = serde_json::json!(graph::views::is_system_image(&d.image));
                         v["root_image"] = serde_json::json!(d.image);
                         v["root_signature"] = d.signature.clone().unwrap_or(serde_json::Value::Null);
@@ -754,6 +763,9 @@ fn handle(
                                 )
                                 .ok();
                             if let Some((c, first, last, latest)) = ex {
+                                if let Some(d) = graph::views::process_detail(&world.graph, latest, 0).ok().filter(|_| latest > 0) {
+                                    v["root_live"] = live_state(world, &d);
+                                }
                                 v["root_exec"] = serde_json::json!({ "count": c, "first_ts": first, "last_ts": last, "latest_proc": latest });
                             }
                         }

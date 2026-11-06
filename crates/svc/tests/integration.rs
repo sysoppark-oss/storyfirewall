@@ -459,6 +459,8 @@ fn ingest_judge_story_events_and_suspicious_notification() {
         .unwrap()
         .starts_with("[의심] payload.exe"));
     assert!(v["result"]["next"].is_null(), "사건 1건이라 다음 쪽 없음");
+    // 실시간 1: 주인공이 지금 실행 중인지. 시험 호스트(NoHost)는 살아 있는 프로세스를 모른다 → 실행 중 아님
+    assert_eq!(items[0]["root_live"]["running"], serde_json::json!(false), "{v}");
     // L052: 대시보드(since 0)와 이야기 화면(since 지정)을 오가도 두 결과의 문장 캐시가 서로 지우지 않고 같은 문장을 돌려준다
     let first = items[0]["title"].clone();
     let w = a.call(
@@ -1956,5 +1958,33 @@ fn agents_list_reads_precomputed_cache() {
             .contains("203.0.113.40"),
         "{v}"
     );
+    rt.shutdown();
+}
+
+/// 살아 있는 프로세스 조회만 답하는 호스트(실시간 1): pid 2200 만 지금 실행 중
+struct LiveHost;
+impl svc::host::Host for LiveHost {
+    fn live_image(&self, pid: u32, create_ft: i64, _seen_ft: i64) -> Option<(String, i64)> {
+        (pid == 2200).then(|| (r"C:\Users\pjg\AppData\Local\Temp\payload.exe".to_string(), create_ft))
+    }
+}
+
+/// 실시간 1(2026-11-07 "실시간으로 문제를 찾아야 바로 해결가능함"): 이야기 카드에 주인공이 지금 실행 중인지 싣는다
+#[test]
+fn story_card_says_whether_root_process_is_running_now() {
+    let (rt, _, _) = boot_with(Some(Box::new(LiveHost)));
+    let mut c = Client::connect(&rt, 100, 1);
+    c.hello();
+    let (events, _) = a19_events();
+    rt.tx.send(Command::Ingest(events)).unwrap();
+    rt.tx.send(Command::Judge).unwrap();
+    let v = c.call("story.events", serde_json::json!({"cursor": {"limit": 10}}));
+    let items = v["result"]["items"].as_array().expect("items");
+    let it = items
+        .iter()
+        .find(|i| i["root_live"]["pid"] == 2200)
+        .unwrap_or_else(|| panic!("payload 사건 {v}"));
+    assert_eq!(it["root_live"]["running"], serde_json::json!(true), "{it}");
+    assert_eq!(it["root_live"]["ended"], serde_json::json!(false));
     rt.shutdown();
 }

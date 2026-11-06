@@ -74,6 +74,8 @@ interface StoryEvent {
   root_signature?: { signer?: string | null; sig_status?: string | null } | null;
   /// D039-2: 뿌리가 파일이면 그 파일의 실행 횟수·처음·마지막(FILETIME)·가장 최근 프로세스 노드
   root_exec?: { count: number; first_ts: number; last_ts: number; latest_proc: number | null } | null;
+  /// 실시간 1: 주인공 프로세스가 지금 실행 중인지(서비스가 카드를 줄 때 조회)
+  root_live?: { running: boolean; pid: number; ended: boolean } | null;
   /// D022-4: 가장 늦은 외부 접속지와 그 나라
   egress?: string;
   egress_where?: Where | null;
@@ -458,6 +460,11 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
         h3.replaceChildren(nameBtn);
       }
       card.append(head);
+      // 실시간 1(2026-11-07): 사건 시각과 지금 상태를 나눠 — "이게 지금인가?"를 카드에서 바로
+      if (ev.root_live) {
+        const t = liveText(ev.root_live, lastTs ? filetimeToUnix(lastTs) : null, Date.now() / 1000);
+        card.append(el("div", ev.root_live.running ? "since live on" : "since live", el("span", "dot"), " ", t));
+      }
       // 수집 전부터 살아 있던 프로세스(L024·D004): 유입·실행 칸은 "기록 없음", 시작 시각은 따로 밝힌다
       card.append(chapterSteps(ev.reached ?? [], ev.score, ev.running_since ? [1, 2] : []));
       if (ev.destroy) card.append(destroyLine(ev.destroy));
@@ -650,6 +657,17 @@ function cmdlineLine(cmd: string): HTMLElement {
   line.append(t, " ", copy, done);
   return line;
 }
+/// 카드의 "지금 상태" 한 줄. 마지막 활동은 이 사건에 기록된 마지막 시각(지금 연결이 열려 있는지는 아님)
+export function liveText(l: { running: boolean; pid: number; ended: boolean }, lastSec: number | null, nowSec: number): string {
+  const ago = lastSec == null ? "" : (() => {
+    const d = Math.max(0, Math.floor(nowSec - lastSec));
+    return ` · 마지막 활동 ${d < 60 ? `${d}초 전` : d < 3600 ? `${Math.floor(d / 60)}분 전` : d < 86400 ? `${Math.floor(d / 3600)}시간 전` : `${Math.floor(d / 86400)}일 전`}`;
+  })();
+  if (l.running) return `지금 실행 중 (PID ${l.pid})${ago}`;
+  if (l.ended) return `지금은 끝남 (PID ${l.pid})${ago}`;
+  return `지금은 실행 중이 아님 — 끝났거나 확인하지 못함 (PID ${l.pid})${ago}`;
+}
+
 export function execRange(x: { count: number; first_ts: number; last_ts: number }): string {
   return x.count > 1 ? `이 파일로 실행 ${x.count}번 · ${fmtRange(filetimeToUnix(x.first_ts), filetimeToUnix(x.last_ts))}` : "이 파일로 실행 1번";
 }

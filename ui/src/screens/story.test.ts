@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardNote, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned } from "./story";
+import { cardNote, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned, liveText } from "./story";
 import { hostOf, portOf, REL } from "./mindmap";
 // 그래프 관계 이름의 원본(Rust) — vite ?raw 로 글자 그대로 읽는다
 import graphLib from "../../../crates/graph/src/lib.rs?raw";
@@ -125,5 +125,18 @@ describe("D030-2 오늘 한 일 같은 줄 묶기", () => {
   it("다른 분이거나 대상이 다르면 따로", () => {
     expect(groupToday([line(T + 1), line(T + MIN + 1)]).length).toBe(2);
     expect(groupToday([line(T + 1), line(T + 2, "sh.exe")]).length).toBe(2);
+  });
+});
+
+describe("실시간 1: 카드의 지금 상태 줄", () => {
+  const now = 1_800_000_000;
+  it("실행 중 · 마지막 활동", () => {
+    expect(liveText({ running: true, pid: 16720, ended: false }, now - 180, now)).toBe("지금 실행 중 (PID 16720) · 마지막 활동 3분 전");
+  });
+  it("끝남 기록이 있으면 끝남", () => {
+    expect(liveText({ running: false, pid: 5, ended: true }, now - 7200, now)).toBe("지금은 끝남 (PID 5) · 마지막 활동 2시간 전");
+  });
+  it("끝남 기록 없이 안 보이면 단정하지 않는다", () => {
+    expect(liveText({ running: false, pid: 5, ended: false }, null, now)).toBe("지금은 실행 중이 아님 — 끝났거나 확인하지 못함 (PID 5)");
   });
 });
