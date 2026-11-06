@@ -336,7 +336,7 @@ fn unknown_image_is_filled_from_live_process_and_dns_is_kept_open() {
                 proto,
                 direction: Direction::Out,
                 laddr: "10.0.0.2".into(),
-                lport: 50000 + rport,
+                lport: 40000u16.wrapping_add(rport),
                 raddr: raddr.into(),
                 rport,
             },
@@ -355,6 +355,8 @@ fn unknown_image_is_filled_from_live_process_and_dns_is_kept_open() {
         ),
         conn(t + 1, "1.214.68.2", 53, Proto::Udp),
         conn(t + 2, "203.0.113.9", 443, Proto::Tcp),
+        conn(t + 3, "127.0.0.1", 57256, Proto::Tcp),
+        conn(t + 4, "192.168.0.1", 80, Proto::Tcp),
     ])
     .unwrap();
     let root = st
@@ -386,19 +388,40 @@ fn unknown_image_is_filled_from_live_process_and_dns_is_kept_open() {
         "첫 주소 정책이 DNS 가 아니어야 한다: {}",
         p0.yaml
     );
-    // 살아 있고 생성 시각이 맞으면 지금 경로로 채워 경로 차단
-    let live = |pid: u32, ft: i64| {
-        (pid == 30 && ft == t).then(|| r"C:\Users\x\AppData\Local\Temp\agent.exe".to_string())
+    // 호스트 흉내: PID 30 은 생성 시각 `real` 로 살아 있다. Host::live_image 와 같은 규칙(같은 생성 시각 또는 처음 본 시각 전에 생김)
+    let host = |real: i64| {
+        move |pid: u32, ft: i64, seen: i64| {
+            (pid == 30 && (real == ft || (seen > 0 && real <= seen)))
+                .then(|| (r"C:\Users\x\AppData\Local\Temp\agent.exe".to_string(), real))
+        }
     };
-    let p1 = svc::cut::plan_with(&st, root, &[], &live).unwrap();
+    let p1 = svc::cut::plan_with(&st, root, &[], &host(t)).unwrap();
     assert_eq!(
         p1.block_images,
         vec![r"C:\Users\x\AppData\Local\Temp\agent.exe".to_string()]
     );
-    // 생성 시각이 다르면(PID 재사용) 채우지 않는다
-    let wrong =
-        |pid: u32, ft: i64| (pid == 30 && ft == t + 99).then(|| "C:\\other.exe".to_string());
-    assert!(svc::cut::plan_with(&st, root, &[], &wrong)
+    assert!(
+        p1.addresses.iter().all(|a| a.who == "agent.exe"),
+        "프로그램을 모르던 접속지에 이름"
+    );
+    // 기록의 생성 시각이 어긋나도(수집 전부터 실행) 처음 본 시각보다 먼저 생긴 살아 있는 프로세스면 같은 프로세스 — 실제 생성 시각으로 끝낸다
+    let p2 = svc::cut::plan_with(
+        &st,
+        root,
+        &["terminate".to_string()],
+        &host(t - 5_000_000_000),
+    )
+    .unwrap();
+    assert_eq!(p2.block_images.len(), 1);
+    assert!(
+        p2.terminate
+            .iter()
+            .any(|x| x.pid == 30 && x.create_ts == t - 5_000_000_000),
+        "{:?}",
+        p2.terminate
+    );
+    // 처음 본 뒤에 생긴 같은 PID(재사용)는 채우지 않는다
+    assert!(svc::cut::plan_with(&st, root, &[], &host(t + 99))
         .unwrap()
         .block_images
         .is_empty());

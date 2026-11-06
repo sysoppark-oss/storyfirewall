@@ -163,10 +163,11 @@ fn summarize(
     match method {
         Method::CutApply => {
             let v: CutParams = from(p)?;
-            let plan = crate::cut::plan_with(&world.graph, v.story_root, &v.also, &|pid, ft| {
-                world.host.live_image(pid, ft)
-            })
-            .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
+            let plan =
+                crate::cut::plan_with(&world.graph, v.story_root, &v.also, &|pid, ft, seen| {
+                    world.host.live_image(pid, ft, seen)
+                })
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
             if plan.yaml.is_empty() {
                 return Err(RpcError::with(
                     ErrorCode::InvalidParams,
@@ -228,8 +229,13 @@ fn summarize(
                             a.ip,
                             a.port,
                             if a.proto == 17 { "udp" } else { "tcp" },
-                            a.why,
-                            a.who
+                            a.who,
+                            // 승인 창에 영어 내부 말(target 등)이 나가던 것 — 화면과 같은 말로
+                            match a.why.as_str() {
+                                "system" => "핵심 프로세스의 접속",
+                                "injected" => "주입당한 프로그램의 접속",
+                                _ => "대상",
+                            }
                         )
                     })
                     .collect(),
@@ -1411,10 +1417,11 @@ fn handle(
             if !caller.scope().process_visible(&world.graph, v.story_root) {
                 return Err(out_of_scope());
             }
-            let plan = crate::cut::plan_with(&world.graph, v.story_root, &v.also, &|pid, ft| {
-                world.host.live_image(pid, ft)
-            })
-            .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
+            let plan =
+                crate::cut::plan_with(&world.graph, v.story_root, &v.also, &|pid, ft, seen| {
+                    world.host.live_image(pid, ft, seen)
+                })
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
             let val = if plan.yaml.is_empty() {
                 None
             } else {
@@ -1433,10 +1440,11 @@ fn handle(
                 .request_id
                 .clone()
                 .ok_or_else(|| RpcError::with(ErrorCode::InvalidParams, "request_id 필수"))?;
-            let plan = crate::cut::plan_with(&world.graph, v.story_root, &v.also, &|pid, ft| {
-                world.host.live_image(pid, ft)
-            })
-            .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
+            let plan =
+                crate::cut::plan_with(&world.graph, v.story_root, &v.also, &|pid, ft, seen| {
+                    world.host.live_image(pid, ft, seen)
+                })
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e))?;
             if plan.yaml.is_empty() {
                 return Err(RpcError::with(
                     ErrorCode::InvalidParams,

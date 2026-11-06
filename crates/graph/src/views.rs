@@ -295,6 +295,8 @@ pub struct CutProc {
     pub node_id: i64,
     pub pid: u32,
     pub create_ts: i64,
+    /// 이 프로세스를 처음 본 시각(FILETIME). 생성 시각을 정확히 모를 때 "그때 이미 살아 있던 같은 프로세스인가"를 가리는 데 쓴다
+    pub first_ts: i64,
     pub image: String,
     pub system: bool,
     pub ended: bool,
@@ -419,6 +421,7 @@ pub fn cut_targets(store: &Store, root: i64, max: usize) -> Result<CutTargets> {
             node_id: *id,
             pid,
             create_ts,
+            first_ts: n.first_ts,
             image: image.clone(),
             system,
             ended: n.attr("ended").and_then(|v| v.as_bool()).unwrap_or(false),
