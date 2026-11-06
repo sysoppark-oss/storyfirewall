@@ -28,6 +28,8 @@ tauri-plugin-notification = "2"
 # tauri-plugin-single-instance: MIT OR Apache-2.0 (tauri-apps/plugins-workspace). 두 번째 실행은 기존 창을 띄우고 끝난다
 # (HKLM Run --tray + 사용자의 바로가기 실행이 겹쳐 트레이·연결이 두 개 생기던 것, L013 R1)
 tauri-plugin-single-instance = "2"
+# tauri-plugin-updater: MIT OR Apache-2.0 (tauri-apps/plugins-workspace). 자동 업데이트 — 서명(minisign) 검사 뒤에만 설치
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # getrandom: MIT OR Apache-2.0. 승인 도우미의 멱등 키

@@ -122,6 +122,42 @@ fn endpoint(state: State<'_, AppState>) -> Option<String> {
     state.client.lock().unwrap().as_ref().map(|c| c.endpoint.clone())
 }
 
+/// 공개 빌드에서만 업데이트를 쓴다(릴리스 워크플로가 SF_UPDATER=1 로 빌드). 개발 빌드는 늘 꺼짐 —
+/// 개발판이 공개판으로 덮어써지지 않게
+fn updater_on() -> bool {
+    option_env!("SF_UPDATER") == Some("1")
+}
+
+#[tauri::command]
+fn update_enabled() -> bool {
+    updater_on()
+}
+
+/// 새 판 확인: GitHub Releases 의 latest.json 한 번. 새 판이 없으면 null
+#[tauri::command]
+async fn update_check(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
+    if !updater_on() {
+        return Ok(None);
+    }
+    use tauri_plugin_updater::UpdaterExt;
+    let u = app.updater().map_err(|e| e.to_string())?;
+    Ok(u.check().await.map_err(|e| e.to_string())?.map(|up| {
+        serde_json::json!({ "version": up.version, "current": up.current_version, "notes": up.body, "date": up.date.map(|d| d.to_string()) })
+    }))
+}
+
+/// 받고 → 서명(minisign, 앱에 박힌 공개 키) 검사 → 설치 프로그램 실행(passive, UAC 한 번). 서명이 맞지 않으면 설치하지 않는다
+#[tauri::command]
+async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
+    if !updater_on() {
+        return Err("이 빌드에서는 업데이트를 쓰지 않습니다".into());
+    }
+    use tauri_plugin_updater::UpdaterExt;
+    let u = app.updater().map_err(|e| e.to_string())?;
+    let up = u.check().await.map_err(|e| e.to_string())?.ok_or_else(|| "새 판이 없습니다".to_string())?;
+    up.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())
+}
+
 pub fn run() {
     tauri::Builder::default()
         // 가장 먼저 등록해야 한다(플러그인 문서). 승인 도우미(--approve)는 main 에서 이 앞에 끝나므로 막히지 않는다
@@ -131,8 +167,9 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![connect, rpc, endpoint, elevated, approve])
+        .invoke_handler(tauri::generate_handler![connect, rpc, endpoint, elevated, approve, update_enabled, update_check, update_install])
         .on_window_event(|w, e| {
             // 닫기(X) = 트레이로 숨김. 끝내기는 트레이 메뉴 (A28)
             if let tauri::WindowEvent::CloseRequested { api, .. } = e {

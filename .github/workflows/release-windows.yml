@@ -57,11 +57,22 @@ jobs:
       - name: Build NSIS installer (UI and sidecar signed via signCommand)
         working-directory: ui
         shell: pwsh
+        env:
+          # auto update (user decision 2026-11-06): updater artifacts are signed with a long-lived minisign key kept only in repo secrets
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          SF_UPDATER: "1"
         run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) { throw "repo secret TAURI_SIGNING_PRIVATE_KEY is missing (updater signing key)" }
+          # app version = tag without the leading v (semver). Updater and installer downgrade guard compare this
+          $ver = "${{ inputs.tag }}".TrimStart('v')
+          if ($ver -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw "tag is not semver: ${{ inputs.tag }}" }
           $sign = (Resolve-Path scripts\sign-release.ps1).Path
           if ($sign -match ' ') { throw "sign script path has a space: $sign" }
           $c = Get-Content src-tauri\tauri.installer.conf.json -Raw | ConvertFrom-Json
           $c.bundle.windows | Add-Member -NotePropertyName signCommand -NotePropertyValue ("pwsh -NoProfile -ExecutionPolicy Bypass -File $sign %1") -Force
+          $c | Add-Member -NotePropertyName version -NotePropertyValue $ver -Force
+          $c.bundle | Add-Member -NotePropertyName createUpdaterArtifacts -NotePropertyValue $true -Force
           $c | ConvertTo-Json -Depth 10 | Set-Content src-tauri\tauri.release.conf.json -Encoding utf8
           npm ci
           npx tauri build --config src-tauri/tauri.release.conf.json 2>&1 | Tee-Object -FilePath ../build-installer.log
@@ -118,6 +129,8 @@ jobs:
           Check (-not (Get-Service StoryFirewall -ErrorAction SilentlyContinue)) "service removed by uninstall"
           Log "assert: $bad failed"
           Copy-Item $setup ("story-firewall-" + "${{ inputs.tag }}" + "-setup.exe")
+          # updater signature of the same bytes (minisign over the bundled installer)
+          Copy-Item "$setup.sig" ("story-firewall-" + "${{ inputs.tag }}" + "-setup.exe.sig")
           if ($bad -gt 0) { exit 1 }
 
       - name: Draft release (not public)
@@ -129,8 +142,14 @@ jobs:
           $sha = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
           # SHA256SUMS.txt is hash lines only (sha256sum -c / Get-FileHash friendly); build facts go to BUILD-INFO.txt
           @("$sha  $f") | Set-Content SHA256SUMS.txt -Encoding ascii
+          # latest.json for the updater (only published releases are visible at releases/latest)
+          $sig = Get-Content "$f.sig" -Raw
+          $name = $f
+          $ver = "${{ inputs.tag }}".TrimStart('v')
+          $latest = [ordered]@{ version = $ver; notes = "Story Firewall ${{ inputs.tag }}"; pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"); platforms = [ordered]@{ "windows-x86_64" = [ordered]@{ signature = $sig.Trim(); url = "https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}/$name" } } }
+          $latest | ConvertTo-Json -Depth 5 | Set-Content latest.json -Encoding utf8
           @("commit $env:GITHUB_SHA", "signing key leaf sha256 $env:SF_RELEASE_PIN (self-signed, per release, key destroyed)") | Set-Content BUILD-INFO.txt -Encoding ascii
-          gh release create "${{ inputs.tag }}" $f SHA256SUMS.txt BUILD-INFO.txt release-test.txt --draft --target $env:GITHUB_SHA --title "Story Firewall ${{ inputs.tag }}" --notes-file docs/release-notes.md
+          gh release create "${{ inputs.tag }}" $f "$name.sig" latest.json SHA256SUMS.txt BUILD-INFO.txt release-test.txt --draft --target $env:GITHUB_SHA --title "Story Firewall ${{ inputs.tag }}" --notes-file docs/release-notes.md
 
       - name: Logs
         if: always()

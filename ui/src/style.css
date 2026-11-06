@@ -440,3 +440,8 @@ details.where-panel { border-radius: 16px; }
 .health > .lead + span::before { content: "·"; margin-right: 10px; color: var(--muted); }
 .badge-new { white-space: nowrap; }
 .where-dash .bar-row { grid-template-columns: minmax(0, 1.3fr) minmax(40px, 1fr) 28px auto; }
+
+/* 자동 업데이트 알림 띠(맨 위) */
+.update-banner { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; border-bottom: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line)); background: color-mix(in srgb, var(--brand) 10%, var(--card)); }
+.update-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#app:has(> .update-banner) { grid-template-rows: auto 1fr auto; }

@@ -2,6 +2,7 @@ import { mutation, rpc } from "../rpc";
 import { el, ext, button, errorBox, clear } from "../ui";
 import { state } from "../state";
 import { loadTheme, setTheme, type Theme } from "../theme";
+import { autoCheck, setAutoCheck, checkUpdate, updateBanner, updaterEnabled } from "../update";
 import { diagnostics } from "./diag";
 import { FIRST_RUN_CHOICES, FIRST_RUN_MINUTES, FIRST_RUN_MINUTES_SENTENCE, firstRunSentence, firstRunSetting, umbrellaText, type FirstRunMode } from "./first-run";
 import { approvalBox, countdown, type ApplyReply } from "../confirm";
@@ -112,9 +113,33 @@ export function settings(): HTMLElement {
   }
   theme.value = loadTheme();
   theme.addEventListener("change", () => setTheme(theme.value as Theme));
+  // 자동 업데이트(기본 켬). 공개 빌드에서만 동작
+  const upAuto = el("input") as HTMLInputElement;
+  upAuto.type = "checkbox";
+  upAuto.checked = autoCheck();
+  upAuto.addEventListener("change", () => setAutoCheck(upAuto.checked));
+  const upNote = el("span", "muted small");
+  const upBox = el("div", "update-slot");
+  const upBtn = button("지금 확인", async () => {
+    upNote.textContent = " 확인 중…";
+    upBox.replaceChildren();
+    if (!(await updaterEnabled())) { upNote.textContent = " 이 빌드(개발판)에서는 업데이트를 쓰지 않습니다."; return; }
+    try {
+      const u = await checkUpdate();
+      upNote.textContent = u ? "" : " 지금 판이 최신입니다.";
+      if (u) upBox.append(updateBanner(u, () => upBox.replaceChildren()));
+    } catch (e) {
+      upNote.textContent = ` 확인하지 못했습니다: ${String(e)}`;
+    }
+  }, "btn small");
+  const upLine = el("div", "update-line", el("label", undefined, upAuto, " 켤 때 새 판이 있는지 확인(기본)"), " ", upBtn, upNote);
   root.append(
     el("div", "form",
       el("label", undefined, "화면 테마 ", theme),
+      el("h3", undefined, "업데이트"),
+      upLine,
+      el("p", "muted small", "GitHub 공개 릴리스에서 새 판 정보(latest.json)만 받아 봅니다. 이 PC 의 기록은 보내지 않습니다. 설치 파일은 서명을 확인한 뒤에만 실행하고, 설치할 때 승인 창(UAC)이 한 번 뜹니다."),
+      upBox,
       loadNote,
       el("label", undefined, "이야기 화법 ", voice),
       el("p", "muted", "Claude 서술·로컬 언어 모델은 아직 없습니다. 켜는 옵션이 생기면 무엇이 전송되는지 먼저 보여 줍니다."),

@@ -7,6 +7,7 @@ import { policy } from "./screens/policy";
 import { settings } from "./screens/settings";
 import { engineStuckText, state } from "./state";
 import { applyTheme } from "./theme";
+import { autoCheck, checkUpdate, updateBanner, updaterEnabled } from "./update";
 applyTheme();
 import { el, button, clear } from "./ui";
 import { isElevated, setUnauthorizedHandler } from "./rpc";
@@ -108,6 +109,21 @@ async function boot() {
     });
   }
   go("dashboard");
+  // 자동 업데이트(기본 켬, 공개 빌드에서만): 켜고 5초 뒤 한 번 확인 — 새 판이 있으면 맨 위 알림 띠
+  if ("__TAURI_INTERNALS__" in window && autoCheck()) {
+    window.setTimeout(async () => {
+      if (!(await updaterEnabled())) return;
+      try {
+        const u = await checkUpdate();
+        if (u) {
+          const bar = updateBanner(u, () => bar.remove());
+          app.prepend(bar);
+        }
+      } catch {
+        /* 확인 실패는 조용히 — 설정 › 업데이트에서 다시 확인할 수 있다 */
+      }
+    }, 5000);
+  }
   // 10초마다 엔진 묶임 확인 — 바뀌었을 때만 상태 줄을 다시 그린다.
   // L050: 처음 연결 때 이미 "묶여 있음"으로 그렸으면 그 상태에서 시작해야 풀릴 때 다시 그린다(전에는 false 로 시작해 문구가 남았다)
   let wasStuck = !!engineStuckText(state.engineBusyMs);
