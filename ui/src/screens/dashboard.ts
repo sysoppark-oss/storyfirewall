@@ -10,6 +10,7 @@ import { buildCard } from "./installs";
 import type { InstallRun } from "./installs-text";
 import { LEDGER_SCOPE, LEDGER_PROXY_NOTE, ledgerSummary } from "./first-run";
 import { bars, type ConnLike } from "./conn-group";
+import { icon, sparkline, areaChart, hourlyCounts, donut, chapterReach, type Tone } from "./dash-viz";
 import { overview, type DashConn, type DashListener } from "./dash-overview";
 import { bytes } from "./connections";
 import { fileName } from "../sanitize";
@@ -58,6 +59,8 @@ interface StoryEvent {
   sentences: { text: string; ts: number; edge_ids: number[] }[];
   last_ts?: number;
   fresh?: boolean;
+  /// 도달한 장(1~4) — 4장 흐름 띠
+  reached?: number[];
   root_image?: string;
   items?: { label: string; value: string }[];
 }
@@ -125,8 +128,15 @@ export function dashboard(): HTMLElement {
   // 대시보드 개요(사용자 "대시보드 UI 구성이 너무 약함" 2026-11-06): 네 질문 + 시간대 + 어디와 통신했나.
   // 숫자는 연결 기록·듣는 포트·설치 묶음에서 세기만 한다(dash-overview.ts). 위 카드 줄에도 개요 칸 3개를 끼운다
   const where = el("section", "dash-overview");
-  root.append(status, body, where);
+  // 2026-11-07: 그래프·도넛·4장 띠는 카드 바로 아래(첫 화면에 보이게), 네 질문·어디와 통신했나는 그 아래
+  const viz = el("section", "dash-viz");
+  root.append(status, viz, body, where);
   let ovGen = 0;
+  // 영역 그래프의 의심 사건 시각(unix 초) — refresh 가 채우고 drawOverview 가 읽는다
+  let susTs: number[] = [];
+  // 수준별 수(의심·주의)와 4장 도달 수 — refresh 가 채운다(평범은 story.events 기본 수준에 안 들어와 세지 않는다)
+  let levelN = { suspicious: 0, watch: 0 };
+  let reach = [0, 0, 0, 0];
   const drawOverview = async () => {
     const gen = ++ovGen;
     const [cr, lr, ir] = await Promise.all([
@@ -136,6 +146,7 @@ export function dashboard(): HTMLElement {
     ]);
     if (gen !== ovGen) return;
     clear(where);
+    clear(viz);
     if (!cr.ok) return void where.append(el("div", "card", cardFail(cr.error, "연결 기록")));
     const conns = cr.result.items;
     const o = overview(conns, lr.ok ? lr.result.items : [], Date.now() / 1000);
@@ -143,16 +154,18 @@ export function dashboard(): HTMLElement {
     const newCc = bars(conns, "country", 999).bars.filter((b) => b.isNew).length;
     const newOrg = bars(conns, "org", 999).bars.filter((b) => b.isNew).length;
     // 위 카드 줄: 오늘 접속 · 주고받은 양 · 밖에서 닿는 포트 (의심 사건 카드 바로 뒤)
-    const tile = (title: string, big: string, sub: string, go: () => void) => {
-      const t = el("button", "card tile", el("h3", undefined, title), el("div", "big", big), el("div", "muted small", sub));
+    // 2026-11-07 대시보드 다듬기: 카드마다 아이콘·색조·작은 추세선(오늘 시간대별). 숫자는 그대로, 보이는 밀도만
+    const tile = (title: string, big: string, sub: string, go: () => void, ic: string, tone: Tone, spark?: number[]) => {
+      const t = el("button", `card tile kpi tone-${tone}`, el("div", "kpi-head", icon(ic), el("h3", undefined, title)), el("div", "big", big), el("div", "muted small", sub));
+      if (spark) t.append(sparkline(spark));
       (t as HTMLButtonElement).type = "button";
       t.addEventListener("click", go);
       return t;
     };
     const anchor = status.children[1] ?? null;
-    status.insertBefore(tile("오늘 접속한 곳", `${o.remotes}곳`, `프로그램 ${o.programs}개`, () => state.go("connections", {})), anchor);
-    status.insertBefore(tile("주고받은 양", bytes(o.sent + o.recv), o.sent + o.recv ? `보냄 ${bytes(o.sent)} · 받음 ${bytes(o.recv)}` : "양 기록 없음", () => state.go("connections", {})), anchor);
-    status.insertBefore(tile("모든 주소에서 듣는 포트", String(o.exposed.length), o.exposed.length ? "밖에서 닿는지는 방화벽·공유기에 따라 다름" : "없음", () => state.go("connections", {})), anchor);
+    status.insertBefore(tile("오늘 접속한 곳", `${o.remotes}곳`, `프로그램 ${o.programs}개`, () => state.go("connections", {}), "globe", "info", o.hourly), anchor);
+    status.insertBefore(tile("주고받은 양", bytes(o.sent + o.recv), o.sent + o.recv ? `보냄 ${bytes(o.sent)} · 받음 ${bytes(o.recv)}` : "양 기록 없음", () => state.go("connections", {}), "swap", "neutral"), anchor);
+    status.insertBefore(tile("모든 주소에서 듣는 포트", String(o.exposed.length), o.exposed.length ? "밖에서 닿는지는 방화벽·공유기에 따라 다름" : "없음", () => state.go("connections", {}), "door", o.exposed.length ? "warn" : "neutral"), anchor);
 
     // 네 질문(2×2)
     const q = (title: string, lead: Node, ...rest: Node[]) => el("section", "card q-card", el("h3", undefined, title), lead, ...rest);
@@ -195,18 +208,17 @@ export function dashboard(): HTMLElement {
       el("div", "muted small", "설치 프로그램으로 묶인 것만 셉니다. 따로 내려받아 실행한 파일은 위 '지금 봐야 할 것'과 이야기에서 봅니다."), inst, el("div", "q-more", instMore)));
     where.append(grid);
 
-    // 시간대별 접속(오늘) + 어디와 통신했나
-    const hours = el("section", "card hour-card", el("h3", undefined, "오늘 시간대별 접속"));
-    const hb = el("div", "hour-bars");
-    const maxH = Math.max(1, ...o.hourly);
+    // 시간대별 접속(오늘) + 어디와 통신했나 — 2026-11-07: 막대 → 영역 그래프 두 겹(전체 접속·의심 사건)
+    const hours = el("section", "card hour-card", el("h3", undefined, "오늘 시간대별 접속과 의심 사건"));
     const nowH = new Date().getHours();
-    o.hourly.forEach((n, h) => {
-      const bar = el("span", `hour-bar${h === nowH ? " now" : ""}${h > nowH ? " future" : ""}`);
-      bar.style.height = `${n ? Math.max(4, Math.round((n / maxH) * 100)) : 0}%`;
-      bar.title = `${h}시 · 접속 ${n}건`;
-      hb.append(el("div", "hour-col", bar, el("span", "hour-lbl", h % 6 === 0 ? `${h}시` : h === 23 ? "24시" : "")));
-    });
-    hours.append(el("div", "muted small hour-max", `가장 많은 시간 ${maxH}건`), hb, el("p", "muted small", "묶인 접속 기록의 마지막 접속 시각 기준입니다."));
+    const susHourly = hourlyCounts(susTs, Date.now() / 1000);
+    const maxH = Math.max(...o.hourly);
+    const legend = el("div", "chart-legend", el("span", "lg conn", "전체 접속"), el("span", "lg sus", "의심 사건"));
+    hours.append(legend, areaChart([
+      { name: "전체 접속", values: o.hourly, cls: "s-conn" },
+      { name: "의심 사건", values: susHourly, cls: "s-sus" },
+    ], nowH));
+    hours.append(el("p", "muted small", maxH ? `가장 많은 시간 ${maxH}건 · 묶인 접속 기록의 마지막 접속 시각 기준` : "오늘 접속 기록이 없습니다."));
     const whereCard = el("section", "card where-dash", el("h3", undefined, "오늘 어디와 통신했나"));
     const cols = el("div", "where-dash-cols");
     for (const [by, title] of [["country", "나라별 (접속 수)"], ["org", "망(조직)별 (접속 수)"]] as const) {
@@ -230,7 +242,32 @@ export function dashboard(): HTMLElement {
     }
     whereCard.append(cols, el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."),
       el("div", "q-more", button("연결 화면에서 자세히", () => state.go("connections", {}), "btn small")));
-    where.append(el("div", "dash-row2", hours, whereCard));
+    // 수준별 도넛(처리 안 한 사건) + 4장 흐름 띠(유입 → 실행 → 자리잡기 → 외부 접속, 오늘 도달한 사건 수)
+    const open = levelN.suspicious + levelN.watch;
+    const dn = el("section", "card donut-card", el("h3", undefined, "수준별 처리 안 한 사건"));
+    const dnRow = el("div", "donut-row", donut([
+      { label: "의심", value: levelN.suspicious, cls: "d-sus" },
+      { label: "주의", value: levelN.watch, cls: "d-watch" },
+    ], String(open), "사건"));
+    const dl = el("ul", "donut-legend");
+    dl.append(el("li", "d-sus", el("span", "sw"), "의심 ", el("b", undefined, String(levelN.suspicious))));
+    dl.append(el("li", "d-watch", el("span", "sw"), "주의 ", el("b", undefined, String(levelN.watch))));
+    dnRow.append(dl);
+    dn.append(dnRow, el("p", "muted small", open ? "처리 안 한 사건만 셉니다(조치함·닫힘 제외)." : "처리 안 한 의심·주의 사건이 없습니다."));
+    const flow = el("section", "card flow-card", el("h3", undefined, "오늘 사건이 어디까지 갔나 (4장)"));
+    const strip = el("div", "flow-strip");
+    const names = ["유입", "실행", "자리잡기", "외부 접속"];
+    const subs = ["밖에서 들어옴", "실행·실행한 것", "자동 실행 등록", "밖으로 접속"];
+    names.forEach((nm, i) => {
+      const n = reach[i] ?? 0;
+      const step = el("div", `flow-step${n ? " on" : ""}`, el("div", "flow-n", String(n)), el("div", "flow-name", nm), el("div", "muted small", subs[i] ?? ""));
+      step.title = `${nm}까지 간 사건 ${n}건`;
+      strip.append(step);
+      if (i < 3) strip.append(el("div", "flow-arrow", "→"));
+    });
+    flow.append(strip, el("p", "muted small", "사건 하나는 도달한 모든 장에 들어갑니다. 오른쪽으로 갈수록 더 위험합니다."));
+    viz.append(el("div", "dash-row2", hours, dn), flow);
+    where.append(whereCard);
   };
   const refresh = async () => {
     clear(status);
@@ -239,7 +276,8 @@ export function dashboard(): HTMLElement {
     // D035-2: 네 조회를 동시에 보내고 칸마다 따로 그린다(rpc 는 던지지 않고 결과로 돌려준다) — 한 조회가 늦거나 실패해도 나머지 칸은 그린다.
     // 전에는 의심 사건 → 정책 → 서비스 사건을 차례로 기다려, 엔진이 바쁘면 카드 하나만 그려진 반쪽 화면이 됐다(L044)
     const [ev, hr, pol, se] = await Promise.all([
-      rpc<{ items: StoryEvent[] }>("story.events", { level_min: "suspicious", cursor: { limit: 20 } }),
+      // 2026-11-07: 주의까지 받아 도넛·흐름 띠에 쓰고, "의심 사건" 카드·목록은 의심만 센다(전과 같음)
+      rpc<{ items: StoryEvent[] }>("story.events", { level_min: "watch", cursor: { limit: 60 } }),
       rpc<Health>("collector.health", {}),
       rpc<{ items: { name: string; state: string }[] }>("policy.list", {}),
       rpc<{ items: ServiceEvent[] }>("service.events", { since_secs: 7 * 86400, limit: 50 }),
@@ -247,12 +285,22 @@ export function dashboard(): HTMLElement {
     clear(body);
     const stalledNow = hr.ok && collectionStalled(hr.result);
     // D004-2: 숫자는 오늘 새로 일어난 일 기준. 수집 전부터 실행 중·오늘 새 활동 없는 것은 보조 줄로
-    const all = ev.ok ? ev.result.items : [];
+    const allLv = ev.ok ? ev.result.items : [];
+    const all = allLv.filter((s) => s.level.toLowerCase() === "suspicious");
     const sus = all.filter((s) => s.fresh !== false);
+    const watchFresh = allLv.filter((s) => s.fresh !== false && s.level.toLowerCase() === "watch");
     const staleN = all.length - sus.length;
     // D020-2·3: 같은 프로그램·같은 판정은 한 줄로, 최신이 위. 숫자는 묶은 뒤 개수(보조 줄에 사건 수)
     const groups = groupStories(sus);
-    const card = (title: string, body: Node, cls = "card") => el("div", cls, el("h3", undefined, title), body);
+    susTs = sus.map((x) => x.last_ts || x.sentences.find((y) => y.ts)?.ts || 0).filter((t) => t > 0).map((t) => filetimeToUnix(t));
+    levelN = { suspicious: sus.length, watch: watchFresh.length };
+    reach = chapterReach([...sus, ...watchFresh].map((x) => x.reached ?? []));
+    const susSpark = hourlyCounts(susTs, Date.now() / 1000);
+    const card = (title: string, body: Node, cls = "card", ic?: string, tone: Tone = "neutral", spark?: number[]) => {
+      const c = el("div", `${cls} kpi tone-${tone}`, ic ? el("div", "kpi-head", icon(ic), el("h3", undefined, title)) : el("h3", undefined, title), body);
+      if (spark) c.append(sparkline(spark));
+      return c;
+    };
     // D013: 불러오지 못하면 숫자 대신 "—" + 주황 "불러오지 못함"
     // D015-1: 기록이 멈췄으면 0 은 믿을 수 없는 숫자 — 초록 0 대신 회색 "—"
     const susBody = !ev.ok
@@ -265,12 +313,12 @@ export function dashboard(): HTMLElement {
     if (ev.ok && groups.length !== sus.length) susBody.append(el("div", "muted small", `사건 ${sus.length}건`));
     if (staleN) susBody.append(el("div", "muted small", `그 밖에 수집 전부터 실행 중 ${staleN}건`));
     // 사건 추적: story.events 기본(triage=open)이라 조치함·닫힘은 빠진다 — 제목도 그렇게
-    status.append(card("처리 안 한 의심 사건", susBody, sus.length ? "card alert alert-bad" : "card"));
+    status.append(card("처리 안 한 의심 사건", susBody, sus.length ? "card alert alert-bad" : "card", "shield", sus.length ? "bad" : "ok", susSpark));
     // D006-3: 지금 Windows 에 걸려 있는 정책 수(확인 대기 + 적용 중, 일시 중지 제외). 서비스는 상태를 "Applied"·"Confirmed"로 준다 —
     // 전에는 소문자와 비교해 늘 0 이었다
     const applied = pol.ok ? pol.result.items.filter((p) => /^(applied|confirmed)$/i.test(p.state)).length : 0;
     const pend = pol.ok ? pol.result.items.filter((p) => /^applied$/i.test(p.state)).length : 0;
-    status.append(card("적용된 정책", pol.ok ? el("div", undefined, el("div", "big", String(applied)), el("div", "muted small", `확인 대기 ${pend} · 적용 중 ${applied - pend}`)) : cardFail(pol.error, "적용된 정책")));
+    status.append(card("적용된 정책", pol.ok ? el("div", undefined, el("div", "big", String(applied)), el("div", "muted small", `확인 대기 ${pend} · 적용 중 ${applied - pend}`)) : cardFail(pol.error, "적용된 정책"), "card", "list", applied ? "info" : "neutral"));
     // D002: 왼쪽 메뉴 "연결"(네트워크)과 헷갈리지 않게 "보호 서비스"
     // D015-2: 서비스 연결 + 기록 상태를 한 단어로(작동 중 / 기록 멈춤? / 연결 끊김)
     const svcBody = !state.connected
@@ -281,7 +329,7 @@ export function dashboard(): HTMLElement {
           // D046-3: 아래 상태 줄이 "엔진이 묶여 있다"고 말하는 동안 카드도 초록 "작동 중"만 보이지 않게(같은 기준값)
           ? el("div", undefined, el("div", "big-text warn", "작동 중 · 응답 늦음"), el("div", "muted", `서비스 ${state.serverVersion}`))
           : el("div", undefined, el("div", "big-text ok", "작동 중"), el("div", "muted", `서비스 ${state.serverVersion}`));
-    status.append(card("보호 서비스", svcBody));
+    status.append(card("보호 서비스", svcBody, "card", "heart", !state.connected || stalledNow ? "warn" : "ok"));
     void drawOverview();
     // C1: 카드 아래, 상태 줄과 별개. D014: 기록 없는 구간에 시작한 의심 사건이 있으면 맨 앞 주황 경고
     const inGap = all.filter((s) => s.started_in_gap);
@@ -382,7 +430,9 @@ export function dashboard(): HTMLElement {
   // D046-3: 엔진 묶임이 생기거나 풀리면 "보호 서비스" 카드도 다시 그린다(main.ts 가 바뀔 때만 알린다)
   const onEngine = () => void refresh();
   window.addEventListener("engine-state", onEngine);
-  root.addEventListener("screen-leave", () => window.removeEventListener("engine-state", onEngine));
+  // 2026-11-07 "실시간으로 바로바로": 알림이 없어도 60초마다 다시 그린다(접속 수·그래프는 알림이 없으므로)
+  const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 60_000);
+  root.addEventListener("screen-leave", () => { window.removeEventListener("engine-state", onEngine); window.clearInterval(timer); });
   return root;
 }
 

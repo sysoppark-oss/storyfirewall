@@ -480,3 +480,56 @@ details.where-panel { border-radius: 16px; }
 .occurrences { border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
 .occurrences .stale-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0; }
 .btn.danger-outline.recommended { border-width: 2px; font-weight: 600; box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 18%, transparent); }
+
+/* 2026-11-07 대시보드 다듬기: 숫자 카드 아이콘·색조·추세선, 24시간 영역 그래프 */
+.kpi, .card.tile.kpi { position: relative; overflow: hidden; }
+.kpi-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.kpi-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.kpi-icon { width: 20px; height: 20px; flex: none; color: var(--muted); }
+.kpi.tone-bad .kpi-icon, .kpi.tone-bad .big { color: var(--bad); }
+.kpi.tone-warn .kpi-icon { color: var(--warn); }
+.kpi.tone-ok .kpi-icon { color: var(--ok); }
+.kpi.tone-info .kpi-icon { color: var(--brand); }
+.kpi.tone-bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, var(--card)); }
+.kpi.tone-info { border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
+.kpi .spark { position: absolute; right: 8px; bottom: 6px; width: 110px; height: 26px; opacity: .9; pointer-events: none; }
+.spark-line { fill: none; stroke: var(--brand); stroke-width: 1.5; }
+.spark-area { fill: var(--brand); opacity: .15; }
+.kpi.tone-bad .spark-line { stroke: var(--bad); } .kpi.tone-bad .spark-area { fill: var(--bad); }
+.area-chart { display: block; width: 100%; height: auto; margin-top: 4px; }
+.area-chart .grid { stroke: var(--line); stroke-width: 1; }
+.area-chart .ax { fill: var(--muted); font-size: 11px; }
+.area-chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; }
+.area-chart .line.s-conn { stroke: var(--brand); } .area-chart .area.s-conn { fill: var(--brand); opacity: .18; }
+.area-chart .line.s-sus { stroke: var(--bad); } .area-chart .area.s-sus { fill: var(--bad); opacity: .22; }
+.area-chart .now { stroke: var(--muted); stroke-dasharray: 3 3; }
+.chart-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
+.chart-legend .lg::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.chart-legend .lg.conn::before { background: var(--brand); } .chart-legend .lg.sus::before { background: var(--bad); }
+.donut-card .donut-row { display: flex; align-items: center; gap: 18px; }
+.donut { width: 120px; height: 120px; flex: none; }
+.donut-ring { fill: none; stroke: var(--line); stroke-width: 12; }
+.donut-seg { fill: none; stroke-width: 12; }
+.donut-seg.d-sus { stroke: var(--bad); } .donut-seg.d-watch { stroke: var(--warn); }
+.donut-big { fill: var(--fg); font-size: 26px; font-weight: 700; } .donut-sub { fill: var(--muted); font-size: 11px; }
+.donut-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 14px; }
+.donut-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+.donut-legend .d-sus .sw { background: var(--bad); } .donut-legend .d-watch .sw { background: var(--warn); }
+.flow-strip { display: flex; align-items: stretch; gap: 8px; margin-top: 6px; }
+.flow-step { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; text-align: center; }
+.flow-step.on { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, var(--card)); }
+.flow-step:last-child.on { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--card)); }
+.flow-n { font-size: 24px; font-weight: 700; } .flow-name { font-weight: 600; margin-top: 2px; }
+.flow-arrow { align-self: center; color: var(--muted); font-size: 18px; }
+@media (max-width: 900px) { .flow-strip { flex-wrap: wrap; } .flow-arrow { display: none; } .flow-step { flex: 1 1 45%; } }
+/* 2026-11-07: 카드 아래 시각 줄(그래프·도넛·4장 띠), 카드 강조 */
+.dash-viz { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+.dash-viz .dash-row2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 1100px) { .dash-viz .dash-row2 { grid-template-columns: minmax(0, 1fr); } }
+.dash-viz .card h3, .dash-overview .card h3 { margin: 0 0 8px; font-size: 14px; }
+.kpi .big { font-size: 34px; line-height: 1.1; }
+.kpi-head .kpi-icon { width: 28px; height: 28px; padding: 5px; border-radius: 8px; background: color-mix(in srgb, currentColor 14%, transparent); }
+.kpi.tone-neutral .kpi-icon { background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.kpi.tone-ok { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.kpi.tone-warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); background: color-mix(in srgb, var(--warn) 6%, var(--card)); }
+.hour-card .chart-legend { float: right; margin-top: -26px; }

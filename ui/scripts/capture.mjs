@@ -35,6 +35,8 @@ export async function captureScreens(page, outDir, log) {
         const p = `${dir}/${key}-${w}x${h}.png`;
         await page.screenshot({ path: p });
         shots.push(p);
+        // 2026-11-07 대시보드 다듬기: 아래 칸(영역 그래프·도넛·4장 띠)까지 전체 쪽
+
         // D006 완료 기준: 정책 화면 영어 상태 0, 설정 "{}" 0
         if (key === "policy" || key === "settings") {
           const m = await page.evaluate(() => {
@@ -136,6 +138,16 @@ export async function captureScreens(page, outDir, log) {
       }
       await page.screenshot({ path: `${dir}/${key}-dark-1393x997.png` });
       shots.push(`${dir}/${key}-dark-1393x997.png`);
+      if (key === "dashboard") {
+        // .main 이 스크롤 상자라 fullPage 로는 아래가 안 찍힌다 — 잠시 자연 높이로 펴고 찍는다
+        const h0 = await page.evaluate(() => { const m = document.querySelector(".main"); const e = document.querySelector(".main .screen"); return e && m ? (m.style.overflow = "visible", m.style.height = "auto", document.body.style.height = "auto", e.scrollHeight + 60) : 997; });
+        await page.setViewportSize({ width: 1393, height: Math.min(4000, h0) });
+        await page.waitForTimeout(500);
+        await page.screenshot({ path: `${dir}/dashboard-dark-full.png` });
+        shots.push(`${dir}/dashboard-dark-full.png`);
+        await page.evaluate(() => { const m = document.querySelector(".main"); if (m) { m.style.overflow = ""; m.style.height = ""; } document.body.style.height = ""; });
+        await page.setViewportSize({ width: 1393, height: 997 });
+      }
     }
     await page.emulateMedia({ colorScheme: "light" });
   } catch (e) {
