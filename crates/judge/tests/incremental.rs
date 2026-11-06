@@ -784,3 +784,93 @@ fn chain_cache_tracks_vault_dependencies_outside_endpoints() {
     assert_eq!(p2.mode, "incremental");
     assert!(p2.chains_built > 0, "② 사슬을 다시 모으지 않음");
 }
+
+/// 30차 Q8: 느린 사슬 — 유입 → 실행 뒤 수십 분 간격으로 자리잡기·외부 접속이 붙어도, 매 분 증분 판정이 전체 판정과 같고
+/// 마지막에 4장(외부 접속)까지 이어진다. 새 선의 끝점이 바뀐 노드로 들어가 그 주변 뿌리를 다시 분류하는지 본다
+#[test]
+fn slow_chain_over_tens_of_minutes_matches_full() {
+    init();
+    let s = Store::open_in_memory().unwrap();
+    let bl = Baseline::open(&s, T0).unwrap();
+    let min = 60 * SEC;
+    let edge = |a: i64, b: i64, rel: Rel, ts: i64| {
+        s.insert_edge(a, b, rel, ts, Some(raw(&s, ts, "etw:process")))
+            .unwrap();
+    };
+    const DL: &str = r"C:\Users\u\Downloads\invoice.exe";
+    let f = s
+        .upsert_node(
+            NodeKind::File,
+            DL,
+            "invoice.exe",
+            T0,
+            Some(r#"{"zone_id":3,"sig_status":"nosignature"}"#),
+        )
+        .unwrap();
+    let br = s
+        .upsert_node(NodeKind::Process, "10@1", "msedge.exe", T0, Some(r#"{"image":"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe","pid":10}"#))
+        .unwrap();
+    let p = s
+        .upsert_node(
+            NodeKind::Process,
+            "20@2",
+            "invoice.exe",
+            T0,
+            Some(&format!(
+                r#"{{"image":{},"pid":20}}"#,
+                serde_json::to_string(DL).unwrap()
+            )),
+        )
+        .unwrap();
+    let mut inc = Incremental::new();
+    // 0분: 내려받기, 1분: 실행
+    edge(br, f, Rel::Downloaded, T0);
+    edge(f, p, Rel::ExecutedAs, T0 + min);
+    assert_eq!(check(&s, &mut inc, &bl, "0~1분").mode, "full");
+    // 매 분 아무 일 없음(증분)
+    for k in 2..15 {
+        let pf = check(&s, &mut inc, &bl, &format!("{k}분 조용"));
+        assert_eq!(pf.mode, "incremental");
+    }
+    // 15분: 자리잡기
+    let run = s
+        .upsert_node(
+            NodeKind::Autorun,
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Inv",
+            "Inv",
+            T0 + 15 * min,
+            None,
+        )
+        .unwrap();
+    edge(p, run, Rel::Registered, T0 + 15 * min);
+    assert_eq!(
+        check(&s, &mut inc, &bl, "15분 자리잡기").mode,
+        "incremental"
+    );
+    for k in 16..30 {
+        check(&s, &mut inc, &bl, &format!("{k}분 조용"));
+    }
+    // 30분: 처음 보는 해외 서버 접속
+    let r = s
+        .upsert_node(
+            NodeKind::Remote,
+            "203.0.113.7:8443",
+            "203.0.113.7",
+            T0 + 30 * min,
+            Some(r#"{"ip":"203.0.113.7","port":8443,"proto":"tcp"}"#),
+        )
+        .unwrap();
+    edge(p, r, Rel::Connected, T0 + 30 * min);
+    let pf = check(&s, &mut inc, &bl, "30분 외부 접속");
+    assert_eq!(pf.mode, "incremental");
+    let (stories, _) = inc.run(&s, 0, i64::MAX, &bl).unwrap();
+    let st = stories
+        .iter()
+        .find(|x| x.root == f)
+        .expect("유입 파일이 뿌리인 사건");
+    assert_eq!(
+        st.chapter,
+        judge::Chapter::Egress,
+        "30분 뒤 접속까지 한 사건으로 이어진다"
+    );
+}
