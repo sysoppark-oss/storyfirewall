@@ -464,6 +464,56 @@ mod real {
 
     /// L028 진단(관리자): 데이터 폴더 크기, 서비스 기록 끝, 표 행 수, 화면이 자주 부르는 조회의 걸린 시간.
     /// 내용(경로·주소)은 찍지 않는다 — 개수와 밀리초만
+    /// 정책 실측 확인(2026-11-06 ICMP 차단 제보): 엔진 DB 를 읽기 전용으로 열어 최근 정책·이력·필터 명세를 찍는다.
+    /// 노트북 확인을 화면 제어 없이 하려는 것. 쓰지 않는다(OPEN_READ_ONLY)
+    fn diag_policies(path: &std::path::Path) {
+        use rusqlite::OpenFlags;
+        let c = match rusqlite::Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY) {
+            Ok(c) => c,
+            Err(e) => return println!("diag: policy open failed {e}"),
+        };
+        let q = |sql: &str, f: &dyn Fn(&rusqlite::Row) -> rusqlite::Result<String>| {
+            match c.prepare(sql) {
+                Ok(mut st) => {
+                    let rows = st.query_map([], |r| f(r));
+                    match rows {
+                        Ok(it) => it.flatten().for_each(|l| println!("diag: {l}")),
+                        Err(e) => println!("diag: query failed {e}"),
+                    }
+                }
+                Err(e) => println!("diag: prepare failed {e}"),
+            }
+        };
+        q(
+            "SELECT id, name, state, version, created, confirm_deadline FROM policies ORDER BY id DESC LIMIT 8",
+            &|r| Ok(format!(
+                "policy id={} name={} state={} v={} created={} deadline={:?}",
+                r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?, r.get::<_, i64>(4)?, r.get::<_, Option<i64>>(5)?
+            )),
+        );
+        q(
+            "SELECT ts, policy_id, action, actor, COALESCE(result,'') FROM policy_history ORDER BY id DESC LIMIT 20",
+            &|r| Ok(format!(
+                "history ts={} policy={} {} by {} {}",
+                r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?, r.get::<_, String>(4)?.chars().take(160).collect::<String>()
+            )),
+        );
+        q(
+            "SELECT filter_id, policy_id, version, spec_json FROM wfp_filters ORDER BY policy_id DESC, filter_id LIMIT 30",
+            &|r| Ok(format!(
+                "filter id={} policy={} v={} spec={}",
+                r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?,
+                r.get::<_, String>(3)?.chars().take(400).collect::<String>()
+            )),
+        );
+        q(
+            "SELECT p.id, v.yaml FROM policies p JOIN policy_versions v ON v.policy_id = p.id AND v.version = p.version WHERE p.name = 'ACL'",
+            &|r| Ok(format!("acl policy={} yaml={}", r.get::<_, i64>(0)?, r.get::<_, String>(1)?.replace('\n', " / "))),
+        );
+    }
+
     fn diag() {
         let dir = pipe_name::reg_get(data_dir::REG_DATA_DIR)
             .map(PathBuf::from)
@@ -494,6 +544,7 @@ mod real {
                 }
             }
         }
+        diag_policies(&dir.join("engine.db"));
         let t0 = std::time::Instant::now();
         let store = match graph::store::Store::open(dir.join("graph.db")) {
             Ok(s) => s,
