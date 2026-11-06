@@ -15,12 +15,17 @@ pub struct Guard {
 }
 
 fn file_name_lower(p: &str) -> String {
-    p.rsplit(['\\', '/']).next().unwrap_or(p).to_ascii_lowercase()
+    p.rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(p)
+        .to_ascii_lowercase()
 }
 
 impl Guard {
     pub fn new(protected: &[&str]) -> Self {
-        Self { protected_images: protected.iter().map(|s| s.to_ascii_lowercase()).collect() }
+        Self {
+            protected_images: protected.iter().map(|s| s.to_ascii_lowercase()).collect(),
+        }
     }
 
     pub fn check(&self, s: &BlockSpec) -> Result<()> {
@@ -30,18 +35,51 @@ impl Guard {
         if s.is_empty_match() {
             return Err(PolicyError::Guard("조건 없음: PC 전체 통신 차단".into()));
         }
-        if s.protocols.iter().any(|p| *p == 1 || *p == 58) {
-            return Err(PolicyError::Guard("ICMP 는 차단하지 않는다 (규칙 8)".into()));
+        // ACL(사용자 결정 2026-11-06): ICMPv4(1)는 사용자가 명시한 규칙으로만 막을 수 있다(핑 차단 등).
+        // ICMPv6(58)는 이웃 탐색·라우터 광고·경로 MTU 에 필요해 막으면 IPv6 가 끊긴다 — 계속 금지
+        if s.protocols.contains(&58) {
+            return Err(PolicyError::Guard(
+                "ICMPv6 는 차단하지 않는다 (규칙 8: IPv6 이웃 탐색)".into(),
+            ));
         }
-        if s.remote_v4.iter().any(|r| r.lo.is_loopback() || r.hi.is_loopback() || (r.lo <= std::net::Ipv4Addr::new(127, 0, 0, 1) && r.hi >= std::net::Ipv4Addr::new(127, 0, 0, 1))) {
+        if s.protocols.contains(&1)
+            && s.ip_family != Some(crate::spec::IpFamily::V4)
+            && s.wants_v6()
+        {
+            return Err(PolicyError::Guard(
+                "ICMP 규칙은 IPv4 필터로만 (ICMPv6 보호)".into(),
+            ));
+        }
+        for r in &s.local_v4 {
+            if r.lo <= std::net::Ipv4Addr::new(127, 255, 255, 255)
+                && r.hi >= std::net::Ipv4Addr::new(127, 0, 0, 0)
+            {
+                return Err(PolicyError::Guard(
+                    "이 PC 쪽 루프백 차단 금지 (규칙 8)".into(),
+                ));
+            }
+        }
+        if s.remote_v4.iter().any(|r| {
+            r.lo.is_loopback()
+                || r.hi.is_loopback()
+                || (r.lo <= std::net::Ipv4Addr::new(127, 0, 0, 1)
+                    && r.hi >= std::net::Ipv4Addr::new(127, 0, 0, 1))
+        }) {
             return Err(PolicyError::Guard("루프백 차단 금지 (규칙 8)".into()));
         }
         if s.remote_v6.iter().any(|p| p.addr.is_loopback()) {
             return Err(PolicyError::Guard("루프백(::1) 차단 금지 (규칙 8)".into()));
         }
         let udp_possible = s.protocols.is_empty() || s.protocols.contains(&17);
-        let covers = |ranges: &[crate::spec::PortRange], port: u16| ranges.iter().any(|r| r.lo <= port && port <= r.hi);
-        if udp_possible && (covers(&s.remote_ports, 67) || covers(&s.remote_ports, 68) || covers(&s.local_ports, 67) || covers(&s.local_ports, 68)) {
+        let covers = |ranges: &[crate::spec::PortRange], port: u16| {
+            ranges.iter().any(|r| r.lo <= port && port <= r.hi)
+        };
+        if udp_possible
+            && (covers(&s.remote_ports, 67)
+                || covers(&s.remote_ports, 68)
+                || covers(&s.local_ports, 67)
+                || covers(&s.local_ports, 68))
+        {
             return Err(PolicyError::Guard("DHCP 67/68 차단 금지 (규칙 8)".into()));
         }
         if let Some(app) = &s.app_path {
@@ -51,10 +89,14 @@ impl Guard {
             }
             if name == "svchost.exe" {
                 if covers(&s.remote_ports, 53) || covers(&s.remote_ports, 123) {
-                    return Err(PolicyError::Guard("svchost 의 DNS/NTP 차단 금지 (규칙 8)".into()));
+                    return Err(PolicyError::Guard(
+                        "svchost 의 DNS/NTP 차단 금지 (규칙 8)".into(),
+                    ));
                 }
                 if s.remote_ports.is_empty() && s.remote_v4.is_empty() && s.remote_v6.is_empty() {
-                    return Err(PolicyError::Guard("svchost 광역 차단은 명시 확인 필요 (규칙 9) — PoC 는 거부".into()));
+                    return Err(PolicyError::Guard(
+                        "svchost 광역 차단은 명시 확인 필요 (규칙 9) — PoC 는 거부".into(),
+                    ));
                 }
             }
         }
@@ -71,12 +113,22 @@ mod tests {
     }
 
     fn g() -> Guard {
-        Guard::new(&["story-firewall-svc.exe", "Runner.Listener.exe", "Runner.Worker.exe"])
+        Guard::new(&[
+            "story-firewall-svc.exe",
+            "Runner.Listener.exe",
+            "Runner.Worker.exe",
+        ])
     }
 
     #[test]
     fn allows_plain_app_block() {
-        assert!(g().check(&BlockSpec::app("t", r"C:\Windows\System32\curl.exe", Direction::Out)).is_ok());
+        assert!(g()
+            .check(&BlockSpec::app(
+                "t",
+                r"C:\Windows\System32\curl.exe",
+                Direction::Out
+            ))
+            .is_ok());
     }
 
     #[test]
@@ -84,8 +136,19 @@ mod tests {
         let mut s = BlockSpec::app("t", r"C:\x\a.exe", Direction::Out);
         s.protocols = vec![1];
         assert!(g().check(&s).is_err(), "ICMP");
+        // ICMPv6 는 늘 거부, ICMPv4 는 V4 필터일 때만
+        let mut i6 = BlockSpec::app("p", r"C:\x\ping.exe", Direction::Out);
+        i6.protocols = vec![58];
+        assert!(g().check(&i6).is_err(), "ICMPv6");
+        let mut i4 = BlockSpec::app("p", r"C:\x\ping.exe", Direction::Out);
+        i4.protocols = vec![1];
+        i4.ip_family = Some(crate::spec::IpFamily::V4);
+        assert!(g().check(&i4).is_ok(), "ICMPv4 on V4 filter");
         let mut s = BlockSpec::app("t", r"C:\x\a.exe", Direction::Out);
-        s.remote_v4 = vec![V4Range { lo: "127.0.0.1".parse().unwrap(), hi: "127.0.0.1".parse().unwrap() }];
+        s.remote_v4 = vec![V4Range {
+            lo: "127.0.0.1".parse().unwrap(),
+            hi: "127.0.0.1".parse().unwrap(),
+        }];
         assert!(g().check(&s).is_err(), "loopback");
         let mut s = BlockSpec::app("t", r"C:\x\a.exe", Direction::Out);
         s.remote_ports = vec![port(67)];
@@ -94,8 +157,24 @@ mod tests {
         let mut s = BlockSpec::app("t", r"C:\Windows\System32\svchost.exe", Direction::Out);
         s.remote_ports = vec![port(53)];
         assert!(g().check(&s).is_err(), "svchost+53");
-        assert!(g().check(&BlockSpec::app("t", r"C:\Windows\System32\svchost.exe", Direction::Out)).is_err(), "svchost 광역");
-        assert!(g().check(&BlockSpec::app("t", r"C:\a\Runner.Listener.exe", Direction::Out)).is_err(), "러너 에이전트");
+        assert!(
+            g().check(&BlockSpec::app(
+                "t",
+                r"C:\Windows\System32\svchost.exe",
+                Direction::Out
+            ))
+            .is_err(),
+            "svchost 광역"
+        );
+        assert!(
+            g().check(&BlockSpec::app(
+                "t",
+                r"C:\a\Runner.Listener.exe",
+                Direction::Out
+            ))
+            .is_err(),
+            "러너 에이전트"
+        );
         let mut empty = BlockSpec::app("t", "", Direction::Out);
         empty.app_path = None;
         assert!(g().check(&empty).is_err(), "전체 차단");

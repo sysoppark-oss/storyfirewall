@@ -10,7 +10,10 @@ struct FakeResolver;
 impl Resolver for FakeResolver {
     fn list_exes(&self, dir: &str) -> Vec<String> {
         if dir.to_ascii_lowercase().contains("chrome") {
-            vec![format!("{dir}\\chrome.exe"), format!("{dir}\\chrome_proxy.exe")]
+            vec![
+                format!("{dir}\\chrome.exe"),
+                format!("{dir}\\chrome_proxy.exe"),
+            ]
         } else {
             vec![]
         }
@@ -19,7 +22,12 @@ impl Resolver for FakeResolver {
         if sha256.starts_with("dead") {
             return Err("해시 불일치: 파일이 바뀌었음".into());
         }
-        Ok(vec![file_path.to_string(), r"C:\Users\PJG\AppData\Local\Temp\dropper.exe".into(), r"C:\Windows\System32\svchost.exe".into(), r"C:\Windows\explorer.exe".into()])
+        Ok(vec![
+            file_path.to_string(),
+            r"C:\Users\PJG\AppData\Local\Temp\dropper.exe".into(),
+            r"C:\Windows\System32\svchost.exe".into(),
+            r"C:\Windows\explorer.exe".into(),
+        ])
     }
     fn exists(&self, path: &str) -> bool {
         !path.contains("missing")
@@ -53,17 +61,41 @@ fn spec_examples_parse_validate_expand() {
     let v = validate(&doc);
     assert!(v.errors.is_empty(), "{:?}", v.errors);
     // 가상패치-SMBv1 은 프로그램·주소 조건이 없어 규칙 3 확인 필요
-    assert!(v.needs_ack.iter().any(|(n, a)| n == "가상패치-SMBv1" && *a == Ack::Wide), "{:?}", v.needs_ack);
+    assert!(
+        v.needs_ack
+            .iter()
+            .any(|(n, a)| n == "가상패치-SMBv1" && *a == Ack::Wide),
+        "{:?}",
+        v.needs_ack
+    );
     // 야간: internet + process_not → block(앱 없음) + permit(크롬 2개)
     let e = expand(&doc.policies[0], &FakeResolver).unwrap();
-    let blocks: Vec<_> = e.specs.iter().filter(|s| s.action == Action::Block).collect();
-    let permits: Vec<_> = e.specs.iter().filter(|s| s.action == Action::Permit).collect();
+    let blocks: Vec<_> = e
+        .specs
+        .iter()
+        .filter(|s| s.action == Action::Block)
+        .collect();
+    let permits: Vec<_> = e
+        .specs
+        .iter()
+        .filter(|s| s.action == Action::Permit)
+        .collect();
     assert_eq!(blocks.len(), 1);
     assert!(blocks[0].app_path.is_none());
-    assert!(!blocks[0].remote_v4.is_empty() && !blocks[0].remote_v6.is_empty(), "internet 은 v4 범위 + v6 2000::/3");
-    assert_eq!(blocks[0].protocols, vec![6, 17], "프로토콜 미지정 → tcp+udp (ICMP 제외)");
+    assert!(
+        !blocks[0].remote_v4.is_empty() && !blocks[0].remote_v6.is_empty(),
+        "internet 은 v4 범위 + v6 2000::/3"
+    );
+    assert_eq!(
+        blocks[0].protocols,
+        vec![6, 17],
+        "프로토콜 미지정 → tcp+udp (ICMP 제외)"
+    );
     assert_eq!(permits.len(), 2);
-    assert!(permits.iter().all(|p| p.app_path.as_deref().map_or(false, |a| a.contains("chrome"))));
+    assert!(permits.iter().all(|p| p
+        .app_path
+        .as_deref()
+        .map_or(false, |a| a.contains("chrome"))));
     let sch = e.schedule.unwrap();
     assert_eq!(sch.minutes, vec![(0, 360)]);
     // SMB·RDP: lan 범위, tcp, 3 포트 OR
@@ -78,17 +110,41 @@ fn spec_examples_parse_validate_expand() {
     assert_eq!(e.schedule.unwrap().expires_in_minutes, Some(14 * 24 * 60));
     // 끊기: both × 자손(시스템 프로세스 제외: svchost 는 유지, explorer 제외)
     let e = expand(&doc.policies[3], &FakeResolver).unwrap();
-    let apps: Vec<&str> = e.specs.iter().filter_map(|s| s.app_path.as_deref()).collect();
+    let apps: Vec<&str> = e
+        .specs
+        .iter()
+        .filter_map(|s| s.app_path.as_deref())
+        .collect();
     assert!(apps.iter().any(|a| a.ends_with("invoice.exe")));
     assert!(apps.iter().any(|a| a.ends_with("dropper.exe")));
     assert!(!apps.iter().any(|a| a.ends_with("explorer.exe")), "규칙 4");
-    assert!(!apps.iter().any(|a| a.ends_with("svchost.exe")), "자손으로 딸려 온 svchost 는 광역 차단 대상이 아님");
-    assert_eq!(e.specs.iter().filter(|s| s.direction == Direction::Out).count(), e.specs.iter().filter(|s| s.direction == Direction::In).count());
+    assert!(
+        !apps.iter().any(|a| a.ends_with("svchost.exe")),
+        "자손으로 딸려 온 svchost 는 광역 차단 대상이 아님"
+    );
+    assert_eq!(
+        e.specs
+            .iter()
+            .filter(|s| s.direction == Direction::Out)
+            .count(),
+        e.specs
+            .iter()
+            .filter(|s| s.direction == Direction::In)
+            .count()
+    );
     assert_eq!(e.also.len(), 3);
     assert!(e.dryrun_required);
     assert!(e.warnings.iter().any(|w| w.contains("[4]")));
-    let ex: Vec<&str> = e.excluded_system.iter().map(|s| s.rsplit('\\').next().unwrap()).collect();
-    assert_eq!(ex, vec!["svchost.exe", "explorer.exe"], "정책 엔진이 의심 주소 차단으로 이어갈 목록");
+    let ex: Vec<&str> = e
+        .excluded_system
+        .iter()
+        .map(|s| s.rsplit('\\').next().unwrap())
+        .collect();
+    assert_eq!(
+        ex,
+        vec!["svchost.exe", "explorer.exe"],
+        "정책 엔진이 의심 주소 차단으로 이어갈 목록"
+    );
     // 전개 결과는 가드도 통과해야 한다
     let g = Guard::new(&["story-firewall-svc.exe"]);
     for s in &e.specs {
@@ -170,13 +226,26 @@ fn rules_2_3_9_need_ack_and_ack_clears_them() {
     assert!(v.ok(), "{:?} {:?}", v.errors, v.needs_ack);
     // 규칙 8 은 그래도 자동 제외: svchost 광역 → 경고, 53 포트는 전개에서 빠짐
     let e = expand(&doc.policies[0], &FakeResolver).unwrap();
-    assert_eq!(e.specs[0].remote_ports.len(), 1, "b.exe 의 53 은 OS 필수 통신이 아니므로 유지");
+    assert_eq!(
+        e.specs[0].remote_ports.len(),
+        1,
+        "b.exe 의 53 은 OS 필수 통신이 아니므로 유지"
+    );
     let text2 = "- name: svc53\n  action: block\n  match: { direction: out, process: ['C:/Windows/System32/svchost.exe'], remote_port: ['50-60', 123] }\n";
     let doc2 = parse(text2).unwrap();
     let e = expand(&doc2.policies[0], &FakeResolver).unwrap();
     let ports = &e.specs[0].remote_ports;
-    assert!(ports.iter().all(|r| !(r.lo <= 53 && 53 <= r.hi) && !(r.lo <= 123 && 123 <= r.hi)), "{ports:?}");
-    assert_eq!(ports.len(), 2, "50-52, 54-60 로 쪼개짐 (123 은 통째로 제거)");
+    assert!(
+        ports
+            .iter()
+            .all(|r| !(r.lo <= 53 && 53 <= r.hi) && !(r.lo <= 123 && 123 <= r.hi)),
+        "{ports:?}"
+    );
+    assert_eq!(
+        ports.len(),
+        2,
+        "50-52, 54-60 로 쪼개짐 (123 은 통째로 제거)"
+    );
     assert!(e.warnings.iter().any(|w| w.contains("svchost 53")));
 }
 
@@ -190,7 +259,10 @@ fn rule8_auto_excludes_loopback_dhcp_icmp() {
     let doc = parse(text).unwrap();
     let e = expand(&doc.policies[0], &FakeResolver).unwrap();
     let s = &e.specs[0];
-    assert!(s.remote_v4.iter().all(|r| !r.lo.is_loopback()), "루프백 제외");
+    assert!(
+        s.remote_v4.iter().all(|r| !r.lo.is_loopback()),
+        "루프백 제외"
+    );
     assert_eq!(s.remote_v4.len(), 1);
     assert_eq!(s.protocols, vec![6, 17], "any → ICMP 없음");
     assert_eq!(s.remote_ports.len(), 2, "60-66, 69-70");
@@ -211,7 +283,11 @@ fn midnight_wrap_and_rule5_conflict() {
 "#;
     let doc = parse(text).unwrap();
     let v = validate(&doc);
-    assert!(v.warnings.iter().any(|w| w.contains("[5]")), "{:?}", v.warnings);
+    assert!(
+        v.warnings.iter().any(|w| w.contains("[5]")),
+        "{:?}",
+        v.warnings
+    );
     let e = expand(&doc.policies[0], &FakeResolver).unwrap();
     let sch = e.schedule.unwrap();
     assert_eq!(sch.minutes, vec![(22 * 60, 24 * 60), (0, 6 * 60 + 30)]);
@@ -226,23 +302,37 @@ fn descendants_hash_mismatch_is_rejected() {
     let doc = parse(text).unwrap();
     assert!(validate(&doc).errors.is_empty());
     let r = expand(&doc.policies[0], &FakeResolver);
-    assert!(matches!(r, Err(dsl::DslError::Rule { rule: 4, .. })), "{r:?}");
+    assert!(
+        matches!(r, Err(dsl::DslError::Rule { rule: 4, .. })),
+        "{r:?}"
+    );
 }
 
 // ---- 제안 5③: YAML 별칭 폭탄 (billion laughs). 256KB 상한과 별개로 파서가 메모리 폭발 없이 끝나야 한다 ----
 #[test]
 fn yaml_alias_bomb_does_not_explode() {
-    let mut y = String::from("- name: bomb\n  action: block\n  match: { direction: out, process: ['C:/a/b.exe'] }\n");
+    let mut y = String::from(
+        "- name: bomb\n  action: block\n  match: { direction: out, process: ['C:/a/b.exe'] }\n",
+    );
     y.push_str("  also: &a0 [terminate]\n");
     // 중첩 별칭: 각 단계가 앞 단계를 10번 참조
     let mut doc = String::from("x0: &a0 [a]\n");
     for i in 1..8 {
-        doc.push_str(&format!("x{i}: &a{i} [{}]\n", (0..10).map(|_| format!("*a{}", i - 1)).collect::<Vec<_>>().join(", ")));
+        doc.push_str(&format!(
+            "x{i}: &a{i} [{}]\n",
+            (0..10)
+                .map(|_| format!("*a{}", i - 1))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
     doc.push_str("version: 1\npolicies: []\n");
     let started = std::time::Instant::now();
     let r = parse(&doc);
-    assert!(started.elapsed().as_secs() < 5, "별칭 전개가 폭발하지 않아야 함");
+    assert!(
+        started.elapsed().as_secs() < 5,
+        "별칭 전개가 폭발하지 않아야 함"
+    );
     // 모르는 최상위 키(x0..)는 거부되거나(deny_unknown_fields) 별칭 한도로 오류 — 어느 쪽이든 Err
     assert!(r.is_err(), "{r:?}");
     let _ = y;
@@ -252,10 +342,28 @@ fn yaml_alias_bomb_does_not_explode() {
 #[test]
 fn system_image_requires_system_directory() {
     use dsl::validate::is_system_image;
-    for yes in [r"C:\Windows\System32\svchost.exe", r"c:\windows\system32\LSASS.EXE", r"D:\Windows\SysWOW64\svchost.exe", r"C:\Windows\explorer.exe", r"\SystemRoot\System32\csrss.exe", r"\\?\C:\Windows\System32\services.exe", "C:/Windows/System32/wininit.exe", "svchost.exe"] {
+    for yes in [
+        r"C:\Windows\System32\svchost.exe",
+        r"c:\windows\system32\LSASS.EXE",
+        r"D:\Windows\SysWOW64\svchost.exe",
+        r"C:\Windows\explorer.exe",
+        r"\SystemRoot\System32\csrss.exe",
+        r"\\?\C:\Windows\System32\services.exe",
+        "C:/Windows/System32/wininit.exe",
+        "svchost.exe",
+    ] {
         assert!(is_system_image(yes), "{yes}");
     }
-    for no in [r"C:\Users\pjg\AppData\Local\Temp\svchost.exe", r"C:\Windows\Temp\svchost.exe", r"C:\Windows\System32\cmd.exe", r"C:\Windows\System32\explorer.exe\..\svchost.exe", r"C:\ProgramData\explorer.exe", r"C:\Windows\System32\drivers\svchost.exe", "svch\u{043e}st.exe", ""] {
+    for no in [
+        r"C:\Users\pjg\AppData\Local\Temp\svchost.exe",
+        r"C:\Windows\Temp\svchost.exe",
+        r"C:\Windows\System32\cmd.exe",
+        r"C:\Windows\System32\explorer.exe\..\svchost.exe",
+        r"C:\ProgramData\explorer.exe",
+        r"C:\Windows\System32\drivers\svchost.exe",
+        "svch\u{043e}st.exe",
+        "",
+    ] {
         assert!(!is_system_image(no), "{no}");
     }
 }
@@ -269,7 +377,11 @@ fn fake_svchost_descendant_is_blocked_not_excluded() {
             vec![]
         }
         fn descendants(&self, f: &str, _: &str) -> Result<Vec<String>, String> {
-            Ok(vec![f.to_string(), r"C:\Users\pjg\AppData\Local\Temp\svchost.exe".into(), r"C:\Windows\System32\svchost.exe".into()])
+            Ok(vec![
+                f.to_string(),
+                r"C:\Users\pjg\AppData\Local\Temp\svchost.exe".into(),
+                r"C:\Windows\System32\svchost.exe".into(),
+            ])
         }
         fn exists(&self, _: &str) -> bool {
             true
@@ -278,8 +390,95 @@ fn fake_svchost_descendant_is_blocked_not_excluded() {
     let y = "- name: cut\n  action: block\n  match: { direction: out, descendants_of: 'file:C:/Users/pjg/Downloads/invoice.exe#sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }\n";
     let doc = dsl::parse(y).unwrap();
     let e = dsl::expand(&doc.policies[0], &R).unwrap();
-    let apps: Vec<String> = e.specs.iter().filter_map(|s| s.app_path.clone()).map(|a| a.to_ascii_lowercase()).collect();
-    assert!(apps.iter().any(|a| a.contains(r"\temp\svchost.exe")), "위장 svchost 는 차단: {apps:?}");
-    assert!(!apps.iter().any(|a| a.contains(r"\system32\svchost.exe")), "진짜 svchost 는 제외");
+    let apps: Vec<String> = e
+        .specs
+        .iter()
+        .filter_map(|s| s.app_path.clone())
+        .map(|a| a.to_ascii_lowercase())
+        .collect();
+    assert!(
+        apps.iter().any(|a| a.contains(r"\temp\svchost.exe")),
+        "위장 svchost 는 차단: {apps:?}"
+    );
+    assert!(
+        !apps.iter().any(|a| a.contains(r"\system32\svchost.exe")),
+        "진짜 svchost 는 제외"
+    );
     assert_eq!(e.excluded_system.len(), 1);
+}
+
+/// ACL 정책 관리(사용자 요청 2026-11-06): 번호 순서·이 PC 주소·인터페이스·ICMPv4
+#[test]
+fn acl_rules_expand_with_order_local_ip_interface_icmp() {
+    let text = r#"
+- name: acl.1
+  priority: 1
+  action: allow
+  match: { direction: out, interface: "Wi-Fi", local_ip: [192.168.0.10], remote_ip: [10.0.0.0/8], protocol: tcp, remote_port: [443] }
+- name: acl.2
+  priority: 2
+  action: block
+  match: { direction: both, local_ip: [192.168.0.10], remote_ip: [10.0.0.0/8] }
+- name: acl.3
+  priority: 3
+  action: block
+  match: { direction: in, protocol: icmp, remote_ip: [203.0.113.0/24] }
+"#;
+    let doc = parse(text).expect("parse");
+    let v = validate(&doc);
+    assert!(v.errors.is_empty(), "{:?}", v.errors);
+    let g = Guard::new(&["story-firewall-svc.exe"]);
+    let e1 = expand(&doc.policies[0], &FakeResolver).unwrap();
+    let e2 = expand(&doc.policies[1], &FakeResolver).unwrap();
+    let e3 = expand(&doc.policies[2], &FakeResolver).unwrap();
+    // 번호 1 이 번호 2 보다 높은 weight, 허용도 명시 weight
+    let w1 = e1.specs[0].weight.unwrap();
+    let w2 = e2.specs[0].weight.unwrap();
+    assert!(w1 > w2, "{w1:x} {w2:x}");
+    assert_eq!(e1.specs[0].action, Action::Permit);
+    assert_eq!(e1.specs[0].interface.as_deref(), Some("Wi-Fi"));
+    // 이 PC IPv4 + 상대 IPv4 → V4 필터만(V6 필터는 주소 조건이 빠져 넓어짐)
+    assert!(e1.specs.iter().all(|s| s.wants_v4() && !s.wants_v6()));
+    // 양방향 = 나감·들어옴 두 명세
+    assert_eq!(
+        e2.specs
+            .iter()
+            .filter(|s| s.direction == Direction::Out)
+            .count(),
+        1
+    );
+    assert_eq!(
+        e2.specs
+            .iter()
+            .filter(|s| s.direction == Direction::In)
+            .count(),
+        1
+    );
+    for s in &e2.specs {
+        assert!(g.check(s).is_ok());
+    }
+    // ICMPv4: 프로토콜 1, IPv4 필터만, 가드 통과
+    assert_eq!(e3.specs[0].protocols, vec![1]);
+    assert!(!e3.specs[0].wants_v6());
+    assert!(g.check(&e3.specs[0]).is_ok());
+}
+
+#[test]
+fn acl_rejects_bad_combinations() {
+    // 번호 중복
+    let dup = parse("- name: a\n  priority: 1\n  action: block\n  match: { direction: out, remote_ip: [10.0.0.1] }\n- name: b\n  priority: 1\n  action: block\n  match: { direction: out, remote_ip: [10.0.0.2] }\n").unwrap();
+    assert!(!validate(&dup).errors.is_empty());
+    // ICMP 에 포트, ICMP 에 IPv6
+    let icmp_port = parse("- name: a\n  action: block\n  match: { direction: out, protocol: icmp, remote_port: [80], remote_ip: [10.0.0.1] }\n").unwrap();
+    assert!(!validate(&icmp_port).errors.is_empty());
+    let icmp6 = parse("- name: a\n  action: block\n  match: { direction: out, protocol: icmp, remote_ip: [\"2001:db8::1\"] }\n").unwrap();
+    assert!(!validate(&icmp6).errors.is_empty());
+    // 출발지 IPv4 + 목적지 IPv6 는 한 필터에 못 담는다
+    let mixed = parse("- name: a\n  action: block\n  match: { direction: out, local_ip: [192.168.0.10], remote_ip: [\"2001:db8::1\"] }\n").unwrap();
+    assert!(expand(&mixed.policies[0], &FakeResolver).is_err());
+    // 이 PC 쪽 internet 은 뜻이 없다
+    let li =
+        parse("- name: a\n  action: block\n  match: { direction: out, local_ip: [internet] }\n")
+            .unwrap();
+    assert!(!validate(&li).errors.is_empty());
 }

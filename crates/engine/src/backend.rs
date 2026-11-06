@@ -6,7 +6,11 @@ pub trait WfpBackend {
     /// 한 WFP 트랜잭션 안에서 `remove` 를 지우고 `add` 를 넣는다 (11차 Q1: 판 교체 공백 없음).
     /// `FwpmTransactionBegin0` → `FwpmFilterDeleteById0`… → `FwpmFilterAdd0`… → `FwpmTransactionCommit0`.
     /// 실패하면 abort — 아무것도 바뀌지 않는다. 성공하면 `add` 순서대로 새 필터 ID.
-    fn replace(&mut self, remove: &[u64], add: &[BlockSpec]) -> std::result::Result<Vec<u64>, String>;
+    fn replace(
+        &mut self,
+        remove: &[u64],
+        add: &[BlockSpec],
+    ) -> std::result::Result<Vec<u64>, String>;
     /// 우리 Provider 의 필터 ID 전체 (재시작 대조)
     fn list_ours(&mut self) -> std::result::Result<Vec<u64>, String>;
     /// 우리 필터의 (ID, filterKey). ID 는 BFE 재시작·재부팅 뒤 바뀔 수 있어(문서: "runtime identifier") 대조는 키로 한다.
@@ -64,7 +68,11 @@ impl FakeWfp {
 }
 
 impl WfpBackend for FakeWfp {
-    fn replace(&mut self, remove: &[u64], add: &[BlockSpec]) -> std::result::Result<Vec<u64>, String> {
+    fn replace(
+        &mut self,
+        remove: &[u64],
+        add: &[BlockSpec],
+    ) -> std::result::Result<Vec<u64>, String> {
         self.calls += 1;
         if self.fail_on_call == Some(self.calls) {
             return Err("가짜 BFE 오류 (트랜잭션 abort)".into());
@@ -79,7 +87,8 @@ impl WfpBackend for FakeWfp {
             for f in s.split_family() {
                 self.next_id += 1;
                 self.filters.insert(self.next_id, f);
-                self.keys.insert(self.next_id, format!("key-{}", self.next_id));
+                self.keys
+                    .insert(self.next_id, format!("key-{}", self.next_id));
                 ids.push(self.next_id);
             }
         }
@@ -90,7 +99,11 @@ impl WfpBackend for FakeWfp {
         Ok(self.filters.keys().copied().collect())
     }
     fn list_keys(&mut self) -> std::result::Result<Vec<(u64, String)>, String> {
-        Ok(self.filters.keys().filter_map(|id| self.keys.get(id).map(|k| (*id, k.clone()))).collect())
+        Ok(self
+            .filters
+            .keys()
+            .filter_map(|id| self.keys.get(id).map(|k| (*id, k.clone())))
+            .collect())
     }
 }
 

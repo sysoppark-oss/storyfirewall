@@ -11,7 +11,15 @@ use crate::ranges;
 use crate::DslError;
 
 /// 시스템 핵심 프로세스 (규칙 4): 종료·끊기 대상에서 제외
-pub const SYSTEM_IMAGES: &[&str] = &["svchost.exe", "explorer.exe", "lsass.exe", "csrss.exe", "winlogon.exe", "services.exe", "wininit.exe"];
+pub const SYSTEM_IMAGES: &[&str] = &[
+    "svchost.exe",
+    "explorer.exe",
+    "lsass.exe",
+    "csrss.exe",
+    "winlogon.exe",
+    "services.exe",
+    "wininit.exe",
+];
 
 #[derive(Debug, Default)]
 pub struct Validation {
@@ -33,7 +41,11 @@ impl Validation {
 /// - 디렉터리 없는 이름만(사용자가 정책에 `svchost.exe` 라고 쓴 경우)은 보수적으로 시스템으로 본다
 pub fn is_system_image(path: &str) -> bool {
     let p = path.replace('/', "\\").to_ascii_lowercase();
-    let p = p.strip_prefix("\\\\?\\").or_else(|| p.strip_prefix("\\??\\")).unwrap_or(&p).to_string();
+    let p = p
+        .strip_prefix("\\\\?\\")
+        .or_else(|| p.strip_prefix("\\??\\"))
+        .unwrap_or(&p)
+        .to_string();
     let (dir, name) = match p.rfind('\\') {
         Some(i) => (&p[..i], &p[i + 1..]),
         None => return SYSTEM_IMAGES.contains(&p.as_str()),
@@ -49,11 +61,16 @@ pub fn is_system_image(path: &str) -> bool {
     } else {
         return false;
     };
-    rest == "\\windows\\system32" || rest == "\\windows\\syswow64" || (name == "explorer.exe" && rest == "\\windows")
+    rest == "\\windows\\system32"
+        || rest == "\\windows\\syswow64"
+        || (name == "explorer.exe" && rest == "\\windows")
 }
 
 pub fn file_name_lower(p: &str) -> String {
-    p.rsplit(['\\', '/']).next().unwrap_or(p).to_ascii_lowercase()
+    p.rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(p)
+        .to_ascii_lowercase()
 }
 
 /// "80" | "8000-8100"
@@ -102,17 +119,27 @@ pub fn parse_duration_minutes(s: &str) -> Option<u64> {
 fn is_iso_datetime(s: &str) -> bool {
     // 2026-11-01T09:00 또는 2026-11-01T09:00:00(+09:00|Z). 엄격한 달력 검증은 서비스가 한다.
     let b = s.as_bytes();
-    b.len() >= 16 && b[4] == b'-' && b[7] == b'-' && (b[10] == b'T' || b[10] == b' ') && b[13] == b':'
+    b.len() >= 16
+        && b[4] == b'-'
+        && b[7] == b'-'
+        && (b[10] == b'T' || b[10] == b' ')
+        && b[13] == b':'
 }
 
 fn ports_cover(list: &[String], port: u16) -> bool {
-    list.iter().filter_map(|p| parse_port(p)).any(|(lo, hi)| lo <= port && port <= hi)
+    list.iter()
+        .filter_map(|p| parse_port(p))
+        .any(|(lo, hi)| lo <= port && port <= hi)
 }
 
 pub fn validate(doc: &Document) -> Validation {
     let mut v = Validation::default();
     let mut names: HashSet<&str> = HashSet::new();
-    let rule = |n: u8, p: &str, m: &str| DslError::Rule { rule: n, policy: p.to_string(), msg: m.to_string() };
+    let rule = |n: u8, p: &str, m: &str| DslError::Rule {
+        rule: n,
+        policy: p.to_string(),
+        msg: m.to_string(),
+    };
 
     for p in &doc.policies {
         let name = p.name.as_str();
@@ -125,66 +152,139 @@ pub fn validate(doc: &Document) -> Validation {
         }
         let m = &p.matcher;
         if m.direction.is_none() {
-            v.errors.push(rule(1, name, "match.direction 필수 (in|out|both)"));
+            v.errors
+                .push(rule(1, name, "match.direction 필수 (in|out|both)"));
         }
         for proc_ in m.process.iter().chain(m.process_not.iter()) {
             let norm = proc_.replace('/', "\\");
             if let Some(star) = norm.find('*') {
                 // 와일드카드는 "디렉터리\*" 끝에만 (6차 검증 Q3)
                 if star != norm.len() - 1 || !norm[..star].ends_with('\\') {
-                    v.errors.push(rule(1, name, &format!("와일드카드는 '디렉터리\\*' 끝에만: {proc_}")));
+                    v.errors.push(rule(
+                        1,
+                        name,
+                        &format!("와일드카드는 '디렉터리\\*' 끝에만: {proc_}"),
+                    ));
                 }
             }
             if norm.len() < 3 || !norm.as_bytes()[1..].starts_with(b":\\") {
-                v.errors.push(rule(1, name, &format!("process 는 절대 경로(X:\\…): {proc_}")));
+                v.errors.push(rule(
+                    1,
+                    name,
+                    &format!("process 는 절대 경로(X:\\…): {proc_}"),
+                ));
             }
         }
         if let Some(d) = &m.descendants_of {
-            let ok = d.starts_with("file:") && d.contains("#sha256:") && d.rsplit("#sha256:").next().map_or(false, |h| h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit()));
+            let ok = d.starts_with("file:")
+                && d.contains("#sha256:")
+                && d.rsplit("#sha256:").next().map_or(false, |h| {
+                    h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit())
+                });
             if !ok {
-                v.errors.push(rule(1, name, "descendants_of 는 'file:<경로>#sha256:<64자 hex>'"));
+                v.errors.push(rule(
+                    1,
+                    name,
+                    "descendants_of 는 'file:<경로>#sha256:<64자 hex>'",
+                ));
             }
         }
         for ip in &m.remote_ip {
             if ip != "lan" && ip != "internet" && ranges::parse_addr(ip).is_none() {
-                v.errors.push(rule(1, name, &format!("remote_ip 형식 오류: {ip}")));
+                v.errors
+                    .push(rule(1, name, &format!("remote_ip 형식 오류: {ip}")));
+            }
+        }
+        for ip in &m.local_ip {
+            if ip == "internet" || (ip != "lan" && ranges::parse_addr(ip).is_none()) {
+                v.errors.push(rule(
+                    1,
+                    name,
+                    &format!("local_ip 형식 오류(주소·CIDR·범위·lan): {ip}"),
+                ));
+            }
+        }
+        if let Some(ifc) = &m.interface {
+            if ifc.trim().is_empty()
+                || ifc.chars().count() > 64
+                || ifc.chars().any(|c| c.is_control())
+            {
+                v.errors.push(rule(1, name, "interface 는 1~64자 이름"));
+            }
+        }
+        if matches!(m.protocol, Some(Protocol::Icmp)) {
+            if !m.remote_port.is_empty() || !m.local_port.is_empty() {
+                v.errors.push(rule(1, name, "ICMP 에는 포트를 쓸 수 없다"));
+            }
+            let v6 = |list: &[String]| {
+                list.iter().any(|ip| {
+                    ranges::parse_addr(ip).map_or(false, |(v4, v6)| v4.is_empty() && !v6.is_empty())
+                })
+            };
+            if v6(&m.remote_ip) || v6(&m.local_ip) {
+                v.errors.push(rule(
+                    1,
+                    name,
+                    "ICMP 규칙은 IPv4 주소만(ICMPv6 는 막지 않는다)",
+                ));
+            }
+        }
+        if let Some(n) = p.priority {
+            if !(1..=9999).contains(&n) {
+                v.errors.push(rule(1, name, "priority(ACL 번호)는 1~9999"));
             }
         }
         for port in m.remote_port.iter().chain(m.local_port.iter()) {
             if parse_port(port).is_none() {
-                v.errors.push(rule(1, name, &format!("포트 형식 오류: {port}")));
+                v.errors
+                    .push(rule(1, name, &format!("포트 형식 오류: {port}")));
             }
         }
         if let Some(w) = &p.when {
             if let Some(t) = &w.time {
                 if parse_time(t).is_none() {
-                    v.errors.push(rule(1, name, &format!("when.time 형식 오류(HH:MM-HH:MM): {t}")));
+                    v.errors.push(rule(
+                        1,
+                        name,
+                        &format!("when.time 형식 오류(HH:MM-HH:MM): {t}"),
+                    ));
                 }
             }
             for d in &w.days {
-                if !["mon", "tue", "wed", "thu", "fri", "sat", "sun"].contains(&d.to_ascii_lowercase().as_str()) {
-                    v.errors.push(rule(1, name, &format!("when.days 값 오류: {d}")));
+                if !["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+                    .contains(&d.to_ascii_lowercase().as_str())
+                {
+                    v.errors
+                        .push(rule(1, name, &format!("when.days 값 오류: {d}")));
                 }
             }
         }
         if let Some(e) = &p.expires {
             if parse_duration_minutes(e).is_none() && !is_iso_datetime(e) {
-                v.errors.push(rule(1, name, &format!("expires 형식 오류(30m|2h|14d|ISO 시각): {e}")));
+                v.errors.push(rule(
+                    1,
+                    name,
+                    &format!("expires 형식 오류(30m|2h|14d|ISO 시각): {e}"),
+                ));
             }
         }
         if let Some(u) = &p.until {
             if u != "manual" {
-                v.errors.push(rule(1, name, &format!("until 은 1차에서 manual 만: {u}")));
+                v.errors
+                    .push(rule(1, name, &format!("until 은 1차에서 manual 만: {u}")));
             }
         }
         if p.action == Action::Allow && !p.also.is_empty() {
-            v.errors.push(rule(1, name, "allow 에는 also 를 쓸 수 없다"));
+            v.errors
+                .push(rule(1, name, "allow 에는 also 를 쓸 수 없다"));
         }
         if p.action == Action::Allow && m.descendants_of.is_some() {
-            v.errors.push(rule(1, name, "allow 에는 descendants_of 를 쓸 수 없다"));
+            v.errors
+                .push(rule(1, name, "allow 에는 descendants_of 를 쓸 수 없다"));
         }
         if !m.process_not.is_empty() && !m.process.is_empty() {
-            v.errors.push(rule(1, name, "process 와 process_not 은 함께 쓸 수 없다"));
+            v.errors
+                .push(rule(1, name, "process 와 process_not 은 함께 쓸 수 없다"));
         }
 
         if p.action != Action::Block {
@@ -192,19 +292,33 @@ pub fn validate(doc: &Document) -> Validation {
         }
         let udp_possible = !matches!(m.protocol, Some(Protocol::Tcp));
         let no_target = m.process.is_empty() && m.descendants_of.is_none();
-        let blocks_everything_addr = m.remote_ip.is_empty();
+        // 인터페이스만 고른 차단은 그 인터페이스의 전부라 여전히 "전체"로 본다(유일한 인터페이스일 수 있다)
+        let blocks_everything_addr = m.remote_ip.is_empty() && m.local_ip.is_empty();
 
         // ---- 규칙 2: 자기 차단 (DNS 53·DHCP 67/68·루프백) → 확인 필요 ----
-        let touches_dns = udp_possible && (ports_cover(&m.remote_port, 53) || ports_cover(&m.local_port, 53));
-        let touches_dhcp = udp_possible && [67u16, 68].iter().any(|p| ports_cover(&m.remote_port, *p) || ports_cover(&m.local_port, *p));
-        let touches_loopback = m.remote_ip.iter().any(|ip| ranges::parse_addr(ip).map_or(false, |(v4, v6)| v4.iter().any(|r| r.lo.is_loopback() || r.hi.is_loopback()) || v6.iter().any(|p| p.addr.is_loopback())));
-        if (touches_dns || touches_dhcp || touches_loopback) && !p.acknowledge.contains(&Ack::SelfBlock) {
+        let touches_dns =
+            udp_possible && (ports_cover(&m.remote_port, 53) || ports_cover(&m.local_port, 53));
+        let touches_dhcp = udp_possible
+            && [67u16, 68]
+                .iter()
+                .any(|p| ports_cover(&m.remote_port, *p) || ports_cover(&m.local_port, *p));
+        let touches_loopback = m.remote_ip.iter().any(|ip| {
+            ranges::parse_addr(ip).map_or(false, |(v4, v6)| {
+                v4.iter().any(|r| r.lo.is_loopback() || r.hi.is_loopback())
+                    || v6.iter().any(|p| p.addr.is_loopback())
+            })
+        });
+        if (touches_dns || touches_dhcp || touches_loopback)
+            && !p.acknowledge.contains(&Ack::SelfBlock)
+        {
             v.warnings.push(format!("[2] {name}: DNS/DHCP/루프백을 막을 수 있어 확인 필요 (규칙 8 로 OS 필수 부분은 자동 제외됨)"));
             v.needs_ack.push((name.to_string(), Ack::SelfBlock));
         }
         // ---- 규칙 3: 전체 차단 ----
         if no_target && blocks_everything_addr && !p.acknowledge.contains(&Ack::Wide) {
-            v.warnings.push(format!("[3] {name}: 프로그램·주소 조건이 없어 PC 전체 통신 차단 — 확인 필요"));
+            v.warnings.push(format!(
+                "[3] {name}: 프로그램·주소 조건이 없어 PC 전체 통신 차단 — 확인 필요"
+            ));
             v.needs_ack.push((name.to_string(), Ack::Wide));
         }
         // ---- 규칙 4: 시스템 프로세스 보호 ----
@@ -215,25 +329,58 @@ pub fn validate(doc: &Document) -> Validation {
             }
         }
         if p.also.contains(&crate::model::Also::Terminate) && m.descendants_of.is_some() {
-            v.warnings.push(format!("[4] {name}: also:terminate 는 자손 중 시스템 프로세스를 제외한다"));
+            v.warnings.push(format!(
+                "[4] {name}: also:terminate 는 자손 중 시스템 프로세스를 제외한다"
+            ));
         }
         // ---- 규칙 9: svchost 광역 ----
-        let svchost_wide = m.process.iter().any(|x| file_name_lower(x) == "svchost.exe") && m.remote_port.is_empty() && m.remote_ip.is_empty();
+        let svchost_wide = m
+            .process
+            .iter()
+            .any(|x| file_name_lower(x) == "svchost.exe")
+            && m.remote_port.is_empty()
+            && m.remote_ip.is_empty();
         if svchost_wide && !p.acknowledge.contains(&Ack::Svchost) {
             v.warnings.push(format!("[9] {name}: svchost 광역 차단 — Windows Update·인증서 검증·인터넷 연결 표시(NCSI)·스토어가 멈출 수 있음. 확인 필요"));
             v.needs_ack.push((name.to_string(), Ack::Svchost));
         }
         // ---- 규칙 8: 자동 제외 예고 ----
-        if touches_dns || touches_dhcp || touches_loopback || matches!(m.protocol, None | Some(Protocol::Any)) {
+        if touches_dns
+            || touches_dhcp
+            || touches_loopback
+            || matches!(m.protocol, None | Some(Protocol::Any))
+        {
             v.warnings.push(format!("[8] {name}: 루프백·DHCP·svchost DNS/NTP·ICMP 는 OS 보호를 위해 전개에서 자동 제외된다"));
         }
     }
 
+    // ACL 번호 중복
+    let mut prios: HashSet<u32> = HashSet::new();
+    for p in &doc.policies {
+        if let Some(n) = p.priority {
+            if !prios.insert(n) {
+                v.errors
+                    .push(rule(1, &p.name, &format!("ACL 번호 중복: {n}")));
+            }
+        }
+    }
     // ---- 규칙 5: block/allow 충돌 ----
     for (i, a) in doc.policies.iter().enumerate() {
         for b in doc.policies.iter().skip(i + 1) {
             if a.action != b.action && a.matcher == b.matcher {
-                v.warnings.push(format!("[5] {} 와 {} 는 같은 조건의 block/allow — 차단이 이긴다", a.name, b.name));
+                let msg = match (a.priority, b.priority) {
+                    (Some(x), Some(y)) => format!(
+                        "[5] {} 와 {} 는 같은 조건의 block/allow — 번호가 작은 {} 가 이긴다",
+                        a.name,
+                        b.name,
+                        if x < y { &a.name } else { &b.name }
+                    ),
+                    _ => format!(
+                        "[5] {} 와 {} 는 같은 조건의 block/allow — 차단이 이긴다",
+                        a.name, b.name
+                    ),
+                };
+                v.warnings.push(msg);
             }
         }
     }

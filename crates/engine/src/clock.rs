@@ -27,11 +27,19 @@ pub struct FakeClock {
 }
 impl FakeClock {
     pub fn new(wall: i64) -> Self {
-        Self { wall: Cell::new(wall), mono: Cell::new(0), offset: Cell::new(0) }
+        Self {
+            wall: Cell::new(wall),
+            mono: Cell::new(0),
+            offset: Cell::new(0),
+        }
     }
     /// 시간대 오프셋 (예: 한국 9*3600)
     pub fn with_offset(wall: i64, offset: i64) -> Self {
-        Self { wall: Cell::new(wall), mono: Cell::new(0), offset: Cell::new(offset) }
+        Self {
+            wall: Cell::new(wall),
+            mono: Cell::new(0),
+            offset: Cell::new(offset),
+        }
     }
     /// 둘 다 전진
     pub fn advance(&self, secs: i64) {
@@ -61,12 +69,17 @@ pub struct SystemClock {
 }
 impl Default for SystemClock {
     fn default() -> Self {
-        Self { start: std::time::Instant::now() }
+        Self {
+            start: std::time::Instant::now(),
+        }
     }
 }
 impl Clock for SystemClock {
     fn wall(&self) -> i64 {
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
     }
     fn mono(&self) -> i64 {
         self.start.elapsed().as_secs() as i64

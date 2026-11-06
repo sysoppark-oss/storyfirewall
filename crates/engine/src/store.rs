@@ -121,12 +121,30 @@ impl EngineStore {
     }
 
     /// 같은 이름의 정책이 있으면 버전을 올리고, 없으면 새로 만든다. (정책 행 + 버전 행)
-    pub fn new_version(&self, name: &str, yaml: &str, specs: &[BlockSpec], schedule: Option<&Schedule>, ts: i64, actor: &str) -> Result<(i64, i64)> {
+    pub fn new_version(
+        &self,
+        name: &str,
+        yaml: &str,
+        specs: &[BlockSpec],
+        schedule: Option<&Schedule>,
+        ts: i64,
+        actor: &str,
+    ) -> Result<(i64, i64)> {
         let sj = schedule.map(|s| serde_json::to_string(s).unwrap());
-        let existing: Option<(i64, i64)> = self.conn.query_row("SELECT id, version FROM policies WHERE name = ?1 AND state NOT IN ('removed')", [name], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+        let existing: Option<(i64, i64)> = self
+            .conn
+            .query_row(
+                "SELECT id, version FROM policies WHERE name = ?1 AND state NOT IN ('removed')",
+                [name],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
         let (id, version) = match existing {
             Some((id, v)) => {
-                self.conn.execute("UPDATE policies SET yaml = ?1, version = ?2, schedule_json = ?3 WHERE id = ?4", params![yaml, v + 1, sj, id])?;
+                self.conn.execute(
+                    "UPDATE policies SET yaml = ?1, version = ?2, schedule_json = ?3 WHERE id = ?4",
+                    params![yaml, v + 1, sj, id],
+                )?;
                 (id, v + 1)
             }
             None => {
@@ -145,12 +163,22 @@ impl EngineStore {
     }
 
     pub fn set_state(&self, id: i64, state: State, confirm_deadline: Option<i64>) -> Result<()> {
-        self.conn.execute("UPDATE policies SET state = ?1, confirm_deadline = ?2 WHERE id = ?3", params![state.as_str(), confirm_deadline, id])?;
+        self.conn.execute(
+            "UPDATE policies SET state = ?1, confirm_deadline = ?2 WHERE id = ?3",
+            params![state.as_str(), confirm_deadline, id],
+        )?;
         Ok(())
     }
     pub fn set_version(&self, id: i64, version: i64) -> Result<()> {
-        let (yaml, sj): (String, Option<String>) = self.conn.query_row("SELECT yaml, schedule_json FROM policy_versions WHERE policy_id = ?1 AND version = ?2", params![id, version], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        self.conn.execute("UPDATE policies SET version = ?1, yaml = ?2, schedule_json = ?3 WHERE id = ?4", params![version, yaml, sj, id])?;
+        let (yaml, sj): (String, Option<String>) = self.conn.query_row(
+            "SELECT yaml, schedule_json FROM policy_versions WHERE policy_id = ?1 AND version = ?2",
+            params![id, version],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        self.conn.execute(
+            "UPDATE policies SET version = ?1, yaml = ?2, schedule_json = ?3 WHERE id = ?4",
+            params![version, yaml, sj, id],
+        )?;
         Ok(())
     }
 
@@ -166,25 +194,57 @@ impl EngineStore {
             confirm_deadline: r.get(6)?,
         })
     }
-    const POLICY_COLS: &'static str = "id, name, yaml, state, version, schedule_json, confirm_deadline";
+    const POLICY_COLS: &'static str =
+        "id, name, yaml, state, version, schedule_json, confirm_deadline";
 
     pub fn policy(&self, id: i64) -> Result<Option<PolicyRow>> {
-        Ok(self.conn.query_row(&format!("SELECT {} FROM policies WHERE id = ?1", Self::POLICY_COLS), [id], Self::row_to_policy).optional()?)
+        Ok(self
+            .conn
+            .query_row(
+                &format!("SELECT {} FROM policies WHERE id = ?1", Self::POLICY_COLS),
+                [id],
+                Self::row_to_policy,
+            )
+            .optional()?)
     }
     pub fn policies_in(&self, state: State) -> Result<Vec<PolicyRow>> {
-        let mut st = self.conn.prepare(&format!("SELECT {} FROM policies WHERE state = ?1 ORDER BY id", Self::POLICY_COLS))?;
+        let mut st = self.conn.prepare(&format!(
+            "SELECT {} FROM policies WHERE state = ?1 ORDER BY id",
+            Self::POLICY_COLS
+        ))?;
         let rows = st.query_map([state.as_str()], Self::row_to_policy)?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
     pub fn version_specs(&self, id: i64, version: i64) -> Result<Option<Vec<BlockSpec>>> {
-        let s: Option<String> = self.conn.query_row("SELECT specs_json FROM policy_versions WHERE policy_id = ?1 AND version = ?2", params![id, version], |r| r.get(0)).optional()?;
+        let s: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT specs_json FROM policy_versions WHERE policy_id = ?1 AND version = ?2",
+                params![id, version],
+                |r| r.get(0),
+            )
+            .optional()?;
         Ok(s.and_then(|j| serde_json::from_str(&j).ok()))
     }
 
     pub fn version_ts(&self, id: i64, version: i64) -> Result<Option<i64>> {
-        Ok(self.conn.query_row("SELECT ts FROM policy_versions WHERE policy_id = ?1 AND version = ?2", params![id, version], |r| r.get(0)).optional()?)
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT ts FROM policy_versions WHERE policy_id = ?1 AND version = ?2",
+                params![id, version],
+                |r| r.get(0),
+            )
+            .optional()?)
     }
-    pub fn insert_filter_tx(tx: &rusqlite::Transaction, filter_id: u64, policy_id: i64, version: i64, spec: &BlockSpec, expires_at: Option<i64>) -> Result<()> {
+    pub fn insert_filter_tx(
+        tx: &rusqlite::Transaction,
+        filter_id: u64,
+        policy_id: i64,
+        version: i64,
+        spec: &BlockSpec,
+        expires_at: Option<i64>,
+    ) -> Result<()> {
         tx.execute(
             "INSERT OR REPLACE INTO wfp_filters(filter_id, policy_id, version, spec_json, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![filter_id as i64, policy_id, version, serde_json::to_string(spec).unwrap(), expires_at],
@@ -193,7 +253,13 @@ impl EngineStore {
     }
     fn row_to_filter(r: &rusqlite::Row) -> rusqlite::Result<FilterRow> {
         let sj: String = r.get(3)?;
-        Ok(FilterRow { filter_id: r.get::<_, i64>(0)? as u64, policy_id: r.get(1)?, version: r.get(2)?, spec: serde_json::from_str(&sj).unwrap(), expires_at: r.get(4)? })
+        Ok(FilterRow {
+            filter_id: r.get::<_, i64>(0)? as u64,
+            policy_id: r.get(1)?,
+            version: r.get(2)?,
+            spec: serde_json::from_str(&sj).unwrap(),
+            expires_at: r.get(4)?,
+        })
     }
     pub fn filters_of(&self, policy_id: i64) -> Result<Vec<FilterRow>> {
         let mut st = self.conn.prepare("SELECT filter_id, policy_id, version, spec_json, expires_at FROM wfp_filters WHERE policy_id = ?1 ORDER BY filter_id")?;
@@ -209,7 +275,11 @@ impl EngineStore {
         Ok(self.conn.query_row("SELECT filter_id, policy_id, version, spec_json, expires_at FROM wfp_filters WHERE filter_id = ?1", [filter_id as i64], Self::row_to_filter).optional()?)
     }
     pub fn filter_count(&self, policy_id: i64) -> Result<usize> {
-        let n: i64 = self.conn.query_row("SELECT COUNT(*) FROM wfp_filters WHERE policy_id = ?1", [policy_id], |r| r.get(0))?;
+        let n: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM wfp_filters WHERE policy_id = ?1",
+            [policy_id],
+            |r| r.get(0),
+        )?;
         Ok(n as usize)
     }
     /// 이 정책에 같은 앱 경로의 필터가 이미 있는가 (spec_json 의 app_path 비교, 대소문자 무시)
@@ -229,36 +299,63 @@ impl EngineStore {
     }
     /// 필터 키(filterKey GUID) 기록 — 없을 때만(이미 있으면 그대로)
     pub fn set_filter_key(&self, id: u64, key: &str) -> Result<()> {
-        self.conn.execute("UPDATE wfp_filters SET filter_key = ?2 WHERE filter_id = ?1 AND filter_key IS NULL", params![id as i64, key])?;
+        self.conn.execute(
+            "UPDATE wfp_filters SET filter_key = ?2 WHERE filter_id = ?1 AND filter_key IS NULL",
+            params![id as i64, key],
+        )?;
         Ok(())
     }
     /// 키 → DB 의 필터 번호
     pub fn filter_ids_by_key(&self) -> Result<std::collections::HashMap<String, u64>> {
-        let mut st = self.conn.prepare("SELECT filter_key, filter_id FROM wfp_filters WHERE filter_key IS NOT NULL")?;
-        let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64)))?;
+        let mut st = self.conn.prepare(
+            "SELECT filter_key, filter_id FROM wfp_filters WHERE filter_key IS NOT NULL",
+        )?;
+        let rows = st.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64))
+        })?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
     /// 같은 필터(같은 키)의 번호가 바뀌었을 때 DB 번호만 고친다
     pub fn renumber_filter(&self, old: u64, new: u64) -> Result<()> {
-        self.conn.execute("UPDATE wfp_filters SET filter_id = ?2 WHERE filter_id = ?1", params![old as i64, new as i64])?;
+        self.conn.execute(
+            "UPDATE wfp_filters SET filter_id = ?2 WHERE filter_id = ?1",
+            params![old as i64, new as i64],
+        )?;
         Ok(())
     }
 
     pub fn delete_filters(&self, ids: &[u64]) -> Result<()> {
         for id in ids {
-            self.conn.execute("DELETE FROM wfp_filters WHERE filter_id = ?1", [*id as i64])?;
+            self.conn
+                .execute("DELETE FROM wfp_filters WHERE filter_id = ?1", [*id as i64])?;
         }
         Ok(())
     }
 
-    pub fn history(&self, ts: i64, policy_id: i64, action: &str, actor: &str, result: &str) -> Result<()> {
+    pub fn history(
+        &self,
+        ts: i64,
+        policy_id: i64,
+        action: &str,
+        actor: &str,
+        result: &str,
+    ) -> Result<()> {
         self.conn.execute("INSERT INTO policy_history(ts, policy_id, action, actor, result) VALUES (?1, ?2, ?3, ?4, ?5)", params![ts, policy_id, action, actor, result])?;
         Ok(())
     }
     /// (시각, 동작, 결과, 누가) — 누가 = 호출자 PID·이미지 (승인 도우미 경유면 승인한 쪽 + 맡긴 쪽)
     pub fn history_of(&self, policy_id: i64) -> Result<Vec<(i64, String, String, String)>> {
-        let mut st = self.conn.prepare("SELECT ts, action, result, actor FROM policy_history WHERE policy_id = ?1 ORDER BY id")?;
-        let rows = st.query_map([policy_id], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<String>>(2)?.unwrap_or_default(), r.get(3)?)))?;
+        let mut st = self.conn.prepare(
+            "SELECT ts, action, result, actor FROM policy_history WHERE policy_id = ?1 ORDER BY id",
+        )?;
+        let rows = st.query_map([policy_id], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                r.get(3)?,
+            ))
+        })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
     /// 12차 Q6: 감사 기록은 개념상 영구지만 물리 상한을 둔다. 정책 변경 API 를 수만 번 호출해 디스크를 채우는 것을 막는다.
@@ -268,7 +365,9 @@ impl EngineStore {
     /// - idempotency: 7일
     pub fn enforce_caps(&self, now: i64) -> Result<usize> {
         let mut n = 0;
-        n += self.conn.execute("DELETE FROM events WHERE ts < ?1", [now - 90 * 86_400])?;
+        n += self
+            .conn
+            .execute("DELETE FROM events WHERE ts < ?1", [now - 90 * 86_400])?;
         n += self.conn.execute("DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 200000)", [])?;
         n += self.conn.execute("DELETE FROM policy_history WHERE id NOT IN (SELECT id FROM policy_history ORDER BY id DESC LIMIT 100000)", [])?;
         n += self.conn.execute(
@@ -279,16 +378,25 @@ impl EngineStore {
                  AND NOT EXISTS (SELECT 1 FROM wfp_filters f WHERE f.policy_id = v.policy_id AND f.version = v.version))",
             [],
         )?;
-        n += self.conn.execute("DELETE FROM idempotency WHERE ts > 0 AND ts < ?1", [now - 7 * 86_400])?;
+        n += self.conn.execute(
+            "DELETE FROM idempotency WHERE ts > 0 AND ts < ?1",
+            [now - 7 * 86_400],
+        )?;
         Ok(n)
     }
     /// 반환: 사건 id
     pub fn insert_event(&self, ts: i64, kind: &str, severity: u8, detail: &str) -> Result<i64> {
-        self.conn.execute("INSERT INTO events(ts, kind, severity, detail) VALUES (?1, ?2, ?3, ?4)", params![ts, kind, severity as i64, detail])?;
+        self.conn.execute(
+            "INSERT INTO events(ts, kind, severity, detail) VALUES (?1, ?2, ?3, ?4)",
+            params![ts, kind, severity as i64, detail],
+        )?;
         Ok(self.conn.last_insert_rowid())
     }
     pub fn set_event_ref(&self, event_id: i64, ref_json: &str) -> Result<()> {
-        self.conn.execute("INSERT OR REPLACE INTO event_refs(event_id, ref_json) VALUES (?1, ?2)", params![event_id, ref_json])?;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO event_refs(event_id, ref_json) VALUES (?1, ?2)",
+            params![event_id, ref_json],
+        )?;
         Ok(())
     }
     /// 서비스 사건 목록 (A29): `since` 이후, 새것부터 `limit` 건
@@ -298,29 +406,63 @@ impl EngineStore {
              WHERE e.ts >= ?1 ORDER BY e.id DESC LIMIT ?2",
         )?;
         let rows = st.query_map(params![since, limit as i64], |r| {
-            Ok(StoredEvent { id: r.get(0)?, ts: r.get(1)?, kind: r.get(2)?, severity: r.get::<_, i64>(3)? as u8, detail: r.get::<_, Option<String>>(4)?.unwrap_or_default(), ref_json: r.get(5)? })
+            Ok(StoredEvent {
+                id: r.get(0)?,
+                ts: r.get(1)?,
+                kind: r.get(2)?,
+                severity: r.get::<_, i64>(3)? as u8,
+                detail: r.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                ref_json: r.get(5)?,
+            })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
     pub fn save_open_cond(&self, policy_id: i64, version: i64, cond_json: &str) -> Result<()> {
-        self.conn.execute("INSERT OR REPLACE INTO open_conds(policy_id, version, cond_json) VALUES (?1, ?2, ?3)", rusqlite::params![policy_id, version, cond_json])?;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO open_conds(policy_id, version, cond_json) VALUES (?1, ?2, ?3)",
+            rusqlite::params![policy_id, version, cond_json],
+        )?;
         Ok(())
     }
     pub fn open_cond(&self, policy_id: i64, version: i64) -> Result<Option<String>> {
         use rusqlite::OptionalExtension;
-        Ok(self.conn.query_row("SELECT cond_json FROM open_conds WHERE policy_id = ?1 AND version = ?2", rusqlite::params![policy_id, version], |r| r.get(0)).optional()?)
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT cond_json FROM open_conds WHERE policy_id = ?1 AND version = ?2",
+                rusqlite::params![policy_id, version],
+                |r| r.get(0),
+            )
+            .optional()?)
     }
     pub fn delete_open_conds(&self, policy_id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM open_conds WHERE policy_id = ?1", rusqlite::params![policy_id])?;
+        self.conn.execute(
+            "DELETE FROM open_conds WHERE policy_id = ?1",
+            rusqlite::params![policy_id],
+        )?;
         Ok(())
     }
 
     pub fn idempotent_lookup(&self, request_id: &str) -> Result<Option<ApplyResult>> {
-        let s: Option<String> = self.conn.query_row("SELECT result_json FROM idempotency WHERE request_id = ?1", [request_id], |r| r.get(0)).optional()?;
+        let s: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT result_json FROM idempotency WHERE request_id = ?1",
+                [request_id],
+                |r| r.get(0),
+            )
+            .optional()?;
         Ok(s.and_then(|j| serde_json::from_str(&j).ok()))
     }
     pub fn idempotent_save(&self, request_id: &str, result: &ApplyResult) -> Result<()> {
-        self.conn.execute("INSERT OR REPLACE INTO idempotency(request_id, result_json, ts) VALUES (?1, ?2, ?3)", params![request_id, serde_json::to_string(result).unwrap(), result.confirm_deadline])?;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO idempotency(request_id, result_json, ts) VALUES (?1, ?2, ?3)",
+            params![
+                request_id,
+                serde_json::to_string(result).unwrap(),
+                result.confirm_deadline
+            ],
+        )?;
         Ok(())
     }
 }

@@ -11,6 +11,8 @@
 pub mod authn;
 /// A26: 서비스 데이터 폴더 (소유자 검사·보호 DACL)
 pub mod data_dir;
+/// ACL 정책 관리: 네트워크 인터페이스 목록
+pub mod netif;
 pub mod pipe;
 /// A25: 무작위 파이프 이름 공개(HKLM)·조회, 가로채기 점검
 pub mod pipe_name;

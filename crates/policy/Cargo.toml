@@ -18,6 +18,8 @@ windows-sys = { version = "0.61", features = [
     "Win32_Security",
     "Win32_System_Rpc",
     "Win32_NetworkManagement_WindowsFilteringPlatform",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
     "Win32_Storage_FileSystem",
 ] }
 

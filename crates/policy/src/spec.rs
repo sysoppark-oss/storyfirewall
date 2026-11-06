@@ -56,6 +56,15 @@ pub struct BlockSpec {
     /// 원격 IPv6 프리픽스들 (OR). `internet` 은 2000::/3 (6차 검증 2-3)
     #[serde(default)]
     pub remote_v6: Vec<V6Prefix>,
+    /// ACL: 이 PC 쪽 주소(FWPM_CONDITION_IP_LOCAL_ADDRESS). 비면 조건 없음
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_v4: Vec<V4Range>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_v6: Vec<V6Prefix>,
+    /// ACL: 네트워크 인터페이스 별칭(예: "Wi-Fi"). 적용할 때 LUID 로 바꾼다(FWPM_CONDITION_IP_LOCAL_INTERFACE).
+    /// 없는 이름이면 적용이 실패한다(조용히 넓은 필터가 되지 않게)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interface: Option<String>,
     #[serde(default)]
     pub remote_ports: Vec<PortRange>,
     #[serde(default)]
@@ -93,6 +102,9 @@ impl BlockSpec {
             app_path: Some(path.into()),
             remote_v4: Vec::new(),
             remote_v6: Vec::new(),
+            local_v4: Vec::new(),
+            local_v6: Vec::new(),
+            interface: None,
             remote_ports: Vec::new(),
             local_ports: Vec::new(),
             protocols: Vec::new(),
@@ -107,28 +119,43 @@ impl BlockSpec {
         self.app_path.is_none()
             && self.remote_v4.is_empty()
             && self.remote_v6.is_empty()
+            && self.local_v4.is_empty()
+            && self.local_v6.is_empty()
+            && self.interface.is_none()
             && self.remote_ports.is_empty()
             && self.local_ports.is_empty()
+    }
+
+    /// 주소 조건(상대·이 PC)에 IPv4·IPv6 가 있는가. 한쪽 체계 주소만 있으면 그 체계 필터만 만든다 —
+    /// 다른 체계 필터는 주소 조건이 빠져 의도보다 넓게 막기 때문이다(ACL 이 PC IP 추가 때 발견)
+    fn has_v4(&self) -> bool {
+        !self.remote_v4.is_empty() || !self.local_v4.is_empty()
+    }
+    fn has_v6(&self) -> bool {
+        !self.remote_v6.is_empty() || !self.local_v6.is_empty()
     }
 
     /// IPv4 조건만 있는 명세는 V6 계층에 만들지 않는다 (주소 체계가 다름). 둘 다 없으면 양쪽.
     pub fn wants_v4(&self) -> bool {
         match self.ip_family {
             Some(f) => f == IpFamily::V4,
-            None => self.remote_v6.is_empty() || !self.remote_v4.is_empty(),
+            None => self.has_v4() || !self.has_v6(),
         }
     }
     pub fn wants_v6(&self) -> bool {
         match self.ip_family {
             Some(f) => f == IpFamily::V6,
-            None => self.remote_v4.is_empty() || !self.remote_v6.is_empty(),
+            None => self.has_v6() || !self.has_v4(),
         }
     }
 
     /// 필터 1개씩으로 나눈다: 결과의 각 명세는 정확히 한 주소 체계(= WFP 필터 1개)
     pub fn split_family(&self) -> Vec<BlockSpec> {
         let mut out = Vec::new();
-        for (want, fam) in [(self.wants_v4(), IpFamily::V4), (self.wants_v6(), IpFamily::V6)] {
+        for (want, fam) in [
+            (self.wants_v4(), IpFamily::V4),
+            (self.wants_v6(), IpFamily::V6),
+        ] {
             if want {
                 let mut s = self.clone();
                 s.ip_family = Some(fam);
@@ -160,7 +187,10 @@ mod tests {
         assert_eq!((parts[1].wants_v4(), parts[1].wants_v6()), (false, true));
         // IPv4 주소만 있으면 V4 하나
         let mut v4 = app.clone();
-        v4.remote_v4.push(V4Range { lo: Ipv4Addr::new(10, 0, 0, 1), hi: Ipv4Addr::new(10, 0, 0, 1) });
+        v4.remote_v4.push(V4Range {
+            lo: Ipv4Addr::new(10, 0, 0, 1),
+            hi: Ipv4Addr::new(10, 0, 0, 1),
+        });
         assert_eq!(v4.filter_count(), 1);
         assert_eq!(v4.split_family().len(), 1);
         // 나눈 명세를 다시 나눠도 그대로 (저장된 행 재등록)
@@ -170,5 +200,22 @@ mod tests {
         assert!(!old.contains("ip_family"));
         let back: BlockSpec = serde_json::from_str(&old).unwrap();
         assert_eq!(back.filter_count(), 2);
+        assert!(
+            !old.contains("local_v4") && !old.contains("interface"),
+            "새 필드는 비면 저장하지 않는다"
+        );
+        // ACL: 이 PC IPv4 만 있으면 V4 필터 하나(V6 필터는 주소 조건이 빠져 넓어지므로 만들지 않는다)
+        let mut l4 = app.clone();
+        l4.local_v4.push(V4Range {
+            lo: Ipv4Addr::new(192, 168, 0, 10),
+            hi: Ipv4Addr::new(192, 168, 0, 10),
+        });
+        assert_eq!((l4.wants_v4(), l4.wants_v6()), (true, false));
+        // 인터페이스만 있으면 PC 전체가 아니다
+        let mut ifc = BlockSpec::app("y", "", Direction::Out);
+        ifc.app_path = None;
+        assert!(ifc.is_empty_match());
+        ifc.interface = Some("Wi-Fi".into());
+        assert!(!ifc.is_empty_match());
     }
 }

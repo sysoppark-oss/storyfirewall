@@ -6,12 +6,16 @@
 //! - 규칙 4: 시스템 프로세스는 대상에서 제외하고 경고.
 //! - 와일드카드 `디렉터리\*` 는 Resolver 가 열거. 이후 생기는 파일은 정책 엔진이 ProcessStart 로 보충(틈 있음, 문서화).
 
-use policy::spec::{Action as SpecAction, BlockSpec, Direction as SpecDir, PortRange, V4Range, V6Prefix};
+use policy::spec::{
+    Action as SpecAction, BlockSpec, Direction as SpecDir, PortRange, V4Range, V6Prefix,
+};
 use std::net::Ipv4Addr;
 
 use crate::model::{Action, Also, Direction, OnExpire, Policy, Protocol};
 use crate::ranges;
-use crate::validate::{file_name_lower, is_system_image, parse_duration_minutes, parse_port, parse_time};
+use crate::validate::{
+    file_name_lower, is_system_image, parse_duration_minutes, parse_port, parse_time,
+};
 use crate::{DslError, Result};
 
 /// OS 를 만지는 조회는 호출자가 준다 (테스트에서는 가짜)
@@ -19,7 +23,11 @@ pub trait Resolver {
     /// `디렉터리\*` → 그 안의 실행 파일 전체 경로
     fn list_exes(&self, dir: &str) -> Vec<String>;
     /// descendants_of → 자손 프로세스 이미지 경로들. 파일 없음/해시 불일치는 Err(사유) (6차 검증 Q4)
-    fn descendants(&self, file_path: &str, sha256: &str) -> std::result::Result<Vec<String>, String>;
+    fn descendants(
+        &self,
+        file_path: &str,
+        sha256: &str,
+    ) -> std::result::Result<Vec<String>, String>;
     fn exists(&self, path: &str) -> bool;
 }
 
@@ -63,10 +71,16 @@ fn exclude_port(ranges: &mut Vec<PortRange>, port: u16) -> bool {
         if r.lo <= port && port <= r.hi {
             changed = true;
             if r.lo < port {
-                out.push(PortRange { lo: r.lo, hi: port - 1 });
+                out.push(PortRange {
+                    lo: r.lo,
+                    hi: port - 1,
+                });
             }
             if port < r.hi {
-                out.push(PortRange { lo: port + 1, hi: r.hi });
+                out.push(PortRange {
+                    lo: port + 1,
+                    hi: r.hi,
+                });
             }
         } else {
             out.push(*r);
@@ -89,14 +103,25 @@ fn exclude_v4(ranges: &mut Vec<V4Range>, lo: Ipv4Addr, hi: Ipv4Addr) -> bool {
         }
         changed = true;
         if rl < xl {
-            out.push(V4Range { lo: r.lo, hi: Ipv4Addr::from(xl - 1) });
+            out.push(V4Range {
+                lo: r.lo,
+                hi: Ipv4Addr::from(xl - 1),
+            });
         }
         if rh > xh {
-            out.push(V4Range { lo: Ipv4Addr::from(xh + 1), hi: r.hi });
+            out.push(V4Range {
+                lo: Ipv4Addr::from(xh + 1),
+                hi: r.hi,
+            });
         }
     }
     *ranges = out;
     changed
+}
+
+/// ACL 번호 → WFP weight. 번호 1 이 가장 높다. 번호 사이 간격 2^40 (같은 번호 안의 V4·V6·방향 필터는 같은 weight)
+pub fn acl_weight(n: u32) -> u64 {
+    0x8000_0000_0000_0000u64 - (u64::from(n.min(9999)) << 40)
 }
 
 pub fn expand(p: &Policy, resolver: &dyn Resolver) -> Result<Expanded> {
@@ -124,26 +149,70 @@ pub fn expand(p: &Policy, resolver: &dyn Resolver) -> Result<Expanded> {
                 remote_v6.extend(ranges::internet_v6());
             }
             other => {
-                let (v4, v6) = ranges::parse_addr(other).ok_or_else(|| DslError::Rule { rule: 1, policy: name.clone(), msg: format!("remote_ip: {other}") })?;
+                let (v4, v6) = ranges::parse_addr(other).ok_or_else(|| DslError::Rule {
+                    rule: 1,
+                    policy: name.clone(),
+                    msg: format!("remote_ip: {other}"),
+                })?;
                 remote_v4.extend(v4);
                 remote_v6.extend(v6);
             }
         }
     }
+    // ---- 이 PC 쪽 주소(ACL) ----
+    let mut local_v4: Vec<V4Range> = Vec::new();
+    let mut local_v6: Vec<V6Prefix> = Vec::new();
+    for ip in &m.local_ip {
+        if ip == "lan" {
+            local_v4.extend(ranges::lan_v4());
+            local_v6.extend(ranges::lan_v6());
+            continue;
+        }
+        let (v4, v6) = ranges::parse_addr(ip).ok_or_else(|| DslError::Rule {
+            rule: 1,
+            policy: name.clone(),
+            msg: format!("local_ip: {ip}"),
+        })?;
+        local_v4.extend(v4);
+        local_v6.extend(v6);
+    }
+    // 상대·이 PC 주소의 체계가 엇갈리면(상대 IPv4 만 + 이 PC IPv6 만) 어느 필터에도 두 조건이 함께 들어가지 못한다 — 넓어지지 않게 거부
+    let r4 = !remote_v4.is_empty();
+    let r6 = !remote_v6.is_empty();
+    let l4 = !local_v4.is_empty();
+    let l6 = !local_v6.is_empty();
+    if (r4 || r6) && (l4 || l6) && !((r4 && l4) || (r6 && l6)) {
+        return Err(DslError::Rule {
+            rule: 1,
+            policy: name.clone(),
+            msg: "출발지·목적지 주소의 IPv4/IPv6 가 서로 다르다".into(),
+        });
+    }
     // ---- 포트·프로토콜 ----
-    let to_ports = |list: &[String]| -> Vec<PortRange> { list.iter().filter_map(|s| parse_port(s)).map(|(lo, hi)| PortRange { lo, hi }).collect() };
+    let to_ports = |list: &[String]| -> Vec<PortRange> {
+        list.iter()
+            .filter_map(|s| parse_port(s))
+            .map(|(lo, hi)| PortRange { lo, hi })
+            .collect()
+    };
     let mut remote_ports = to_ports(&m.remote_port);
     let mut local_ports = to_ports(&m.local_port);
     let protocols: Vec<u8> = match m.protocol {
         Some(Protocol::Tcp) => vec![6],
         Some(Protocol::Udp) => vec![17],
+        // ACL: ICMPv4 만(필터는 IPv4 계층에만 만든다)
+        Some(Protocol::Icmp) => vec![1],
         // 미지정·any → tcp+udp 만. ICMP 는 절대 안 막는다 (규칙 8)
         None | Some(Protocol::Any) => vec![6, 17],
     };
 
     // ---- 규칙 8 자동 제외 (차단 정책만) ----
     if p.action == Action::Block {
-        if exclude_v4(&mut remote_v4, Ipv4Addr::new(127, 0, 0, 0), Ipv4Addr::new(127, 255, 255, 255)) {
+        if exclude_v4(
+            &mut remote_v4,
+            Ipv4Addr::new(127, 0, 0, 0),
+            Ipv4Addr::new(127, 255, 255, 255),
+        ) {
             warnings.push(format!("[8] {name}: 루프백 127/8 자동 제외"));
         }
         let before = remote_v6.len();
@@ -187,7 +256,9 @@ pub fn expand(p: &Policy, resolver: &dyn Resolver) -> Result<Expanded> {
         let (path, hash) = body.split_once("#sha256:").unwrap_or((body, ""));
         match resolver.descendants(&norm_path(path), hash) {
             Ok(list) => {
-                warnings.push(format!("[틈] {name}: descendants_of 는 지금까지의 자손만. 새 자손은 정책 엔진이 보충"));
+                warnings.push(format!(
+                    "[틈] {name}: descendants_of 는 지금까지의 자손만. 새 자손은 정책 엔진이 보충"
+                ));
                 for t in list {
                     let f = file_name_lower(&t);
                     if is_system_image(&t) {
@@ -198,7 +269,13 @@ pub fn expand(p: &Policy, resolver: &dyn Resolver) -> Result<Expanded> {
                     targets.push(t);
                 }
             }
-            Err(why) => return Err(DslError::Rule { rule: 4, policy: name.clone(), msg: format!("descendants_of 적용 실패: {why}") }),
+            Err(why) => {
+                return Err(DslError::Rule {
+                    rule: 4,
+                    policy: name.clone(),
+                    msg: format!("descendants_of 적용 실패: {why}"),
+                })
+            }
         }
     }
     let mut kept: Vec<String> = Vec::new();
@@ -216,19 +293,36 @@ pub fn expand(p: &Policy, resolver: &dyn Resolver) -> Result<Expanded> {
 
     // ---- 명세 조립 ----
     let mut specs: Vec<BlockSpec> = Vec::new();
-    let spec_action = if p.action == Action::Allow { SpecAction::Permit } else { SpecAction::Block };
-    let make = |app: Option<String>, dir: SpecDir, action: SpecAction, rp: &Vec<PortRange>, lp: &Vec<PortRange>| BlockSpec {
+    let spec_action = if p.action == Action::Allow {
+        SpecAction::Permit
+    } else {
+        SpecAction::Block
+    };
+    let make = |app: Option<String>,
+                dir: SpecDir,
+                action: SpecAction,
+                rp: &Vec<PortRange>,
+                lp: &Vec<PortRange>| BlockSpec {
         name: name.clone(),
         action,
         direction: dir,
         app_path: app,
         remote_v4: remote_v4.clone(),
         remote_v6: remote_v6.clone(),
+        local_v4: local_v4.clone(),
+        local_v6: local_v6.clone(),
+        interface: m.interface.clone(),
         remote_ports: rp.clone(),
         local_ports: lp.clone(),
         protocols: protocols.clone(),
-        weight: None,
-        ip_family: None,
+        // ACL 번호: 작은 번호가 높은 weight(먼저 판정). 허용·차단 모두 명시 weight. 0x8000.. 아래라
+        // process_not 예외(0xF000..)보다는 낮다
+        weight: p.priority.map(acl_weight),
+        ip_family: if protocols == [1] {
+            Some(policy::spec::IpFamily::V4)
+        } else {
+            None
+        },
     };
     for dir in &dirs {
         if targets.is_empty() {
@@ -253,9 +347,19 @@ pub fn expand(p: &Policy, resolver: &dyn Resolver) -> Result<Expanded> {
         // process_not: 같은 조건의 permit 을 우리 Sublayer 안에 (6차 검증 Q2)
         for ex in &m.process_not {
             let n = norm_path(ex);
-            let apps: Vec<String> = if let Some(dir) = n.strip_suffix("\\*") { resolver.list_exes(dir) } else { vec![n] };
+            let apps: Vec<String> = if let Some(dir) = n.strip_suffix("\\*") {
+                resolver.list_exes(dir)
+            } else {
+                vec![n]
+            };
             for a in apps {
-                let mut s = make(Some(a), *dir, SpecAction::Permit, &remote_ports, &local_ports);
+                let mut s = make(
+                    Some(a),
+                    *dir,
+                    SpecAction::Permit,
+                    &remote_ports,
+                    &local_ports,
+                );
                 s.name = format!("{name} (예외)");
                 specs.push(s);
             }
@@ -291,5 +395,14 @@ pub fn expand(p: &Policy, resolver: &dyn Resolver) -> Result<Expanded> {
         None
     };
 
-    Ok(Expanded { name, specs, schedule, also: p.also.clone(), log: p.log.unwrap_or(true), warnings, dryrun_required: true, excluded_system })
+    Ok(Expanded {
+        name,
+        specs,
+        schedule,
+        also: p.also.clone(),
+        log: p.log.unwrap_or(true),
+        warnings,
+        dryrun_required: true,
+        excluded_system,
+    })
 }

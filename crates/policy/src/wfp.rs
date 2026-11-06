@@ -7,7 +7,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use windows_sys::core::GUID;
-use windows_sys::Win32::Foundation::{FILETIME, FWP_E_ALREADY_EXISTS, FWP_E_FILTER_NOT_FOUND, FWP_E_PROVIDER_NOT_FOUND, FWP_E_SUBLAYER_NOT_FOUND, HANDLE};
+use windows_sys::Win32::Foundation::{
+    FILETIME, FWP_E_ALREADY_EXISTS, FWP_E_FILTER_NOT_FOUND, FWP_E_PROVIDER_NOT_FOUND,
+    FWP_E_SUBLAYER_NOT_FOUND, HANDLE,
+};
 use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::*;
 use windows_sys::Win32::System::Rpc::RPC_C_AUTHN_WINNT;
 
@@ -56,7 +59,10 @@ static DELETED_FILTERS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 static SUBLAYER_DELETED: AtomicBool = AtomicBool::new(false);
 static PROVIDER_DELETED: AtomicBool = AtomicBool::new(false);
 
-unsafe extern "system" fn on_filter_change(_ctx: *mut core::ffi::c_void, change: *const FWPM_FILTER_CHANGE0) {
+unsafe extern "system" fn on_filter_change(
+    _ctx: *mut core::ffi::c_void,
+    change: *const FWPM_FILTER_CHANGE0,
+) {
     if change.is_null() {
         return;
     }
@@ -64,12 +70,18 @@ unsafe extern "system" fn on_filter_change(_ctx: *mut core::ffi::c_void, change:
         DELETED_FILTERS.lock().unwrap().push((*change).filterId);
     }
 }
-unsafe extern "system" fn on_sublayer_change(_ctx: *mut core::ffi::c_void, change: *const FWPM_SUBLAYER_CHANGE0) {
+unsafe extern "system" fn on_sublayer_change(
+    _ctx: *mut core::ffi::c_void,
+    change: *const FWPM_SUBLAYER_CHANGE0,
+) {
     if !change.is_null() && (*change).changeType == FWPM_CHANGE_DELETE {
         SUBLAYER_DELETED.store(true, Ordering::Relaxed);
     }
 }
-unsafe extern "system" fn on_provider_change(_ctx: *mut core::ffi::c_void, change: *const FWPM_PROVIDER_CHANGE0) {
+unsafe extern "system" fn on_provider_change(
+    _ctx: *mut core::ffi::c_void,
+    change: *const FWPM_PROVIDER_CHANGE0,
+) {
     if !change.is_null() && (*change).changeType == FWPM_CHANGE_DELETE {
         PROVIDER_DELETED.store(true, Ordering::Relaxed);
     }
@@ -94,9 +106,20 @@ impl Engine {
         session.txnWaitTimeoutInMSec = 5_000;
         let name = wide("StoryFirewall policy");
         session.displayData.name = name.as_ptr() as *mut u16;
-        let rc = unsafe { FwpmEngineOpen0(std::ptr::null(), RPC_C_AUTHN_WINNT, std::ptr::null(), &session, &mut h) };
+        let rc = unsafe {
+            FwpmEngineOpen0(
+                std::ptr::null(),
+                RPC_C_AUTHN_WINNT,
+                std::ptr::null(),
+                &session,
+                &mut h,
+            )
+        };
         check(rc, "FwpmEngineOpen0")?;
-        Ok(Self { h, subs: Vec::new() })
+        Ok(Self {
+            h,
+            subs: Vec::new(),
+        })
     }
 
     /// Provider·Sublayer 가 없으면 만든다 (영구). 이미 있으면 FWP_E_ALREADY_EXISTS 를 무시.
@@ -174,7 +197,68 @@ impl Engine {
                 v6masks.push(m);
             }
         }
-        let port_cond = |field: GUID, pr: &crate::spec::PortRange, conds: &mut Vec<FWPM_FILTER_CONDITION0>, ranges: &mut Vec<Box<FWP_RANGE0>>| {
+        // ACL: 이 PC 쪽 주소(같은 필드끼리 OR). 계층 주소 체계에 맞는 것만
+        if !v6 {
+            for r in &spec.local_v4 {
+                let mut rg: Box<FWP_RANGE0> = Box::new(unsafe { std::mem::zeroed() });
+                rg.valueLow.r#type = FWP_UINT32;
+                rg.valueLow.Anonymous.uint32 = u32::from(r.lo);
+                rg.valueHigh.r#type = FWP_UINT32;
+                rg.valueHigh.Anonymous.uint32 = u32::from(r.hi);
+                let mut c: FWPM_FILTER_CONDITION0 = unsafe { std::mem::zeroed() };
+                c.fieldKey = FWPM_CONDITION_IP_LOCAL_ADDRESS;
+                c.matchType = FWP_MATCH_RANGE;
+                c.conditionValue.r#type = FWP_RANGE_TYPE;
+                c.conditionValue.Anonymous.rangeValue = &mut *rg;
+                conds.push(c);
+                ranges.push(rg);
+            }
+        } else {
+            for p in &spec.local_v6 {
+                let mut m: Box<FWP_V6_ADDR_AND_MASK> = Box::new(unsafe { std::mem::zeroed() });
+                m.addr = p.addr.octets();
+                m.prefixLength = p.prefix;
+                let mut c: FWPM_FILTER_CONDITION0 = unsafe { std::mem::zeroed() };
+                c.fieldKey = FWPM_CONDITION_IP_LOCAL_ADDRESS;
+                c.matchType = FWP_MATCH_EQUAL;
+                c.conditionValue.r#type = FWP_V6_ADDR_MASK;
+                c.conditionValue.Anonymous.v6AddrMask = &mut *m;
+                conds.push(c);
+                v6masks.push(m);
+            }
+        }
+        // ACL: 인터페이스 별칭 → LUID. 없는 이름은 오류(조건이 빠진 넓은 필터를 만들지 않는다)
+        let mut luid_box: Box<u64> = Box::new(0);
+        if let Some(alias) = &spec.interface {
+            let w = wide(alias);
+            let mut l: windows_sys::Win32::NetworkManagement::Ndis::NET_LUID_LH =
+                Default::default();
+            // SAFETY: 널 끝 UTF-16 문자열과 출력 구조체는 지역 변수
+            let rc = unsafe {
+                windows_sys::Win32::NetworkManagement::IpHelper::ConvertInterfaceAliasToLuid(
+                    w.as_ptr(),
+                    &mut l,
+                )
+            };
+            if rc != 0 {
+                return Err(PolicyError::Wfp(
+                    rc,
+                    "ConvertInterfaceAliasToLuid (네트워크 인터페이스 이름 없음)",
+                ));
+            }
+            // SAFETY: union 의 Value 는 64비트 전체
+            *luid_box = unsafe { l.Value };
+            let mut c: FWPM_FILTER_CONDITION0 = unsafe { std::mem::zeroed() };
+            c.fieldKey = FWPM_CONDITION_IP_LOCAL_INTERFACE;
+            c.matchType = FWP_MATCH_EQUAL;
+            c.conditionValue.r#type = FWP_UINT64;
+            c.conditionValue.Anonymous.uint64 = &mut *luid_box;
+            conds.push(c);
+        }
+        let port_cond = |field: GUID,
+                         pr: &crate::spec::PortRange,
+                         conds: &mut Vec<FWPM_FILTER_CONDITION0>,
+                         ranges: &mut Vec<Box<FWP_RANGE0>>| {
             let mut c: FWPM_FILTER_CONDITION0 = unsafe { std::mem::zeroed() };
             c.fieldKey = field;
             if pr.lo == pr.hi {
@@ -208,7 +292,15 @@ impl Engine {
             c.conditionValue.Anonymous.uint8 = *proto;
             conds.push(c);
         }
-        let name = wide(&format!("StoryFirewall {}: {}", if spec.action == Action::Permit { "permit" } else { "block" }, spec.name));
+        let name = wide(&format!(
+            "StoryFirewall {}: {}",
+            if spec.action == Action::Permit {
+                "permit"
+            } else {
+                "block"
+            },
+            spec.name
+        ));
         let mut f: FWPM_FILTER0 = unsafe { std::mem::zeroed() };
         f.displayData.name = name.as_ptr() as *mut u16;
         f.flags = FWPM_FILTER_FLAG_PERSISTENT;
@@ -233,7 +325,11 @@ impl Engine {
         }
         f.numFilterConditions = conds.len() as u32;
         f.filterCondition = conds.as_mut_ptr();
-        f.action.r#type = if spec.action == Action::Permit { FWP_ACTION_PERMIT } else { FWP_ACTION_BLOCK };
+        f.action.r#type = if spec.action == Action::Permit {
+            FWP_ACTION_PERMIT
+        } else {
+            FWP_ACTION_BLOCK
+        };
         let mut id: u64 = 0;
         let rc = unsafe { FwpmFilterAdd0(self.h, &f, std::ptr::null_mut(), &mut id) };
         if !app_blob.is_null() {
@@ -241,19 +337,29 @@ impl Engine {
         }
         drop(ranges);
         drop(v6masks);
+        drop(luid_box);
         check(rc, "FwpmFilterAdd0")?;
         Ok(id)
     }
 
     /// 정책 1건 = 트랜잭션 1건. 돌려주는 ID 들은 호출자가 저장한다.
     pub fn apply(&self, specs: &[BlockSpec]) -> Result<Vec<(u64, BlockSpec)>> {
-        check(unsafe { FwpmTransactionBegin0(self.h, 0) }, "FwpmTransactionBegin0")?;
+        check(
+            unsafe { FwpmTransactionBegin0(self.h, 0) },
+            "FwpmTransactionBegin0",
+        )?;
         let mut out = Vec::new();
         let result: Result<()> = (|| {
             for s in specs {
                 let (l4, l6) = match s.direction {
-                    Direction::Out => (FWPM_LAYER_ALE_AUTH_CONNECT_V4, FWPM_LAYER_ALE_AUTH_CONNECT_V6),
-                    Direction::In => (FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4, FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6),
+                    Direction::Out => (
+                        FWPM_LAYER_ALE_AUTH_CONNECT_V4,
+                        FWPM_LAYER_ALE_AUTH_CONNECT_V6,
+                    ),
+                    Direction::In => (
+                        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
+                        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
+                    ),
                 };
                 if s.wants_v4() {
                     out.push((self.add_one(s, l4, false)?, s.clone()));
@@ -266,7 +372,10 @@ impl Engine {
         })();
         match result {
             Ok(()) => {
-                check(unsafe { FwpmTransactionCommit0(self.h) }, "FwpmTransactionCommit0")?;
+                check(
+                    unsafe { FwpmTransactionCommit0(self.h) },
+                    "FwpmTransactionCommit0",
+                )?;
                 Ok(out)
             }
             Err(e) => {
@@ -280,7 +389,10 @@ impl Engine {
     /// 실패하면 abort — 지운 것도 넣은 것도 남지 않는다. 명세 하나가 V4·V6 두 필터가 될 수 있으므로
     /// 돌려주는 목록은 (필터 ID, 명세) 쌍이다.
     pub fn replace(&self, remove: &[u64], add: &[BlockSpec]) -> Result<Vec<(u64, BlockSpec)>> {
-        check(unsafe { FwpmTransactionBegin0(self.h, 0) }, "FwpmTransactionBegin0")?;
+        check(
+            unsafe { FwpmTransactionBegin0(self.h, 0) },
+            "FwpmTransactionBegin0",
+        )?;
         let result: Result<Vec<(u64, BlockSpec)>> = (|| {
             for id in remove {
                 let rc = unsafe { FwpmFilterDeleteById0(self.h, *id) };
@@ -291,8 +403,14 @@ impl Engine {
             let mut out = Vec::new();
             for s in add {
                 let (l4, l6) = match s.direction {
-                    Direction::Out => (FWPM_LAYER_ALE_AUTH_CONNECT_V4, FWPM_LAYER_ALE_AUTH_CONNECT_V6),
-                    Direction::In => (FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4, FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6),
+                    Direction::Out => (
+                        FWPM_LAYER_ALE_AUTH_CONNECT_V4,
+                        FWPM_LAYER_ALE_AUTH_CONNECT_V6,
+                    ),
+                    Direction::In => (
+                        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
+                        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
+                    ),
                 };
                 if s.wants_v4() {
                     out.push((self.add_one(s, l4, false)?, s.clone()));
@@ -305,7 +423,10 @@ impl Engine {
         })();
         match result {
             Ok(out) => {
-                check(unsafe { FwpmTransactionCommit0(self.h) }, "FwpmTransactionCommit0")?;
+                check(
+                    unsafe { FwpmTransactionCommit0(self.h) },
+                    "FwpmTransactionCommit0",
+                )?;
                 Ok(out)
             }
             Err(e) => {
@@ -316,7 +437,10 @@ impl Engine {
     }
 
     pub fn delete(&self, ids: &[u64]) -> Result<()> {
-        check(unsafe { FwpmTransactionBegin0(self.h, 0) }, "FwpmTransactionBegin0")?;
+        check(
+            unsafe { FwpmTransactionBegin0(self.h, 0) },
+            "FwpmTransactionBegin0",
+        )?;
         for id in ids {
             let rc = unsafe { FwpmFilterDeleteById0(self.h, *id) };
             if rc != 0 && rc != FWP_E_FILTER_NOT_FOUND as u32 {
@@ -324,18 +448,29 @@ impl Engine {
                 return Err(PolicyError::Wfp(rc, "FwpmFilterDeleteById0"));
             }
         }
-        check(unsafe { FwpmTransactionCommit0(self.h) }, "FwpmTransactionCommit0")
+        check(
+            unsafe { FwpmTransactionCommit0(self.h) },
+            "FwpmTransactionCommit0",
+        )
     }
 
     /// 우리 Provider 소속 필터 (id, 이름, 계층) — 4개 계층을 차례로 열거
     pub fn list_ours(&self) -> Result<Vec<(u64, String, GUID)>> {
-        Ok(self.list_full()?.into_iter().map(|(id, name, layer, _)| (id, name, layer)).collect())
+        Ok(self
+            .list_full()?
+            .into_iter()
+            .map(|(id, name, layer, _)| (id, name, layer))
+            .collect())
     }
 
     /// 우리 필터의 (id, filterKey). filterKey 는 넣을 때 0 으로 두어 BFE 가 만든 GUID — 영구 필터와 함께 저장된다.
     /// id 는 문서상 "runtime identifier" 라 BFE 재시작·재부팅 뒤 바뀔 수 있다(추측) — 재시작 대조는 키로 한다
     pub fn list_keys(&self) -> Result<Vec<(u64, String)>> {
-        Ok(self.list_full()?.into_iter().map(|(id, _, _, key)| (id, guid_text(&key))).collect())
+        Ok(self
+            .list_full()?
+            .into_iter()
+            .map(|(id, _, _, key)| (id, guid_text(&key)))
+            .collect())
     }
 
     fn list_full(&self) -> Result<Vec<(u64, String, GUID, GUID)>> {
@@ -354,7 +489,10 @@ impl Engine {
         tmpl.enumType = FWP_FILTER_ENUM_OVERLAPPING;
         tmpl.actionMask = 0xFFFF_FFFF;
         let mut eh: HANDLE = std::ptr::null_mut();
-        check(unsafe { FwpmFilterCreateEnumHandle0(self.h, &tmpl, &mut eh) }, "FwpmFilterCreateEnumHandle0")?;
+        check(
+            unsafe { FwpmFilterCreateEnumHandle0(self.h, &tmpl, &mut eh) },
+            "FwpmFilterCreateEnumHandle0",
+        )?;
         loop {
             let mut entries: *mut *mut FWPM_FILTER0 = std::ptr::null_mut();
             let mut n: u32 = 0;
@@ -372,7 +510,10 @@ impl Engine {
                         while *f.displayData.name.add(len) != 0 {
                             len += 1;
                         }
-                        String::from_utf16_lossy(std::slice::from_raw_parts(f.displayData.name, len))
+                        String::from_utf16_lossy(std::slice::from_raw_parts(
+                            f.displayData.name,
+                            len,
+                        ))
                     }
                 };
                 out.push((f.filterId, name, f.layerKey, f.filterKey));
@@ -399,7 +540,18 @@ impl Engine {
             sub.enumTemplate = &mut tmpl;
             sub.flags = FWPM_SUBSCRIPTION_FLAG_NOTIFY_ON_DELETE;
             let mut ch: HANDLE = std::ptr::null_mut();
-            check(unsafe { FwpmFilterSubscribeChanges0(self.h, &sub, Some(on_filter_change), std::ptr::null(), &mut ch) }, "FwpmFilterSubscribeChanges0")?;
+            check(
+                unsafe {
+                    FwpmFilterSubscribeChanges0(
+                        self.h,
+                        &sub,
+                        Some(on_filter_change),
+                        std::ptr::null(),
+                        &mut ch,
+                    )
+                },
+                "FwpmFilterSubscribeChanges0",
+            )?;
             self.subs.push((SubKind::Filter, ch));
         }
 
@@ -410,7 +562,18 @@ impl Engine {
         ssub.enumTemplate = &mut st;
         ssub.flags = FWPM_SUBSCRIPTION_FLAG_NOTIFY_ON_DELETE;
         let mut ch2: HANDLE = std::ptr::null_mut();
-        check(unsafe { FwpmSubLayerSubscribeChanges0(self.h, &ssub, Some(on_sublayer_change), std::ptr::null(), &mut ch2) }, "FwpmSubLayerSubscribeChanges0")?;
+        check(
+            unsafe {
+                FwpmSubLayerSubscribeChanges0(
+                    self.h,
+                    &ssub,
+                    Some(on_sublayer_change),
+                    std::ptr::null(),
+                    &mut ch2,
+                )
+            },
+            "FwpmSubLayerSubscribeChanges0",
+        )?;
         self.subs.push((SubKind::SubLayer, ch2));
 
         let mut pt: FWPM_PROVIDER_ENUM_TEMPLATE0 = unsafe { std::mem::zeroed() };
@@ -418,7 +581,18 @@ impl Engine {
         psub.enumTemplate = &mut pt;
         psub.flags = FWPM_SUBSCRIPTION_FLAG_NOTIFY_ON_DELETE;
         let mut ch3: HANDLE = std::ptr::null_mut();
-        check(unsafe { FwpmProviderSubscribeChanges0(self.h, &psub, Some(on_provider_change), std::ptr::null(), &mut ch3) }, "FwpmProviderSubscribeChanges0")?;
+        check(
+            unsafe {
+                FwpmProviderSubscribeChanges0(
+                    self.h,
+                    &psub,
+                    Some(on_provider_change),
+                    std::ptr::null(),
+                    &mut ch3,
+                )
+            },
+            "FwpmProviderSubscribeChanges0",
+        )?;
         self.subs.push((SubKind::Provider, ch3));
         Ok(())
     }
@@ -426,7 +600,11 @@ impl Engine {
     /// 콜백이 모아 둔 삭제 알림을 꺼낸다
     pub fn take_deleted(&self) -> (Vec<u64>, bool, bool) {
         let ids = std::mem::take(&mut *DELETED_FILTERS.lock().unwrap());
-        (ids, SUBLAYER_DELETED.swap(false, Ordering::Relaxed), PROVIDER_DELETED.swap(false, Ordering::Relaxed))
+        (
+            ids,
+            SUBLAYER_DELETED.swap(false, Ordering::Relaxed),
+            PROVIDER_DELETED.swap(false, Ordering::Relaxed),
+        )
     }
 
     /// 차단 이벤트 수집 켜기 (F23)
@@ -434,17 +612,29 @@ impl Engine {
         let mut v: FWP_VALUE0 = unsafe { std::mem::zeroed() };
         v.r#type = FWP_UINT32;
         v.Anonymous.uint32 = 1;
-        check(unsafe { FwpmEngineSetOption0(self.h, FWPM_ENGINE_COLLECT_NET_EVENTS, &v) }, "FwpmEngineSetOption0")
+        check(
+            unsafe { FwpmEngineSetOption0(self.h, FWPM_ENGINE_COLLECT_NET_EVENTS, &v) },
+            "FwpmEngineSetOption0",
+        )
     }
 
     /// since(FILETIME) 이후의 CLASSIFY_DROP 이벤트, 최대 200건 (5차 검증 Q5)
     pub fn drops_since(&self, since: i64) -> Result<Vec<DropEvent>> {
         let mut tmpl: FWPM_NET_EVENT_ENUM_TEMPLATE0 = unsafe { std::mem::zeroed() };
-        tmpl.startTime = FILETIME { dwLowDateTime: since as u32, dwHighDateTime: (since >> 32) as u32 };
+        tmpl.startTime = FILETIME {
+            dwLowDateTime: since as u32,
+            dwHighDateTime: (since >> 32) as u32,
+        };
         let end = i64::MAX;
-        tmpl.endTime = FILETIME { dwLowDateTime: end as u32, dwHighDateTime: (end >> 32) as u32 };
+        tmpl.endTime = FILETIME {
+            dwLowDateTime: end as u32,
+            dwHighDateTime: (end >> 32) as u32,
+        };
         let mut eh: HANDLE = std::ptr::null_mut();
-        check(unsafe { FwpmNetEventCreateEnumHandle0(self.h, &tmpl, &mut eh) }, "FwpmNetEventCreateEnumHandle0")?;
+        check(
+            unsafe { FwpmNetEventCreateEnumHandle0(self.h, &tmpl, &mut eh) },
+            "FwpmNetEventCreateEnumHandle0",
+        )?;
         let mut entries: *mut *mut FWPM_NET_EVENT1 = std::ptr::null_mut();
         let mut n: u32 = 0;
         let rc = unsafe { FwpmNetEventEnum1(self.h, eh, 200, &mut entries, &mut n) };
@@ -457,19 +647,37 @@ impl Engine {
                 }
                 let d = unsafe { &*e.Anonymous.classifyDrop };
                 let h = &e.header;
-                let ts = ((h.timeStamp.dwHighDateTime as i64) << 32) | h.timeStamp.dwLowDateTime as i64;
+                let ts =
+                    ((h.timeStamp.dwHighDateTime as i64) << 32) | h.timeStamp.dwLowDateTime as i64;
                 let remote_v4 = if h.ipVersion == FWP_IP_VERSION_V4 {
-                    Some(std::net::Ipv4Addr::from(unsafe { h.Anonymous2.remoteAddrV4 }))
+                    Some(std::net::Ipv4Addr::from(unsafe {
+                        h.Anonymous2.remoteAddrV4
+                    }))
                 } else {
                     None
                 };
                 let app_id = if h.appId.size >= 2 && !h.appId.data.is_null() {
-                    let u16s = unsafe { std::slice::from_raw_parts(h.appId.data as *const u16, (h.appId.size / 2) as usize) };
-                    String::from_utf16_lossy(u16s).trim_end_matches('\0').to_string()
+                    let u16s = unsafe {
+                        std::slice::from_raw_parts(
+                            h.appId.data as *const u16,
+                            (h.appId.size / 2) as usize,
+                        )
+                    };
+                    String::from_utf16_lossy(u16s)
+                        .trim_end_matches('\0')
+                        .to_string()
                 } else {
                     String::new()
                 };
-                out.push(DropEvent { ts, filter_id: d.filterId, layer_id: d.layerId, protocol: h.ipProtocol, remote_v4, remote_port: h.remotePort, app_id });
+                out.push(DropEvent {
+                    ts,
+                    filter_id: d.filterId,
+                    layer_id: d.layerId,
+                    protocol: h.ipProtocol,
+                    remote_v4,
+                    remote_port: h.remotePort,
+                    app_id,
+                });
             }
             unsafe { FwpmFreeMemory0(&mut entries as *mut _ as *mut *mut core::ffi::c_void) };
         }

@@ -26,6 +26,8 @@ pub enum Direction {
 pub enum Protocol {
     Tcp,
     Udp,
+    /// ACL(2026-11-06): ICMPv4 만. ICMPv6 는 막지 않는다(규칙 8)
+    Icmp,
     Any,
 }
 
@@ -41,6 +43,11 @@ pub struct Match {
     pub protocol: Option<Protocol>,
     #[serde(default)]
     pub remote_ip: Vec<String>,
+    /// ACL: 이 PC 쪽 주소(나갈 때 출발지, 들어올 때 목적지)
+    #[serde(default)]
+    pub local_ip: Vec<String>,
+    /// ACL: 네트워크 인터페이스 별칭(예: "Wi-Fi", "이더넷"). 적용 때 없으면 실패
+    pub interface: Option<String>,
     /// 포트는 정수(445)·문자열("8000-8100") 둘 다 받아 문자열로 통일한다
     #[serde(default, deserialize_with = "ports")]
     pub remote_port: Vec<String>,
@@ -115,6 +122,8 @@ pub enum Source {
 #[serde(deny_unknown_fields)]
 pub struct Policy {
     pub name: String,
+    /// ACL 번호(1~9999). 있으면 작은 번호가 먼저 판정된다(필터 weight). 없으면 예전 규칙(허용이 차단보다 위)
+    pub priority: Option<u32>,
     pub action: Action,
     #[serde(rename = "match")]
     pub matcher: Match,

@@ -1244,10 +1244,14 @@ fn handle(
                 )
                 .is_ok();
             if !watched || !caller.scope().process_visible(&world.graph, v.node_id) {
-                return Err(RpcError::with(ErrorCode::InvalidParams, "관찰 대상이 아닙니다".to_string()));
+                return Err(RpcError::with(
+                    ErrorCode::InvalidParams,
+                    "관찰 대상이 아닙니다".to_string(),
+                ));
             }
             // 자손 300까지(상한을 넘으면 접속·쓰기를 한 자손 먼저 — install_xray)
-            let run = graph::install::install_xray(&world.graph, v.node_id, 300).map_err(internal)?;
+            let run =
+                graph::install::install_xray(&world.graph, v.node_id, 300).map_err(internal)?;
             // 33차 Q1: 대리 실행(예약 작업·WMI·서비스)으로 이어 적은 파일 — 추정. 관찰 기간(시작~끝) 안에서 뿌리 꼬리표로
             let (start, until): (i64, i64) = world
                 .graph
@@ -1285,9 +1289,11 @@ fn handle(
             let v: api::methods::AgentsParams = serde_json::from_value(p)
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
             // 읽기만(판정하지 않는다). 미리 계산 전(시작 직후 몇 분)이면 빈 목록과 ready=false — 조회 때 계산하지 않는다
-            let since_ft = crate::runtime::unix_to_filetime(world.engine_wall() - v.days as i64 * 86_400);
+            let since_ft =
+                crate::runtime::unix_to_filetime(world.engine_wall() - v.days as i64 * 86_400);
             let scope = caller.scope();
-            let (ready, mut items): (bool, Vec<&graph::agent::AgentRun>) = match &world.agent_cache {
+            let (ready, mut items): (bool, Vec<&graph::agent::AgentRun>) = match &world.agent_cache
+            {
                 Some((_, all)) => (
                     true,
                     all.iter()
@@ -1302,6 +1308,13 @@ fn handle(
             let total = items.len();
             items.truncate(v.limit as usize);
             j(serde_json::json!({ "ready": ready, "items": items, "total": total }))
+        }
+        Method::NetInterfaces => {
+            let items = world
+                .host
+                .interfaces()
+                .map_err(|e| RpcError::with(ErrorCode::Internal, e))?;
+            j(serde_json::json!({ "items": items }))
         }
         Method::ListenersList => {
             let ls = world

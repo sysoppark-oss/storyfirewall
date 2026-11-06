@@ -60,6 +60,8 @@ pub enum Method {
     AgentsList,
     /// 변경 장부 (17판 23-2 ③): 첫 실행 관찰 대상(프로세스 노드)과 자손이 만든 파일·자동 실행·접속. 조회(사용자 범위)
     LedgerGet,
+    /// ACL 정책 관리: 네트워크 인터페이스 목록(별칭·설명·상태·이 PC 주소). 조회(사용자)
+    NetInterfaces,
 }
 
 impl Method {
@@ -78,6 +80,7 @@ impl Method {
         ("installs.list", Method::InstallsList),
         ("agents.list", Method::AgentsList),
         ("ledger.get", Method::LedgerGet),
+        ("net.interfaces", Method::NetInterfaces),
         ("events.subscribe", Method::EventsSubscribe),
         ("judge.feedback_normal", Method::JudgeFeedbackNormal),
         ("judge.baseline_status", Method::JudgeBaselineStatus),
@@ -476,6 +479,7 @@ pub fn validate_params(
         }
         Method::ConnectionsList
         | Method::ListenersList
+        | Method::NetInterfaces
         | Method::PolicyHistory
         | Method::PolicyList => {
             let _: Listed = serde_json::from_value(p.clone())
@@ -551,7 +555,10 @@ pub fn validate_params(
                             })
                         })
                 });
-                check(ok, "remote_trusted_tools 는 도구 이름(소문자·_) 16개까지의 배열")?;
+                check(
+                    ok,
+                    "remote_trusted_tools 는 도구 이름(소문자·_) 16개까지의 배열",
+                )?;
             }
         }
     }

@@ -11,7 +11,22 @@ pub struct Listener {
     pub any_addr: bool,
 }
 
+/// ACL 정책 관리: 네트워크 인터페이스 한 개(정책 화면의 "인터페이스 선택")
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct NetIf {
+    /// 별칭(예: "Wi-Fi", "이더넷") — 정책에 저장하는 이름
+    pub alias: String,
+    pub description: String,
+    pub up: bool,
+    /// 이 PC 주소 "주소/접두 길이"
+    pub addrs: Vec<String>,
+}
+
 pub trait Host: Send {
+    /// 네트워크 인터페이스 목록. 지원하지 않는 환경이면 Err
+    fn interfaces(&self) -> Result<Vec<NetIf>, String> {
+        Err("이 환경에서는 네트워크 인터페이스를 볼 수 없습니다".into())
+    }
     /// 지금 열린 리스닝 소켓. 지원하지 않는 환경이면 Err
     fn listeners(&self) -> Result<Vec<Listener>, String> {
         Err("이 환경에서는 리스닝 포트를 볼 수 없습니다".into())
