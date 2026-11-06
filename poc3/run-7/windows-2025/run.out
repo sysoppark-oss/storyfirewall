@@ -1,6 +1,0 @@
-A3 collector-poc — 90초 수집 → collector.db (experimental=true)
-Traceback (most recent call last):
-  File "D:\a\storyfirewall\storyfirewall\clockcheck.py", line 2, in <module>
-    mark = int(open("clockmark.txt").read().strip())
-               ^^^^^^^^^^^^^^^^^^^^^
-FileNotFoundError: [Errno 2] No such file or directory: 'clockmark.txt'
