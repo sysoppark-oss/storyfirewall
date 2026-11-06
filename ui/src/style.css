@@ -275,5 +275,5 @@ table.grid.empty thead { display: none; }
 .flow-side-title { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 .flow-tail { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 10px; }
 .flow-tail h4 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 500; }
-.flow-tail-row { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 8px; font-size: 13px; padding: 2px 0; }
+.flow-tail-row { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 8px; font-size: 13px; padding: 2px 0; }
 @media (max-width: 1100px) { .flow-body { grid-template-columns: minmax(0, 1fr); } .flow-rail { flex-direction: row; flex-wrap: wrap; } .flow-rail .rail-step { flex: 1 1 160px; } }

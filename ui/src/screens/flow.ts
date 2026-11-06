@@ -41,10 +41,13 @@ export interface RailStep {
   edge: number | null;
 }
 export const RAIL_NAMES = ["유입", "실행", "자리잡기", "외부 접속", "파괴 징후"];
+/// 카드 항목 이름 → 장(항목에는 장 번호가 없다). 사실 문장이 없는 장은 이 항목으로 채운다
+export const ITEM_CHAPTER: Record<string, number> = { 출신: 1, 위치: 2, 서명: 2, "자동 실행": 3, 접속: 4 };
 export function railSteps(ev: {
   reached?: number[];
   sentences: { text: string; ts: number; edge_ids: number[]; chapter: number | null }[];
   destroy?: { sentence: string; ts: number; edge_id: number };
+  items?: { label: string; value: string; edge_ids: number[] }[];
 }): RailStep[] {
   return RAIL_NAMES.map((name, i) => {
     const n = i + 1;
@@ -54,8 +57,11 @@ export function railSteps(ev: {
     }
     // 그 장의 가장 이른 사실 문장
     const s = ev.sentences.filter((x) => x.chapter === n).sort((a, b) => a.ts - b.ts)[0];
-    const on = (ev.reached ?? []).includes(n) || !!s;
-    return { n, name, on, text: s?.text ?? null, ts: s?.ts ?? null, edge: s?.edge_ids[0] ?? null };
+    // 문장이 없으면 그 장에 해당하는 카드 항목("출신: 인터넷에서 받은 파일" 등) — 켜진 장에 "기록 없음"이 뜨는 모순 방지
+    const it = s ? undefined : (ev.items ?? []).find((x) => ITEM_CHAPTER[x.label] === n);
+    const on = (ev.reached ?? []).includes(n) || !!s || !!it;
+    if (it) return { n, name, on, text: `${it.label}: ${it.value}`, ts: null, edge: it.edge_ids[0] ?? null };
+    return { n, name, on, text: s?.text ?? null, ts: s && s.ts > 0 ? s.ts : null, edge: s?.edge_ids[0] ?? null };
   });
 }
 
@@ -106,6 +112,7 @@ export function flowView(ev: {
   reached?: number[];
   sentences: { text: string; ts: number; edge_ids: number[]; chapter: number | null }[];
   destroy?: { sentence: string; ts: number; edge_id: number; cmdline: string };
+  items?: { label: string; value: string; edge_ids: number[] }[];
 }): HTMLElement {
   const root = el("div", "card flowview");
   const rail = el("ol", "flow-rail");
@@ -134,7 +141,7 @@ export function flowView(ev: {
     if (s.ts) head.append(" ", el("span", "muted small", fmtShortSec(filetimeToUnix(s.ts))));
     const body = el("div", "rail-body", head);
     if (s.text) body.append(ext("div", s.text));
-    else body.append(el("div", "muted small", s.n === 3 ? "자동 실행 등록 기록 없음" : "해당 기록 없음"));
+    else body.append(el("div", "muted small", s.on ? "판정에 포함됨 — 근거는 카드 항목" : s.n === 3 ? "자동 실행 등록 기록 없음" : "해당 기록 없음"));
     if (s.edge != null) {
       const box = el("div", "evidence-box");
       const edge = s.edge;
@@ -280,7 +287,9 @@ export function flowView(ev: {
   tail.append(el("h4", undefined, "오늘 한 일 — 이 사건 (새 줄이 위로)"));
   if (!rows.length) tail.append(el("p", "muted small", "기록 없음"));
   for (const s of rows) {
-    const line = el("div", "flow-tail-row", el("span", "muted small time", fmtShortSec(filetimeToUnix(s.ts))), ext("span", s.text));
+    // 시각 없는 문장(요약·속성 문장)은 "—" — 1601년·1970년 같은 가짜 시각을 보이지 않는다
+    const when = s.ts > 0 && filetimeToUnix(s.ts) > 946684800 ? fmtShortSec(filetimeToUnix(s.ts)) : "—";
+    const line = el("div", "flow-tail-row", el("span", "muted small time", when), ext("span", s.text));
     tail.append(line);
   }
 

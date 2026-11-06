@@ -62,3 +62,19 @@ describe("조상 실행 파일 숨김", () => {
     expect(hiddenOrigin({ side: "action", node: { kind: "file" }, via: { rel: "executed_as", chapter: null } })).toBe(false);
   });
 });
+
+describe("장 레일 — 문장 없는 장은 카드 항목으로", () => {
+  it("켜진 장에 '기록 없음'이 뜨지 않는다", async () => {
+    const { railSteps } = await import("./flow");
+    const st = railSteps({
+      reached: [1, 2, 3, 4],
+      sentences: [{ text: "요약", ts: 5, edge_ids: [7], chapter: 4 }],
+      items: [{ label: "출신", value: "인터넷에서 받은 파일", edge_ids: [1] }, { label: "자동 실행", value: "Run\\Updater", edge_ids: [3] }],
+    });
+    expect(st[0]!.text).toBe("출신: 인터넷에서 받은 파일");
+    expect(st[0]!.edge).toBe(1);
+    expect(st[2]!.text).toBe("자동 실행: Run\\Updater");
+    expect(st[1]!.on).toBe(true); // reached 에 있으나 항목도 없음 → 켜짐, 글자는 화면에서 "판정에 포함됨"
+    expect(st[3]!.text).toBe("요약");
+  });
+});
