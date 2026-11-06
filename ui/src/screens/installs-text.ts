@@ -27,6 +27,8 @@ export interface InstallRun {
   grouped?: string[];
   /// 실행 파일의 유효 서명 회사(없으면 서명 없음·확인 안 됨)
   signer?: string | null;
+  /// 잘렸어도 접속·자동 실행·파일 쓰기를 한 자손은 모두 담았나(그 개수엔 "이상"을 붙이지 않는다)
+  facts_complete?: boolean;
 }
 
 /// 조회 범위(일). 서비스 허용 범위 1..30

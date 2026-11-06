@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { agentSummary, foundByText, agentEmptyText, signerText, groupByTool, moreText, agentDidSomething } from "./agents-text";
+import { agentSummary, foundByText, agentEmptyText, signerText, groupByTool, moreText, agentDidSomething, runCountText } from "./agents-text";
 import type { InstallRun } from "./installs-text";
 
-type Part = Pick<InstallRun, "image" | "procs" | "files" | "autoruns" | "remotes" | "commands" | "truncated">;
+type Part = Pick<InstallRun, "image" | "procs" | "files" | "autoruns" | "remotes" | "commands" | "truncated" | "facts_complete">;
 const base: Part = { image: "C:\\a\\claude.exe", procs: ["C:\\a\\claude.exe"], files: [], autoruns: [], remotes: [], commands: [], truncated: false };
 
 describe("agents-text", () => {
@@ -14,6 +14,13 @@ describe("agents-text", () => {
   it("모두 0이면 실행만 기록됨", () => {
     expect(agentSummary({ ...base })).toContain("실행만 기록됨");
     expect(agentDidSomething({ ...base })).toBe(false);
+  });
+  it("잘려도 사실을 모두 담았으면 파일·접속은 정확값", () => {
+    const r = { ...base, procs: ["C:\\a\\claude.exe", "x"], files: ["f"], remotes: [["h", 1]] as [string, number][], truncated: true, facts_complete: true };
+    expect(agentSummary(r)).toBe("프로그램 1개 이상 실행 · 파일 1개 만듦 · 접속한 곳 1곳");
+    expect(agentSummary({ ...r, facts_complete: false })).toContain("파일 1개 이상");
+    expect(runCountText(5, false)).toBe("실행 5건");
+    expect(runCountText(50, true)).toBe("실행 50건 이상");
   });
   it("잘렸으면 이상", () => {
     expect(agentSummary({ ...base, procs: ["C:\\a\\claude.exe", "x", "y"], truncated: true })).toBe("프로그램 2개 이상 실행");

@@ -174,7 +174,7 @@ svg.worldmap .on { stroke: var(--select); stroke-width: 2; }
 .flash { outline: 2px solid var(--brand-strong); outline-offset: 0; transition: outline-color 0.8s ease; }
 .flash.flash-out { outline-color: transparent; }
 /* D022-1: "N건" 칩 — 제목 바로 옆 중립 칩 */
-.card-head .badge.count { display: inline-block; margin-left: 8px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; line-height: 18px; color: var(--muted); font-weight: 400; }
+.card-head .badge.count, h2 .badge.count { display: inline-block; margin-left: 8px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; line-height: 18px; color: var(--muted); font-weight: 400; }
 .occ-where { color: var(--muted); margin: 0 8px; }
 /* D023-3: 마우스로 누른 뒤 포커스 테두리가 남지 않게 — 키보드 이동 때만 */
 .nav-btn:focus { outline: none; }

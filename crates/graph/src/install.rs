@@ -76,6 +76,9 @@ pub struct InstallRun {
     /// L062(30차 Q1): 설치 파일의 유효 서명 회사(서명이 유효할 때만). 시간 묶기는 같은 서명 회사끼리만
     #[serde(default)]
     pub signer: Option<String>,
+    /// 자손이 잘렸어도(`truncated`) 접속·자동 실행·파일 쓰기를 한 자손은 모두 담았나(화면 검수 N1: 그 개수에는 "이상"을 붙이지 않는다)
+    #[serde(default)]
+    pub facts_complete: bool,
 }
 
 /// 앞 설치의 마지막 기록 뒤 이 안(100ns, 2분)에 시작했고 **둘 다 같은 회사의 유효 서명**이면 같은 설치로 묶는다(L062, 30차 Q1:
@@ -309,8 +312,11 @@ pub fn install_xray(store: &Store, root: i64, max_procs: usize) -> Result<Instal
     let mut ids = vec![root];
     // 32차 Gemini Q5: 자손을 상한까지 앞에서부터만 담으면, 의미 없는 자식 수백 개를 먼저 띄워 진짜 행동을 밀어낼 수 있다.
     // 상한을 넘으면 더 넓게(10배) 읽고, 접속·자동 실행 등록·파일 쓰기를 했거나 판정 장이 붙은 자손을 먼저 담는다
-    let desc = descendants(store, root, max_procs.saturating_mul(10) + 1)?;
+    let wide = max_procs.saturating_mul(10);
+    let desc = descendants(store, root, wide + 1)?;
+    let desc_len_within = desc.len() <= wide;
     let truncated = desc.len() > max_procs;
+    let mut facts_complete = !truncated;
     if truncated {
         let mut act = store.conn().prepare_cached(
             "SELECT 1 FROM edges WHERE src = ?1 AND (rel IN ('connected','registered','wrote') OR chapter IS NOT NULL) LIMIT 1",
@@ -323,6 +329,8 @@ pub fn install_xray(store: &Store, root: i64, max_procs: usize) -> Result<Instal
                 quiet.push(d);
             }
         }
+        // 넓게 읽은 범위(10배)도 넘쳤으면 그 밖의 자손은 모른다
+        facts_complete = busy.len() <= max_procs && desc_len_within;
         ids.extend(busy.into_iter().chain(quiet).take(max_procs));
     } else {
         ids.extend(desc);
@@ -426,6 +434,7 @@ pub fn install_xray(store: &Store, root: i64, max_procs: usize) -> Result<Instal
         persistence,
         grouped: Vec::new(),
         signer,
+        facts_complete,
     })
 }
 

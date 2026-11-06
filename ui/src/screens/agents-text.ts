@@ -34,17 +34,18 @@ export function agentDidSomething(run: Pick<InstallRun, "image" | "procs" | "fil
 }
 
 /// 한 줄 요약: "명령 2개 실행 · 프로그램 3개 실행 · 파일 1개 만듦 · 접속한 곳 4곳".
-/// 검수 1: 상한에서 잘렸으면 숫자는 "이상"(상한 값이 실제 개수로 읽히지 않게)
-export function agentSummary(run: Pick<InstallRun, "image" | "procs" | "files" | "autoruns" | "remotes" | "commands" | "persistence" | "truncated">): string {
+/// 상한에서 잘렸으면 프로그램·명령 수는 "이상". 파일·자동 실행·접속은 서비스가 그것을 한 자손을 모두 담았다고 하면(facts_complete) 정확값
+export function agentSummary(run: Pick<InstallRun, "image" | "procs" | "files" | "autoruns" | "remotes" | "commands" | "persistence" | "truncated" | "facts_complete">): string {
   const more = run.truncated ? " 이상" : "";
+  const factMore = run.truncated && !run.facts_complete ? " 이상" : "";
   const parts: string[] = [];
   if (run.commands.length) parts.push(`명령 ${run.commands.length}개${more} 실행`);
   const procs = childProcs(run).length;
   if (procs) parts.push(`프로그램 ${procs}개${more} 실행`);
-  if (run.files.length) parts.push(`파일 ${run.files.length}개${more} 만듦`);
+  if (run.files.length) parts.push(`파일 ${run.files.length}개${factMore} 만듦`);
   const auto = run.autoruns.length + (run.persistence?.length ?? 0);
-  if (auto) parts.push(`자동 실행 관련 ${auto}건${more}`);
-  if (run.remotes.length) parts.push(`접속한 곳 ${run.remotes.length}곳${more}`);
+  if (auto) parts.push(`자동 실행 관련 ${auto}건${factMore}`);
+  if (run.remotes.length) parts.push(`접속한 곳 ${run.remotes.length}곳${factMore}`);
   return parts.length ? parts.join(" · ") : "실행만 기록됨 — 실행한 프로그램·명령·접속·만든 파일 없음";
 }
 
@@ -60,6 +61,11 @@ export function groupByTool<T extends { key: string; display: string; run: { sta
     g.runs.push(it);
   }
   return out;
+}
+
+/// 묶음 머리의 건수(재검수 N2): 목록이 상한에서 잘렸으면 화면에 받은 건수 뒤에 "이상"
+export function runCountText(n: number, listTruncated: boolean): string {
+  return `실행 ${n}건${listTruncated ? " 이상" : ""}`;
 }
 
 /// 목록 상한 안내(검수 7)

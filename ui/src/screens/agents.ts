@@ -7,7 +7,7 @@ import { loadingBox, failBox, noDataBox, collectionStalled, type HealthLike } fr
 import { buildCard } from "./installs";
 import {
   type AgentRun, AGENT_DAYS, AGENT_HOW_FOUND, agentSummary, agentEmptyText, foundByText, signerText,
-  agentRangeLabel, agentDidSomething, groupByTool, moreText,
+  agentRangeLabel, agentDidSomething, groupByTool, moreText, runCountText,
 } from "./agents-text";
 
 const LIMIT = 50;
@@ -58,9 +58,10 @@ export function agents(): HTMLElement {
       return;
     }
     cards.append(el("p", "muted small", AGENT_HOW_FOUND));
+    const listCut = (r.result.total ?? r.result.items.length) > r.result.items.length;
     for (const g of groupByTool(r.result.items)) {
       const head = el("h2", undefined, g.display);
-      head.append(el("span", "badge count", `실행 ${g.runs.length}건`));
+      head.append(el("span", "badge count", runCountText(g.runs.length, listCut)));
       cards.append(head);
       const busy = g.runs.filter((a) => agentDidSomething(a.run));
       for (const a of busy) cards.append(runCard(a));
