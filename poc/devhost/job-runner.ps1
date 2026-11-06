@@ -120,9 +120,18 @@ try {
                     Log $id ("done exit=" + $p.ExitCode + " out=" + $(if ($last) { $last.FullName } else { "-" }))
                 }
                 "install" {
-                    $out = & $git -C $repo -c core.hooksPath=NUL -c core.fsmonitor=false fetch --quiet origin "+refs/heads/dev-builds:refs/remotes/origin/dev-builds" 2>&1
+                    # 2026-11-06: builds now come from the public repo's CI and are copied to dev-builds-gh by the dev
+                    # session. Azure (private repo) still writes dev-builds with an hour-plus lag and could overwrite a
+                    # newer build with an older one (install-37, install-50). Prefer dev-builds-gh; fall back to dev-builds.
+                    $ref = "origin/dev-builds-gh"
+                    $out = & $git -C $repo -c core.hooksPath=NUL -c core.fsmonitor=false fetch --quiet origin "+refs/heads/dev-builds-gh:refs/remotes/origin/dev-builds-gh" 2>&1
+                    if ($LASTEXITCODE -ne 0) {
+                        $ref = "origin/dev-builds"
+                        $out = & $git -C $repo -c core.hooksPath=NUL -c core.fsmonitor=false fetch --quiet origin "+refs/heads/dev-builds:refs/remotes/origin/dev-builds" 2>&1
+                    }
                     if ($LASTEXITCODE -ne 0) { Log $id ("fetch failed exit=" + $LASTEXITCODE); Log $id "done exit=1"; break }
-                    $man = (& $git -C $repo show "origin/dev-builds:manifest.txt") -join "`n"
+                    Log $id ("source " + $ref)
+                    $man = (& $git -C $repo show ($ref + ":manifest.txt")) -join "`n"
                     $pin = if ($man -match '(?m)^pin=([0-9a-f]{64})\s*$') { $Matches[1] } else { $null }
                     $want = if ($man -match '(?m)^setup_sha256=([0-9a-f]{64})\s*$') { $Matches[1] } else { $null }
                     $built = if ($man -match '(?m)^commit=([0-9a-f]{40})\s*$') { $Matches[1] } else { "?" }
@@ -137,7 +146,7 @@ try {
                     & icacls.exe $dl /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" 2>&1 | Out-Null
                     if ($LASTEXITCODE -ne 0) { Log $id ("rejected: icacls exit=" + $LASTEXITCODE); Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue; Log $id "done exit=1"; break }
                     $zip = Join-Path $dl "s.zip"
-                    & $git -C $repo archive --format=zip -o $zip origin/dev-builds story-firewall-dev-setup.exe 2>&1 | Out-Null
+                    & $git -C $repo archive --format=zip -o $zip $ref story-firewall-dev-setup.exe 2>&1 | Out-Null
                     # Zip-slip guard: no Expand-Archive. Accept exactly one entry with the exact expected name and copy
                     # that entry's bytes to a fixed path inside $dl.
                     $setup = Join-Path $dl "story-firewall-dev-setup.exe"
