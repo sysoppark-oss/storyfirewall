@@ -1,0 +1,11 @@
+   Compiling story-firewall-ui v0.1.0 (D:\a\storyfirewall\storyfirewall\ui\src-tauri)
+   Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
+    Finished `release` profile [optimized] target(s) in 6.24s
+     Running unittests src\lib.rs (target\release\deps\story_firewall_ui_lib-386a550111877501.exe)
+
+running 2 tests
+test approve::tests::uuid_and_args ... ok
+test tray::tests::watchdog_notifies_once_after_threshold_and_probes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.61s
+
