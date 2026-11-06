@@ -873,16 +873,28 @@ pub fn judge_and_notify(world: &mut World) {
     let now = world.engine_wall();
     for s in stories.iter() {
         let ch = s.chapter as i64;
+        let mut quiet = false;
         if let Some(rec) = triage.get(&s.root).filter(|r| !r.state.is_open()) {
-            if !crate::triage::recur_if_escalated(&world.graph, s.root, rec, ch, s.score, now) {
+            let dst = crate::dispatch::story_dst(&world.graph, s);
+            let Some(why) = crate::triage::recur_if_escalated(&world.graph, s.root, rec, ch, s.score, &dst, now) else {
                 continue;
-            }
+            };
             world.notified.remove(&s.root);
+            let text = match why {
+                crate::triage::Recur::Escalated { from, to } => format!("{from}장에서 조치했는데 {to}장까지 이어짐"),
+                crate::triage::Recur::NewDst(k) => format!("조치 뒤 새 접속지·등록 {k}곳"),
+            };
             let _ = world.engine.record_event(
                 "story_recurred",
                 2,
-                format!("뿌리 {} {} — {}장에서 조치했는데 {}장까지 이어짐", s.root, s.root_label, rec.chapter, ch),
+                format!("뿌리 {} {} — {}", s.root, s.root_label, text),
             );
+            // 39차 Q2③: 재발 알림 상한 — 그 뒤로는 카드에만 남는다
+            quiet = rec.recur_count + 1 > crate::triage::RECUR_NOTIFY_MAX;
+        }
+        if quiet {
+            world.notified.insert(s.root, ch);
+            continue;
         }
         if should_notify(world.notified.get(&s.root).copied(), s.level, ch) {
             world.notified.insert(s.root, ch);

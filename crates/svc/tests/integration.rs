@@ -537,10 +537,17 @@ fn triage_states_filter_and_recurrence_reopens_and_notifies() {
     // 조사됨 (조회 권한으로 된다 — 차단·설정을 바꾸지 않는다)
     let v = a.call("story.triage", serde_json::json!({"root": root, "state": "investigated"}));
     assert_eq!(v["result"]["state"], serde_json::json!("investigated"), "{v}");
-    // acted 는 action 필수
-    let v = a.call("story.triage", serde_json::json!({"root": root, "state": "acted"}));
+    // 39차 Q3: 조회 권한(story.triage)으로는 알림을 끄는 상태로 못 간다 — 조치함·닫힘은 story.triage_set(관리자·request_id)
+    let v = a.call("story.triage", serde_json::json!({"root": root, "state": "acted", "action": "watch"}));
     assert!(v["error"].is_object(), "{v}");
-    let v = a.call("story.triage", serde_json::json!({"root": root, "state": "acted", "action": "watch", "note": "며칠 지켜봄"}));
+    let mut u = Client::connect(&rt, 200, 2); // 비관리자
+    u.hello();
+    let v = u.call("story.triage_set", serde_json::json!({"request_id": UUID, "root": root, "state": "closed"}));
+    assert_eq!(v["error"]["code"], serde_json::json!(-32001), "비관리자는 닫지 못한다 {v}");
+    // acted 는 action 필수
+    let v = a.call("story.triage_set", serde_json::json!({"request_id": UUID, "root": root, "state": "acted"}));
+    assert!(v["error"].is_object(), "{v}");
+    let v = a.call("story.triage_set", serde_json::json!({"request_id": UUID, "root": root, "state": "acted", "action": "watch", "note": "며칠 지켜봄"}));
     assert_eq!(v["result"]["action"], serde_json::json!("watch"), "{v}");
     assert_eq!(v["result"]["chapter"], serde_json::json!(3), "조치 시점의 장");
     // 기본 목록(처리 안 한 사건)에서 빠지고, done 목록에 있다
@@ -576,11 +583,38 @@ fn triage_states_filter_and_recurrence_reopens_and_notifies() {
     assert!(log[0]["note"].as_str().unwrap().starts_with("재발"), "{v}");
     assert_eq!(log[0]["actor"], serde_json::json!("system"));
     // 닫힘
-    let v = a.call("story.triage", serde_json::json!({"root": root, "state": "closed"}));
+    let v = a.call("story.triage_set", serde_json::json!({"request_id": UUID, "root": root, "state": "closed"}));
     assert_eq!(v["result"]["state"], serde_json::json!("closed"), "{v}");
     assert_eq!(v["result"]["chapter"], serde_json::json!(4));
+    assert_eq!(v["result"]["recur_count"], serde_json::json!(1));
     let v = a.call("story.events", serde_json::json!({"triage": "all"}));
     assert_eq!(v["result"]["counts"]["closed"], serde_json::json!(1), "{v}");
+    // 같은 접속지로 다시 접속해도 재발 아님
+    rt.tx.send(Command::Ingest(vec![
+        ev(t + 7 * s, "etw:network", EventKind::Connect { proc: ProcRef::new(2200, None), proto: Proto::Tcp, direction: Direction::Out, laddr: "10.0.0.2".into(), lport: 50001, raddr: "203.0.113.9".into(), rport: 8443 }),
+    ])).unwrap();
+    rt.tx.send(Command::Judge).unwrap();
+    assert!(a.next_notification(Duration::from_millis(800)).is_none(), "같은 접속지 반복은 재발 아님");
+    // 39차 Q2①: 같은 4장이라도 조치 뒤 새 접속지가 생기면 재발 → 새 사건·알림
+    rt.tx.send(Command::Ingest(vec![
+        ev(t + 8 * s, "etw:dns", EventKind::DnsQuery { proc: ProcRef::new(2200, None), name: "c2b.evil.example".into(), results: vec!["198.51.100.7".into()] }),
+        ev(t + 9 * s, "etw:network", EventKind::Connect { proc: ProcRef::new(2200, None), proto: Proto::Tcp, direction: Direction::Out, laddr: "10.0.0.2".into(), lport: 50002, raddr: "198.51.100.7".into(), rport: 443 }),
+    ])).unwrap();
+    rt.tx.send(Command::Judge).unwrap();
+    let mut got = None;
+    for _ in 0..5 {
+        if let Some(n) = a.next_notification(Duration::from_secs(2)) {
+            if n["params"]["kind"] == serde_json::json!("story_suspicious") {
+                got = Some(n);
+                break;
+            }
+        }
+    }
+    assert!(got.is_some(), "새 접속지 재발 알림");
+    let v = a.call("story.triage_log", serde_json::json!({"root": root}));
+    assert_eq!(v["result"]["state"]["state"], serde_json::json!("new"), "{v}");
+    assert_eq!(v["result"]["state"]["recur_count"], serde_json::json!(2), "{v}");
+    assert!(v["result"]["items"][0]["note"].as_str().unwrap().contains("새 접속지"), "{v}");
     rt.shutdown();
 }
 

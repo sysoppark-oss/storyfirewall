@@ -63,6 +63,8 @@ interface StoryEvent {
   feedback_ok?: boolean;
   /// 프로세스에서 시작한 사건의 정상 처리 단위 "부모 → 도구 → (띄운 프로그램)" — 있으면 누르기 전에 이 조합을 확인받는다
   feedback_unit?: string;
+  /// 정상 처리를 할 수 없는 이유(39차 Q1②: 부모를 모르는 도구 등). 있으면 안내 줄에 이 문장을 쓴다
+  feedback_note?: string;
   last_ts?: number;
   /// 수집 시작 전부터 실행 중이던 프로세스의 시작 시각(L024)
   running_since?: number;
@@ -98,6 +100,8 @@ export interface Triage {
   /// unix 초
   updated_ts: number;
   note?: string;
+  /// 재발 횟수(조치·닫기 뒤 새 사건으로 되돌아온 수)
+  recur_count?: number;
 }
 export interface TriageCounts { new: number; investigated: number; acted: number; closed: number }
 export const TRIAGE_STATE_KO: Record<TriageState, string> = { new: "새 사건", investigated: "조사됨", acted: "조치함", closed: "닫힘" };
@@ -110,18 +114,21 @@ export function triageText(t: Triage | null | undefined): string {
 /// 처리 상태 칩. 새 사건=테두리만(눈에 띄게 할 것은 수준 칩), 조사됨=회색, 조치함=초록, 닫힘=연회색
 export function triageChip(t: Triage | null | undefined): HTMLElement {
   const st = t?.state ?? "new";
-  const c = el("span", `chip triage ${st}`, triageText(t));
+  const c = el("span", `chip triage ${st}`, triageText(t) + (t?.recur_count ? ` · 재발 ${t.recur_count}회` : ""));
   const parts: string[] = [];
   if (t && t.updated_ts) parts.push(`${fmtTs(t.updated_ts)}에 바뀜`);
   if (t?.note) parts.push(`메모: ${t.note}`);
   c.title = parts.length ? parts.join(" · ") : "아직 아무 처리도 하지 않은 사건입니다.";
   return c;
 }
-/// 화면 위 상태별 개수 한 줄: "처리 안 한 사건 3 (새 사건 2 · 조사됨 1) · 조치함 4 · 닫힘 1"
-export function triageCountsText(c: TriageCounts | undefined): string {
+/// 화면 위 개수 한 줄(39차 Q4: 화면에 보이는 묶음(카드)을 앞세우고 사건 수는 괄호 안에):
+/// "처리 안 한 묶음 8개 (사건 81건: 새 사건 41 · 조사됨 40) · 조치함 4 · 닫힘 1". 카드 수를 모르면 사건 수만
+export function triageCountsText(c: TriageCounts | undefined, cards?: number): string {
   if (!c) return "";
   const open = c.new + c.investigated;
-  return `처리 안 한 사건 ${open} (새 사건 ${c.new} · 조사됨 ${c.investigated}) · 조치함 ${c.acted} · 닫힘 ${c.closed}`;
+  const head = cards === undefined ? `처리 안 한 사건 ${open}` : `처리 안 한 묶음 ${cards}개 (사건 ${open}건`;
+  const tail = cards === undefined ? ` (새 사건 ${c.new} · 조사됨 ${c.investigated})` : `: 새 사건 ${c.new} · 조사됨 ${c.investigated})`;
+  return `${head}${tail} · 조치함 ${c.acted} · 닫힘 ${c.closed}`;
 }
 
 const LEVEL_KO: Record<string, string> = { suspicious: "의심", watch: "주의", normal: "평범" };
@@ -324,6 +331,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
   const countsLine = el("div", "muted small triage-counts");
   // 사건 추적 개수(화면이 새 사건을 조사됨으로 올릴 때 서비스를 다시 부르지 않고 이 값을 고쳐 보인다)
   let counts: TriageCounts | undefined;
+  let openCards: number | undefined;
   const cards = el("div", "cards-col");
   const today = el("div", "story-today");
   // D014-4: 오늘 한 일 범위(기본 오늘 = 지역 0시 이후)
@@ -378,7 +386,11 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     // D004-2: 오늘 새 활동이 없는 "수집 전부터 실행 중" 사건은 아래 접힌 묶음(한 줄 목록)으로
     const stale = r.result.items.filter((ev) => ev.fresh === false);
     // D020-2: 같은 프로그램·같은 판정은 한 장 + "N건" + 발생 시각 목록(최신 먼저)
-    for (const g of groupStories(r.result.items.filter((ev) => ev.fresh !== false))) {
+    const groups = groupStories(r.result.items.filter((ev) => ev.fresh !== false));
+    // 39차 Q4: 묶음(카드) 수를 앞세운다 — 처리 안 한 사건 필터일 때만 카드 수가 "처리 안 한 묶음"이다
+    openCards = triageSel.value === "open" ? groups.length : undefined; // 수집 전부터 실행 중 묶음(stale)은 한 줄 목록이라 세지 않는다
+    countsLine.textContent = triageCountsText(counts, openCards);
+    for (const g of groups) {
       // 근거 배지는 묶음 합계(대표만이 아니라 N건 전부). 발생 목록은 카드의 "발생 N번" 탭(UI 3판 초안)
       const card = buildCard(sumGroupSources(g.head, g.members), g.members);
       cards.append(card);
@@ -540,8 +552,9 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
           // 프로세스에서 시작한 사건: 정상으로 보는 범위(조합)를 먼저 보이고 확인받는다 — 도구 전체가 아니라 이 조합만
           if (ev.feedback_unit && !confirm(feedbackUnitText(ev.feedback_unit))) return;
           const r2 = await mutation("judge.feedback_normal", { root: ev.root });
-          if (!r2.ok) alert(`실패: ${r2.error.message}`);
-          void load();
+          if (!r2.ok) return alert(`실패: ${r2.error.message}`);
+          // 정상 처리 = 조치함(정상)으로 서비스가 적는다 — 이 카드만 옮긴다(39차 Q5)
+          settleCard({ state: "acted", action: "normal", chapter: ev.triage?.chapter ?? 0, updated_ts: Math.floor(Date.now() / 1000) });
         });
       }
       // D020-1: 핵심 프로세스는 끝내지 않는다 — 같은 자리에 "이 접속지만 차단"
@@ -561,24 +574,48 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
             // 노트북 검수(install-75): 전에는 개수 줄을 비워 첫 화면에서 늘 사라졌고, 조사됨이 된 카드에 "처리 기록" 탭이 없었다
             if (counts && r.result.state === "investigated") {
               counts = { ...counts, new: Math.max(0, counts.new - 1), investigated: counts.investigated + 1 };
-              countsLine.textContent = triageCountsText(counts);
+              countsLine.textContent = triageCountsText(counts, openCards);
             }
             if (!actions.querySelector('[data-tab="log"]')) actions.querySelector(".spacer")?.before(tab("처리 기록", "log", () => triageLogPanel(ev.root)));
           });
         }
       }));
       // 사건 추적 단추: 지켜보기(조치함) · 닫기. 끊기·정상은 서비스가 성공할 때 스스로 조치함으로 적는다
+      // 39차 Q3: 조치함·닫힘은 알림을 끄는 변경 — 승인 창(story.triage_set, 관리자)을 거친다. 조사됨만 조회 권한
+      // 39차 Q5: 성공하면 목록 전체를 다시 부르지 않고(노트북 10초) 이 카드만 옮긴다 — 처리 안 한 사건 필터면 카드를 빼고 개수 줄을 고친다
       const triageSet = async (state: TriageState, action?: TriageAction) => {
         const note = state === "closed" ? (prompt("닫는 이유(선택, 200자까지)") ?? undefined) : undefined;
-        const r = await rpc<Triage>("story.triage", { root: ev.root, state, ...(action ? { action } : {}), ...(note ? { note: note.slice(0, 200) } : {}) });
+        const r = await mutation<Triage>("story.triage_set", { root: ev.root, state, ...(action ? { action } : {}), ...(note ? { note: note.slice(0, 200) } : {}) });
         if (!r.ok) return alert(`실패: ${r.error.message}`);
-        void load();
+        settleCard(r.result);
+      };
+      /// 상태가 처리한 쪽으로 바뀐 뒤 화면만 고친다(목록 다시 안 부름)
+      const settleCard = (t: Triage) => {
+        const before = ev.triage?.state ?? "new";
+        ev.triage = t;
+        if (counts) {
+          const c = { ...counts };
+          if (before === "new") c.new = Math.max(0, c.new - 1); else if (before === "investigated") c.investigated = Math.max(0, c.investigated - 1); else if (before === "acted") c.acted = Math.max(0, c.acted - 1); else c.closed = Math.max(0, c.closed - 1);
+          if (t.state === "acted") c.acted += 1; else if (t.state === "closed") c.closed += 1;
+          counts = c;
+        }
+        if (triageSel.value === "open") {
+          card.remove();
+          if (openCards !== undefined) openCards = Math.max(0, openCards - 1);
+          countsLine.textContent = triageCountsText(counts, openCards);
+          if (!cards.querySelector(".card.event")) cards.append(el("p", "muted", emptyText(triageSel.value, counts)));
+        } else {
+          head.querySelector(".chip.triage")?.replaceWith(triageChip(t));
+          countsLine.textContent = triageCountsText(counts, openCards);
+          if (t.state === "closed") closeBtn.remove();
+          if (t.state === "acted" && t.action === "watch") watchBtn.remove();
+        }
       };
       const st = ev.triage?.state ?? "new";
       const watchBtn = button("지켜보기", () => void triageSet("acted", "watch"), "btn");
-      watchBtn.title = "조치함(지켜보기)으로 표시합니다. 더 높은 장까지 이어지면 새 사건으로 돌아와 다시 알립니다.";
+      watchBtn.title = "조치함(지켜보기)으로 표시합니다(승인 창). 더 높은 장까지 이어지거나 새 접속지가 생기면 새 사건으로 돌아와 다시 알립니다.";
       const closeBtn = button("닫기", () => void triageSet("closed"), "btn");
-      closeBtn.title = "닫힘으로 표시합니다. 더 높은 장까지 이어지면 새 사건으로 돌아옵니다.";
+      closeBtn.title = "닫힘으로 표시합니다(승인 창). 더 높은 장까지 이어지거나 새 접속지가 생기면 새 사건으로 돌아옵니다.";
       // 3) 조치 + 4) 자세히(탭 단추: 누르면 아래 한 칸에 하나만)
       const panel = el("div", "detail-panel");
       const tabs: HTMLButtonElement[] = [];
@@ -611,7 +648,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       actions.append(cutBtn);
       card.append(actions);
       // D1: 안내 줄은 단추 줄 바로 아래 — 탭 패널이 열려도 떨어지지 않게
-      const note = cardNote(!!ev.root_core, ev.feedback_ok === false);
+      const note = cardNote(!!ev.root_core, ev.feedback_ok === false, ev.feedback_note);
       if (note) card.append(el("p", "muted small core-note", note));
       card.append(panel);
       return card;
@@ -780,10 +817,10 @@ function triageLogPanel(root: number): HTMLElement {
 }
 /// D039-2: 상세 패널 머리 한 줄 "이 파일로 실행 N번 · 처음~마지막"
 /// D044-3: 단추 줄 아래 안내 한 줄(핵심 프로세스 + 정상 처리 못 함은 한 줄로 합친다)
-export function cardNote(core: boolean, noFeedback: boolean): string | null {
+export function cardNote(core: boolean, noFeedback: boolean, why?: string): string | null {
   const parts: string[] = [];
   if (core) parts.push("Windows 핵심 프로세스라 끝내지 않습니다. 의심 주소만 막을 수 있습니다.");
-  if (noFeedback) parts.push(FEEDBACK_NOT_YET);
+  if (noFeedback) parts.push(why || FEEDBACK_NOT_YET);
   return parts.length ? parts.join(" ") : null;
 }
 /// 프로세스에서 시작한 사건의 "이건 정상입니다" 확인 문구: 무엇이 정상이 되는지(조합)와 언제 다시 의심하는지를 밝힌다

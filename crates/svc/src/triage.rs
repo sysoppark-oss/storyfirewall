@@ -3,8 +3,11 @@
 //! - 상태: 새 사건(행 없음) → 조사됨 → 조치함[정상·끊음·지켜보기] → 닫힘. 어느 상태에서든 조치·닫기는 된다.
 //! - DB 쓰기는 조치(상태 바꿈)할 때만. 조회(story.events)는 읽기만 한다.
 //! - 처리 기록(incident_log)은 1년 보관(보관 정리 때 지움). 상태 행은 뿌리 노드가 지워지면 함께 지운다.
-//! - 재발: 조치함·닫힘인 사건이 조치 시점보다 높은 장까지 이어지면 "새 사건"으로 되돌리고 기록에 남긴다(주기 판정에서).
-//!   같은 장에서의 반복(같은 접속 N번)은 재발로 보지 않는다 — 장이 올라간 것만.
+//! - 재발: 조치함·닫힘인 사건이 (1) 조치 시점보다 높은 장까지 이어지거나 (2) 같은 장이라도 조치 뒤 **새 접속지·새 자리잡기 등록**이
+//!   생기면 "새 사건"으로 되돌리고 기록에 남긴다(주기 판정에서). 같은 접속지로의 반복(같은 접속 N번)은 재발이 아니다.
+//!   (39차 Q2①: 4장에 머물며 접속지만 바꾸는 정보 탈취 프로그램을 닫아 두면 영원히 조용해지던 맹점.)
+//! - 재발 횟수(recur_count)를 센다. `RECUR_NOTIFY_MAX` 번을 넘으면 Windows 알림은 더 보내지 않고(알림 폭주, 39차 Q2③)
+//!   카드에 "계속 재발 — 정상으로 표시하거나 끊기를" 안내만 남긴다.
 //! - 알림은 처리 안 한 사건(새 사건·조사됨)만. 조치함·닫힘은 재발로 되돌아올 때 다시 알린다.
 
 use std::collections::HashMap;
@@ -19,7 +22,9 @@ CREATE TABLE IF NOT EXISTS incident_state (
   chapter     INTEGER NOT NULL,        -- 상태를 바꾼 시점의 장 (재발 판단)
   score       INTEGER NOT NULL DEFAULT 0,
   updated_ts  INTEGER NOT NULL,        -- unix 초
-  note        TEXT
+  note        TEXT,
+  seen_dst    TEXT,                    -- 조치 시점의 접속지·등록 노드 id(JSON 배열) — 새 것이 생기면 재발
+  recur_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS incident_log (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,6 +40,8 @@ CREATE INDEX IF NOT EXISTS incident_log_root ON incident_log(root, ts);
 
 /// 처리 기록 보관 일수
 pub const LOG_KEEP_DAYS: i64 = 365;
+/// 재발 알림 상한: 이 횟수를 넘는 재발은 Windows 알림을 보내지 않는다(카드에는 남는다)
+pub const RECUR_NOTIFY_MAX: i64 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -103,6 +110,15 @@ pub struct Rec {
     pub updated_ts: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// 재발 횟수(조치·닫기 뒤 새 사건으로 되돌아온 수)
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub recur_count: i64,
+    /// 조치 시점의 접속지·등록 노드 id (화면에는 내지 않음)
+    #[serde(skip)]
+    pub seen_dst: Vec<i64>,
+}
+fn is_zero(n: &i64) -> bool {
+    *n == 0
 }
 impl Rec {
     pub fn new_default() -> Self {
@@ -112,6 +128,8 @@ impl Rec {
             chapter: 0,
             updated_ts: 0,
             note: None,
+            recur_count: 0,
+            seen_dst: Vec::new(),
         }
     }
 }
@@ -184,6 +202,19 @@ fn graph_err(e: graph::GraphError) -> rusqlite::Error {
 
 pub fn ensure_table(store: &Store) {
     let _ = store.conn().execute_batch(DDL);
+    // 이전 판(955f774)의 표에 새 열 보태기 — 이미 있으면 오류를 삼킨다
+    let _ = store
+        .conn()
+        .execute("ALTER TABLE incident_state ADD COLUMN seen_dst TEXT", []);
+    let _ = store.conn().execute(
+        "ALTER TABLE incident_state ADD COLUMN recur_count INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+}
+
+fn parse_dst(s: Option<String>) -> Vec<i64> {
+    s.and_then(|j| serde_json::from_str::<Vec<i64>>(&j).ok())
+        .unwrap_or_default()
 }
 
 fn row_to_rec(r: &rusqlite::Row) -> rusqlite::Result<Rec> {
@@ -195,15 +226,19 @@ fn row_to_rec(r: &rusqlite::Row) -> rusqlite::Result<Rec> {
         chapter: r.get(2)?,
         updated_ts: r.get(3)?,
         note: r.get(4)?,
+        seen_dst: parse_dst(r.get(5)?),
+        recur_count: r.get(6)?,
     })
 }
+
+const REC_COLS: &str = "state, action, chapter, updated_ts, note, seen_dst, recur_count";
 
 /// 뿌리 하나의 상태 (행이 없으면 새 사건)
 pub fn get(store: &Store, root: i64) -> Rec {
     store
         .conn()
         .query_row(
-            "SELECT state, action, chapter, updated_ts, note FROM incident_state WHERE root = ?1",
+            &format!("SELECT {REC_COLS} FROM incident_state WHERE root = ?1"),
             [root],
             |r| row_to_rec(r),
         )
@@ -215,7 +250,7 @@ pub fn all(store: &Store) -> HashMap<i64, Rec> {
     let mut out = HashMap::new();
     let Ok(mut st) = store
         .conn()
-        .prepare("SELECT root, state, action, chapter, updated_ts, note FROM incident_state")
+        .prepare(&format!("SELECT root, {REC_COLS} FROM incident_state"))
     else {
         return out;
     };
@@ -231,6 +266,8 @@ pub fn all(store: &Store) -> HashMap<i64, Rec> {
                 chapter: r.get(3)?,
                 updated_ts: r.get(4)?,
                 note: r.get(5)?,
+                seen_dst: parse_dst(r.get(6)?),
+                recur_count: r.get(7)?,
             },
         ))
     });
@@ -255,14 +292,45 @@ pub fn set(
     note: Option<&str>,
     now: i64,
 ) -> rusqlite::Result<Rec> {
+    set_with_dst(
+        store,
+        root,
+        state,
+        action,
+        chapter,
+        score,
+        actor,
+        note,
+        now,
+        &[],
+        0,
+    )
+}
+
+/// `set` + 조치 시점의 접속지·등록 노드 id(`seen_dst`)와 재발 횟수. 조치함·닫힘으로 바꿀 때 주기 판정의 사건 선에서 모아 넘긴다
+#[allow(clippy::too_many_arguments)]
+pub fn set_with_dst(
+    store: &Store,
+    root: i64,
+    state: State,
+    action: Option<Action>,
+    chapter: i64,
+    score: u8,
+    actor: &str,
+    note: Option<&str>,
+    now: i64,
+    seen_dst: &[i64],
+    recur_count: i64,
+) -> rusqlite::Result<Rec> {
     let cur = get(store, root);
     let same = cur.state == state && cur.action == action && cur.state != State::New;
+    let dst_json = serde_json::to_string(seen_dst).unwrap_or_else(|_| "[]".into());
     let tx = store.begin_write().map_err(graph_err)?;
     tx.execute(
-        "INSERT INTO incident_state(root, state, action, chapter, score, updated_ts, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "INSERT INTO incident_state(root, state, action, chapter, score, updated_ts, note, seen_dst, recur_count) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
          ON CONFLICT(root) DO UPDATE SET state = excluded.state, action = excluded.action, chapter = excluded.chapter,
-           score = excluded.score, updated_ts = excluded.updated_ts, note = excluded.note",
-        rusqlite::params![root, state.as_str(), action.map(|a| a.as_str()), chapter, score as i64, now, note],
+           score = excluded.score, updated_ts = excluded.updated_ts, note = excluded.note, seen_dst = excluded.seen_dst, recur_count = excluded.recur_count",
+        rusqlite::params![root, state.as_str(), action.map(|a| a.as_str()), chapter, score as i64, now, note, dst_json, recur_count],
     )?;
     if !same {
         tx.execute(
@@ -277,26 +345,56 @@ pub fn set(
         chapter,
         updated_ts: now,
         note: note.map(|s| s.to_string()),
+        recur_count,
+        seen_dst: seen_dst.to_vec(),
     })
 }
 
-/// 재발: 조치함·닫힘인 사건이 조치 때보다 높은 장까지 이어졌다 → 새 사건으로 되돌리고 기록. 되돌렸으면 true
+/// 재발 판단 결과
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Recur {
+    /// 조치 때보다 높은 장까지 이어짐
+    Escalated { from: i64, to: i64 },
+    /// 같은 장이지만 조치 뒤 새 접속지·등록이 생김(개수)
+    NewDst(usize),
+}
+
+/// 재발: 조치함·닫힘인 사건이 (1) 조치 때보다 높은 장까지 이어졌거나 (2) 조치 뒤 새 접속지·등록(`dst_now` 에 있고 `seen_dst` 에 없는 노드)이
+/// 생겼다 → 새 사건으로 되돌리고 기록. 되돌렸으면 Some(이유). 재발 횟수를 하나 올린다
 pub fn recur_if_escalated(
     store: &Store,
     root: i64,
     rec: &Rec,
     chapter: i64,
     score: u8,
+    dst_now: &[i64],
     now: i64,
-) -> bool {
-    if rec.state.is_open() || chapter <= rec.chapter {
-        return false;
+) -> Option<Recur> {
+    if rec.state.is_open() {
+        return None;
     }
-    let note = format!(
-        "재발: {}장에서 조치했는데 {}장까지 이어짐",
-        rec.chapter, chapter
-    );
-    set(
+    let why = if chapter > rec.chapter {
+        Recur::Escalated {
+            from: rec.chapter,
+            to: chapter,
+        }
+    } else {
+        let new = dst_now.iter().filter(|d| !rec.seen_dst.contains(d)).count();
+        if new == 0 {
+            return None;
+        }
+        Recur::NewDst(new)
+    };
+    let n = rec.recur_count + 1;
+    let mut note = match &why {
+        Recur::Escalated { from, to } => format!("재발: {from}장에서 조치했는데 {to}장까지 이어짐"),
+        Recur::NewDst(k) => format!("재발: 조치 뒤 새 접속지·등록 {k}곳"),
+    };
+    if n > RECUR_NOTIFY_MAX {
+        note.push_str(&format!(" · {n}번째 재발 — 알림은 더 보내지 않습니다. 정상이면 '이건 정상입니다', 아니면 끊기를"));
+    }
+    // 되돌린 사건은 seen_dst 를 지금 것으로 — 다음 조치 때 다시 모은다
+    set_with_dst(
         store,
         root,
         State::New,
@@ -306,8 +404,11 @@ pub fn recur_if_escalated(
         "system",
         Some(&note),
         now,
+        dst_now,
+        n,
     )
-    .is_ok()
+    .ok()
+    .map(|_| why)
 }
 
 /// 처리 기록 (최신 먼저)
@@ -360,9 +461,31 @@ mod tests {
         let s = mem();
         assert_eq!(get(&s, 7).state, State::New);
         set(&s, 7, State::Investigated, None, 2, 50, "ui", None, 100).unwrap();
-        set(&s, 7, State::Acted, Some(Action::Watch), 3, 72, "user", Some("지켜봄"), 200).unwrap();
+        set(
+            &s,
+            7,
+            State::Acted,
+            Some(Action::Watch),
+            3,
+            72,
+            "user",
+            Some("지켜봄"),
+            200,
+        )
+        .unwrap();
         // 같은 상태를 두 번: 기록은 한 줄만
-        set(&s, 7, State::Acted, Some(Action::Watch), 3, 72, "user", Some("지켜봄"), 210).unwrap();
+        set(
+            &s,
+            7,
+            State::Acted,
+            Some(Action::Watch),
+            3,
+            72,
+            "user",
+            Some("지켜봄"),
+            210,
+        )
+        .unwrap();
         set(&s, 7, State::Closed, None, 3, 72, "user", None, 300).unwrap();
         let r = get(&s, 7);
         assert_eq!(r.state, State::Closed);
@@ -377,22 +500,123 @@ mod tests {
     #[test]
     fn recur_only_when_chapter_rises() {
         let s = mem();
-        set(&s, 1, State::Acted, Some(Action::Normal), 3, 70, "user", None, 10).unwrap();
+        set_with_dst(
+            &s,
+            1,
+            State::Acted,
+            Some(Action::Normal),
+            3,
+            70,
+            "user",
+            None,
+            10,
+            &[100, 101],
+            0,
+        )
+        .unwrap();
         let r = get(&s, 1);
-        assert!(!recur_if_escalated(&s, 1, &r, 3, 75, 20), "같은 장은 재발 아님");
-        assert!(recur_if_escalated(&s, 1, &r, 4, 80, 30));
+        assert_eq!(
+            recur_if_escalated(&s, 1, &r, 3, 75, &[100, 101], 20),
+            None,
+            "같은 장·같은 접속지는 재발 아님"
+        );
+        assert_eq!(
+            recur_if_escalated(&s, 1, &r, 3, 75, &[100], 20),
+            None,
+            "접속지가 줄어도 재발 아님"
+        );
+        assert_eq!(
+            recur_if_escalated(&s, 1, &r, 4, 80, &[100, 101], 30),
+            Some(Recur::Escalated { from: 3, to: 4 })
+        );
         let r2 = get(&s, 1);
         assert_eq!(r2.state, State::New);
         assert_eq!(r2.chapter, 4);
-        assert!(log(&s, 1, 10)[0].note.as_deref().unwrap().starts_with("재발"));
+        assert_eq!(r2.recur_count, 1);
+        assert!(log(&s, 1, 10)[0]
+            .note
+            .as_deref()
+            .unwrap()
+            .starts_with("재발"));
         // 열린 사건은 재발 판단 대상이 아니다
-        assert!(!recur_if_escalated(&s, 1, &r2, 4, 80, 40));
+        assert_eq!(
+            recur_if_escalated(&s, 1, &r2, 4, 80, &[100, 101, 102], 40),
+            None
+        );
+    }
+
+    /// 39차 Q2①: 같은 장이라도 조치 뒤 새 접속지가 생기면 재발. Q2③: 상한 넘으면 기록에 안내
+    #[test]
+    fn recur_on_new_destination_and_cap_note() {
+        let s = mem();
+        set_with_dst(
+            &s,
+            1,
+            State::Closed,
+            None,
+            4,
+            80,
+            "user",
+            Some("무시"),
+            10,
+            &[100],
+            0,
+        )
+        .unwrap();
+        let r = get(&s, 1);
+        assert_eq!(
+            recur_if_escalated(&s, 1, &r, 4, 80, &[100, 200], 20),
+            Some(Recur::NewDst(1))
+        );
+        let r = get(&s, 1);
+        assert_eq!(r.state, State::New);
+        assert_eq!(r.seen_dst, vec![100, 200]);
+        assert!(log(&s, 1, 10)[0]
+            .note
+            .as_deref()
+            .unwrap()
+            .contains("새 접속지"));
+        // 다시 닫고 → 또 새 접속지 … 상한(3) 넘는 4번째 재발은 알림 안내가 붙는다
+        for (i, d) in [300, 400, 500].iter().enumerate() {
+            let cur = get(&s, 1);
+            set_with_dst(
+                &s,
+                1,
+                State::Closed,
+                None,
+                4,
+                80,
+                "user",
+                None,
+                30 + i as i64 * 10,
+                &cur.seen_dst,
+                cur.recur_count,
+            )
+            .unwrap();
+            let cur = get(&s, 1);
+            let mut now = cur.seen_dst.clone();
+            now.push(*d);
+            assert!(recur_if_escalated(&s, 1, &cur, 4, 80, &now, 35 + i as i64 * 10).is_some());
+        }
+        let r = get(&s, 1);
+        assert_eq!(r.recur_count, 4);
+        assert!(log(&s, 1, 1)[0]
+            .note
+            .as_deref()
+            .unwrap()
+            .contains("알림은 더 보내지 않습니다"));
     }
 
     #[test]
     fn filter_and_counts() {
         let mut c = Counts::default();
-        for st in [State::New, State::Investigated, State::Acted, State::Closed, State::New] {
+        for st in [
+            State::New,
+            State::Investigated,
+            State::Acted,
+            State::Closed,
+            State::New,
+        ] {
             c.add(st);
         }
         assert_eq!(c.open(), 3);

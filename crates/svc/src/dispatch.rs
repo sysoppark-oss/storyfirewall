@@ -353,6 +353,25 @@ fn summarize(
                 ));
             }
         }
+        Method::StoryTriageSet => {
+            let v: TriageSetParams = from(p)?;
+            let label = world
+                .graph
+                .node(v.root)
+                .ok()
+                .map(|n| n.label.clone())
+                .unwrap_or_default();
+            let what = match (v.state.as_str(), v.action.as_deref()) {
+                ("closed", _) => "닫힘 — 이 사건의 알림을 끕니다(더 높은 장이나 새 접속지가 생기면 다시 알립니다)".to_string(),
+                ("acted", Some("watch")) => "조치함 · 지켜보기 — 이 사건의 알림을 끕니다(더 높은 장이나 새 접속지가 생기면 다시 알립니다)".to_string(),
+                ("acted", Some(a)) => format!("조치함 · {a}"),
+                _ => v.state.clone(),
+            };
+            l.push(format!("사건 #{} {} 를 {}", v.root, label, what));
+            if let Some(n) = v.note.as_deref().filter(|n| !n.is_empty()) {
+                l.push(format!("  메모: {n}"));
+            }
+        }
         Method::JudgeFeedbackNormal => {
             let v: FeedbackNormalParams = from(p)?;
             let label = world
@@ -785,10 +804,14 @@ fn handle(
                     let chain_unit = page_stories
                         .iter()
                         .find(|s| s.root == n.root && matches!(s.root_kind, judge::RootKind::IsolatedSvchost | judge::RootKind::LolbinFromDocApp | judge::RootKind::RecoveryInhibit))
-                        .and_then(|_| world.judge_inc.view().and_then(|vw| vw.chain_unit(n.root)).map(|u| u.label()));
-                    v["feedback_ok"] = serde_json::json!(root_kind == "file" || vault || chain_unit.is_some());
-                    if let Some(u) = chain_unit {
-                        v["feedback_unit"] = serde_json::json!(u);
+                        .and_then(|_| world.judge_inc.view().and_then(|vw| vw.chain_unit(n.root)).map(|u| (u.parent.is_some(), u.label())));
+                    // 39차 Q1②: 부모를 모르면 단추를 숨기고 이유를 보인다
+                    let chain_ok = chain_unit.as_ref().is_some_and(|(has_parent, _)| *has_parent);
+                    v["feedback_ok"] = serde_json::json!(root_kind == "file" || vault || chain_ok);
+                    match chain_unit {
+                        Some((true, u)) => v["feedback_unit"] = serde_json::json!(u),
+                        Some((false, _)) => v["feedback_note"] = serde_json::json!("이 도구를 실행한 프로그램을 알 수 없어(수집 전부터 실행 중) '정상'으로 표시할 수 없습니다."),
+                        None => {}
                     }
                     // 사건 추적: 처리 상태(없으면 새 사건)
                     v["triage"] = serde_json::to_value(triage_all.get(&n.root).cloned().unwrap_or_else(crate::triage::Rec::new_default)).unwrap_or_default();
@@ -870,8 +893,21 @@ fn handle(
             if !caller.scope().process_visible(&world.graph, v.root) {
                 return Err(out_of_scope());
             }
+            // 39차 Q3: 조회 권한으로는 "조사됨"만 — 알림을 끄는 상태는 승인 창(story.triage_set)
+            let rec = set_triage(world, v.root, crate::triage::State::Investigated, None, &actor(caller), v.note.as_deref())?;
+            j(serde_json::to_value(rec).unwrap_or_default())
+        }
+        Method::StoryTriageSet => {
+            let v: TriageSetParams = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            if world.graph.node(v.root).is_err() {
+                return Err(RpcError::with(ErrorCode::InvalidParams, format!("없음: {}", v.root)));
+            }
+            if !caller.scope().process_visible(&world.graph, v.root) {
+                return Err(out_of_scope());
+            }
             let state = crate::triage::State::parse(&v.state)
-                .filter(|s| *s != crate::triage::State::New)
+                .filter(|s| matches!(s, crate::triage::State::Acted | crate::triage::State::Closed))
                 .ok_or_else(|| RpcError::with(ErrorCode::InvalidParams, "state"))?;
             let action = if state == crate::triage::State::Acted {
                 Some(
@@ -1057,6 +1093,11 @@ fn handle(
                     return Err(RpcError::with(ErrorCode::InvalidParams, "이 종류의 사건은 아직 '이건 정상입니다'를 지원하지 않습니다".to_string()));
                 }
                 let (key, label) = match world.judge_inc.view().and_then(|vw| vw.chain_unit(v.root)) {
+                    // 39차 Q1②: 부모를 모르는(수집 전부터 돌던) 도구의 조합은 정상 처리하지 않는다 — 부팅 때 먼저 뜬 악성 프로세스가
+                    // "부모 ?" 조합으로 영구 면죄부를 받는 길이 된다
+                    Some(u) if u.parent.is_none() => {
+                        return Err(RpcError::with(ErrorCode::InvalidParams, "이 도구를 실행한 프로그램을 알 수 없어(수집 전부터 실행 중) 정상으로 표시할 수 없습니다. PC 를 다시 시작한 뒤 같은 사건이 다시 보이면 그때 표시해 주세요".to_string()));
+                    }
                     Some(u) => (u.key(), u.label()),
                     None => {
                         return Err(RpcError::with(ErrorCode::InvalidParams, "이 사건의 실행 조합(부모 → 도구 → 띄운 프로그램)을 지금 확인할 수 없습니다. 잠시 뒤 다시 시도해 주세요".to_string()));
@@ -1669,13 +1710,35 @@ pub(crate) fn set_triage(
         .map(|s| (s.chapter as i64, s.score))
         .unwrap_or((0, 0));
     let now = world.engine_wall();
-    let rec = crate::triage::set(&world.graph, root, state, action, chapter, score, actor, note, now)
+    // 39차 Q2①: 조치 시점의 접속지·등록 노드를 적어 둔다 — 같은 장이라도 새 접속지가 생기면 재발
+    let dst = judged_stories(world, 0)
+        .map_err(internal)?
+        .iter()
+        .find(|s| s.root == root)
+        .map(|s| story_dst(&world.graph, s))
+        .unwrap_or_default();
+    let prev = crate::triage::get(&world.graph, root);
+    let rec = crate::triage::set_with_dst(&world.graph, root, state, action, chapter, score, actor, note, now, &dst, prev.recur_count)
         .map_err(internal)?;
     // 조치함·닫힘이 되면 그 사건의 알림 기록은 지운다 — 재발로 돌아올 때 다시 알리기 위해
     if !state.is_open() {
         world.notified.remove(&root);
     }
     Ok(rec)
+}
+
+/// 사건의 접속지·자리잡기 등록 노드 id(사건 선 중 connected·connected_via·registered 의 도착). 재발 판단의 "새 접속지" 기준
+pub(crate) fn story_dst(g: &graph::Store, s: &judge::Story) -> Vec<i64> {
+    let mut v: Vec<i64> = s
+        .edges
+        .iter()
+        .filter_map(|id| g.edge(*id).ok())
+        .filter(|e| matches!(e.rel.as_str(), "connected" | "connected_via" | "registered"))
+        .map(|e| e.dst)
+        .collect();
+    v.sort_unstable();
+    v.dedup();
+    v
 }
 
 /// 서비스 사건 → 응답 (A29). 대상이 프로세스 {pid, create_ft} 면 그래프의 프로세스 노드(`pid@create_ft`)를 찾아 `node_id` 를 붙인다 —
