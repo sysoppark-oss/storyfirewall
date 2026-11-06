@@ -612,3 +612,56 @@ fn hash_change_without_write_edge_is_first_run_again() {
     // 해시를 모르면(계산 실패) 이미 관찰한 것으로 본다(알림 폭주 방지)
     assert!(svc::first_run::already_watched(&st, exe, 0, None));
 }
+
+/// 31차 Gemini Q1: 쓰기·이름 바꾸기 선 없이(블록 복제 등) 내용을 바꾼 뒤 실행 — 이번 실행 뒤 해시가 오기 전에는 "전에 실행됨"으로 버리지 않고 기다린다
+#[test]
+fn rerun_of_watched_path_waits_for_fresh_hash() {
+    let st = store();
+    svc::first_run::ensure_table(&st);
+    let mut ing = Ingester::new(&st);
+    let none = HashSet::new();
+    let exe = r"C:\Users\u\Downloads\tool3.exe";
+    ing.ingest_all(&[
+        start(40, exe, T + 1),
+        sig(exe, "nosignature", None),
+        motw(exe, 3),
+        hash(exe, "aaaa", T + 2),
+    ])
+    .unwrap();
+    let t1 = target(assess(&st, &none, proc_node(&st, 40, T + 1)));
+    st.conn()
+        .execute(
+            "INSERT INTO first_run_watch(file_key, file_node, proc_node, start_ts, until_ts, minutes, mode, blocked, installer, sig, host, content_ts, sha256)
+             VALUES (lower(?1), ?2, ?3, 0, 600, 10, 'notify', 0, 0, 'none', NULL, 0, 'aaaa')",
+            rusqlite::params![exe, t1.file_node, t1.proc_node],
+        )
+        .unwrap();
+    // 다시 실행, 해시는 아직 지난번 것뿐 → 기다림
+    ing.ingest(&start(41, exe, T + 100)).unwrap();
+    assert_eq!(
+        assess(&st, &none, proc_node(&st, 41, T + 100)),
+        Assess::Pending
+    );
+    // 대기 시간이 지나도 안 오면 예전처럼
+    assert_eq!(
+        svc::first_run::assess_at_expiry(&st, &none, proc_node(&st, 41, T + 100)),
+        Assess::Skip("전에 실행된 적 있음")
+    );
+    // 같은 해시가 오면 → 전에 실행됨
+    ing.ingest(&hash(exe, "aaaa", T + 101)).unwrap();
+    assert_eq!(
+        assess(&st, &none, proc_node(&st, 41, T + 100)),
+        Assess::Skip("전에 실행된 적 있음")
+    );
+    // 다음 실행에서 다른 해시가 오면 → 대상
+    ing.ingest(&start(42, exe, T + 200)).unwrap();
+    assert_eq!(
+        assess(&st, &none, proc_node(&st, 42, T + 200)),
+        Assess::Pending
+    );
+    ing.ingest(&hash(exe, "bbbb", T + 201)).unwrap();
+    assert!(matches!(
+        assess(&st, &none, proc_node(&st, 42, T + 200)),
+        Assess::Target(_)
+    ));
+}

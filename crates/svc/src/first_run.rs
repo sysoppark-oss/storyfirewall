@@ -38,6 +38,11 @@ pub const PENDING_CAP: usize = 512;
 /// L065(30차 Q7-a): 우산 아래 동시에 걸린 기한부 필터 상한. 실행 파일 하나 = IPv4·IPv6 필터 2개라 프로그램 50개.
 /// 서명 없는 파일을 수백 개 풀어 WFP 필터·엔진 장부를 채우는 공격을 막는다. 넘으면 알림만 하고 그 사실을 문장에 밝힌다
 pub const UMBRELLA_FILTER_CAP: usize = 100;
+/// 상한에 닿았다는 문장 머리(31차 Gemini Q5: 상한 도달 자체를 경고 사건으로 올린다)
+pub const CAP_REACHED: &str = "관찰실이 동시에 막을 수 있는 수";
+/// 상한 경고 사건 종류. 같은 경고는 10분에 한 번
+pub const CAP_KIND: &str = "first_run_cap";
+const CAP_ALERT_EVERY_SECS: i64 = 600;
 
 /// 관찰실 우산 정책 이름 (방식 나, 사용자 결정 2026-11-06).
 ///
@@ -269,6 +274,16 @@ fn assess_file(
         .attr("sha256")
         .and_then(|v| v.as_str().map(|s| s.to_string()));
     if earlier > 0 && !watched_other_content(g, &file.key, sha256.as_deref()) {
+        // 31차 Gemini Q1: 쓰기·이름 바꾸기 선 없이 내용을 바꾼 경우(블록 복제·매핑된 섹션 쓰기)는 해시로만 안다.
+        // 전에 관찰한 경로인데 이번 실행 뒤의 해시가 아직 안 왔으면(노드의 해시는 지난번 것일 수 있다) "전에 실행됨"으로 버리지 않고
+        // 해시를 기다린다(대기 시간 안). 대기 시간이 지나도 안 오면 예전처럼 "전에 실행됨"(해시 실패로 알림이 쏟아지지 않게)
+        let hash_fresh = file
+            .attr("sha256_seen_ts")
+            .and_then(|v| v.as_i64())
+            .is_some_and(|t| t >= exec_ts);
+        if !hash_fresh && !expired && was_watched(g, &file.key) {
+            return Assess::Pending;
+        }
         return Assess::Skip("전에 실행된 적 있음");
     }
     let host = file
@@ -310,6 +325,17 @@ fn content_since(g: &Store, file: &Node, exec_ts: i64) -> i64 {
             |r| r.get(0),
         )
         .unwrap_or(0)
+}
+
+/// 이 경로를 전에 관찰했는가
+fn was_watched(g: &Store, path: &str) -> bool {
+    g.conn()
+        .query_row(
+            "SELECT 1 FROM first_run_watch WHERE file_key = ?1",
+            [path.to_ascii_lowercase()],
+            |_| Ok(()),
+        )
+        .is_ok()
 }
 
 /// 이 경로를 전에 관찰했는데 그때 해시가 지금 해시와 다른가(둘 다 알 때만). 쓰기 선이 빠져도 내용 교체를 잡는다
@@ -515,7 +541,7 @@ pub fn try_block(
         .map_err(|e| format!("막지 못해 알림만 했습니다 ({e})"))?;
     if live.len() + 2 > UMBRELLA_FILTER_CAP {
         return Err(format!(
-            "관찰실이 동시에 막을 수 있는 수(프로그램 {}개)에 닿아 막지 않고 알림만 했습니다",
+            "{CAP_REACHED}(프로그램 {}개)에 닿아 막지 않고 알림만 했습니다",
             UMBRELLA_FILTER_CAP / 2
         ));
     }
@@ -637,8 +663,34 @@ fn start_watch(world: &mut crate::runtime::World, t: &Target, s: Settings) {
     if let Some(h) = &t.host {
         detail.push_str(&format!(" (받은 곳 {h})"));
     }
-    if let Some(w) = why_not {
+    if let Some(w) = &why_not {
         detail.push_str(&format!(" — {w}"));
+        // 31차 Gemini Q5: 서명 없는 프로그램을 잔뜩 먼저 실행해 상한을 채운 뒤 진짜 악성 프로그램을 실행하는 순서.
+        // 상한 도달 자체를 경고로 올린다(사실만). 오래된 것을 풀어 자리를 내지는 않는다 — 밀어내기에 쓰일 수 있다
+        if w.starts_with(CAP_REACHED) {
+            let now = world.engine_wall();
+            let last = world
+                .graph
+                .get_meta("first_run_cap_alert")
+                .ok()
+                .flatten()
+                .and_then(|v| v.parse::<i64>().ok())
+                .unwrap_or(0);
+            if now - last >= CAP_ALERT_EVERY_SECS {
+                let _ = world
+                    .graph
+                    .set_meta("first_run_cap_alert", &now.to_string());
+                let _ = world.engine.record_event(
+                    CAP_KIND,
+                    3,
+                    format!(
+                        "처음 실행된 인터넷 프로그램이 짧은 사이에 많아 관찰실 차단 자리(프로그램 {}개)가 찼습니다. 지금부터 처음 실행되는 프로그램은 알림만 합니다. 마지막: {}",
+                        UMBRELLA_FILTER_CAP / 2,
+                        t.path
+                    ),
+                );
+            }
+        }
     }
     let target = serde_json::json!({
         "type": "process", "pid": t.pid, "create_ft": t.create_ft, "image": t.path, "session": t.session,

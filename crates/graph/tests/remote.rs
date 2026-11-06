@@ -134,3 +134,79 @@ fn session_facts_collects_whole_pc_in_window() {
         ""
     );
 }
+
+#[test]
+fn renamed_tool_found_by_valid_signer() {
+    let st = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&st);
+    let exe = r"C:\Users\u\Downloads\tv.exe";
+    ing.ingest(&ev(
+        T,
+        EventKind::ProcessStart {
+            pid: 800,
+            ppid: 4,
+            image: exe.into(),
+            create_time: Some(T),
+        },
+    ))
+    .unwrap();
+    st.add_conn_bytes(800, "tcp", "203.0.113.5", 5938, 10, 10, T + S)
+        .unwrap();
+    assert!(
+        running_tools(&st, T).unwrap().is_empty(),
+        "서명 오기 전에는 모름"
+    );
+    ing.ingest(&ev(
+        T + S,
+        EventKind::Signature {
+            path: exe.into(),
+            signer: Some("TeamViewer Germany GmbH".into()),
+            issuer: None,
+            status: "valid".into(),
+            catalog: false,
+        },
+    ))
+    .unwrap();
+    let got = running_tools(&st, T).unwrap();
+    assert_eq!(
+        got.iter().map(|g| g.2).collect::<Vec<_>>(),
+        vec!["teamviewer"]
+    );
+}
+
+#[test]
+fn session_facts_skip_service_session() {
+    let st = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&st);
+    ing.ingest(&snap(1000, r"C:\Windows\explorer.exe")).unwrap();
+    for (pid, img) in [
+        (1100u32, r"C:\Windows\System32\cmd.exe"),
+        (1200, r"C:\Windows\System32\MpCmdRun.exe"),
+    ] {
+        let ts = T + 20 * S;
+        ing.ingest(&Event {
+            ts,
+            source: "etw:process".into(),
+            kind: EventKind::ProcessStart {
+                pid,
+                ppid: 1000,
+                image: img.into(),
+                create_time: Some(ts),
+            },
+        })
+        .unwrap();
+        ing.ingest(&Event {
+            ts,
+            source: "etw:process".into(),
+            kind: EventKind::ProcessSession {
+                pid,
+                create_time: ts,
+                session: if pid == 1200 { 0 } else { 1 },
+            },
+        })
+        .unwrap();
+    }
+    let f = session_facts(&st, T + 10 * S, T + 60 * S).unwrap();
+    assert_eq!(f.processes, 1, "Session 0 의 백신 검사는 뺀다");
+    assert_eq!(f.shells, vec!["cmd.exe".to_string()]);
+}

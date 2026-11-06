@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentSummary, foundByText, agentEmptyText } from "./agents-text";
+import { agentSummary, foundByText, agentEmptyText, signerText } from "./agents-text";
 import type { InstallRun } from "./installs-text";
 
 type Part = Pick<InstallRun, "image" | "procs" | "files" | "autoruns" | "remotes" | "commands">;
@@ -21,5 +21,9 @@ describe("agents-text", () => {
   it("빈 상태", () => {
     expect(agentEmptyText(1)).toBe("최근 하루 동안 찾은 AI 도구 실행이 없습니다.");
     expect(agentEmptyText(7)).toContain("7일");
+  });
+  it("서명", () => {
+    expect(signerText("Anthropic, PBC")).toEqual({ text: "서명: Anthropic, PBC", warn: false });
+    expect(signerText(null).warn).toBe(true);
   });
 });

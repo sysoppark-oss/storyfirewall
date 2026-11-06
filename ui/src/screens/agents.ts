@@ -4,7 +4,7 @@ import { rpc } from "../rpc";
 import { el, ext, clear } from "../ui";
 import { loadingBox, failBox, noDataBox, collectionStalled, type HealthLike } from "../list-state";
 import { buildCard } from "./installs";
-import { type AgentRun, AGENT_DAYS, AGENT_HOW_FOUND, agentSummary, agentEmptyText, foundByText } from "./agents-text";
+import { type AgentRun, AGENT_DAYS, AGENT_HOW_FOUND, agentSummary, agentEmptyText, foundByText, signerText } from "./agents-text";
 
 export function agents(): HTMLElement {
   const root = el("section", "screen");
@@ -47,6 +47,9 @@ export function agents(): HTMLElement {
       const head = card.querySelector(".card-head");
       head?.prepend(ext("span", a.display, "badge"), " ");
       head?.append(el("span", "muted small", ` · ${foundByText(a.found_by)}`));
+      // 서명자는 서명 검증 결과(외부 문자열) — 텍스트 노드로만
+      const sg = signerText(a.run.signer);
+      head?.append(" ", ext("span", sg.text, sg.warn ? "small warn" : "muted small"));
       cards.append(card);
     }
   };

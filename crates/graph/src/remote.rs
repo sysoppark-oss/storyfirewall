@@ -94,6 +94,25 @@ fn base_lower(image: &str) -> String {
         .to_ascii_lowercase()
 }
 
+/// 프로세스 노드의 실행 파일(executed_as)이 원격 도구 제조사의 유효 서명인가
+pub fn tool_of_signer(store: &Store, proc_node: i64) -> Option<&'static RemoteTool> {
+    let attrs: Option<String> = store
+        .conn()
+        .query_row(
+            "SELECT f.attrs_json FROM edges x JOIN nodes f ON f.id = x.src WHERE x.dst = ?1 AND x.rel = 'executed_as' LIMIT 1",
+            params![proc_node],
+            |r| r.get(0),
+        )
+        .ok()
+        .flatten();
+    let v: serde_json::Value = serde_json::from_str(attrs.as_deref()?).ok()?;
+    if v.get("sig_status").and_then(|x| x.as_str()) != Some("valid") {
+        return None;
+    }
+    let signer = v.get("signer").and_then(|x| x.as_str())?;
+    TOOLS.iter().find(|t| t.signer.eq_ignore_ascii_case(signer))
+}
+
 /// 실행 파일 경로가 원격 제어 프로그램인가
 pub fn tool_of(image: &str) -> Option<&'static RemoteTool> {
     let b = base_lower(image);
@@ -361,12 +380,13 @@ pub fn running_tools(store: &Store, since_ts: i64) -> Result<Vec<(u32, i64, &'st
         if n.attr("ended").and_then(|v| v.as_bool()) == Some(true) {
             continue;
         }
-        let Some(t) = n
+        let by_name = n
             .attr("image")
             .and_then(|v| v.as_str().map(|s| s.to_string()))
             .as_deref()
-            .and_then(tool_of)
-        else {
+            .and_then(tool_of);
+        // 32차 Gemini Q1: 이름을 바꾼 원격 도구는 실행 파일의 유효 서명자로 알아본다(서명은 실행 뒤에 오므로 다시 찾을 때만)
+        let Some(t) = by_name.or_else(|| tool_of_signer(store, id)) else {
             continue;
         };
         out.push((pid, id, t.key));
@@ -399,6 +419,7 @@ const SHELLS: &[&str] = &[
 const FACTS_CAP: usize = 20;
 
 /// `from_ts`~`to_ts`(FILETIME) 동안의 사실을 모은다. 원격 도구의 자손만이 아니라 PC 전체 —
+/// 단 서비스 세션(Session 0)에서 뜬 것은 뺀다(32차 Gemini Q3: 업데이트·백신 같은 배경 작업). 세션을 모르면 넣는다.
 /// 원격 조작은 이 PC 의 탐색기·브라우저로 일을 시키므로 자손으로 좁히면 놓친다.
 pub fn session_facts(store: &Store, from_ts: i64, to_ts: i64) -> Result<SessionFacts> {
     let mut f = SessionFacts::default();
@@ -406,7 +427,8 @@ pub fn session_facts(store: &Store, from_ts: i64, to_ts: i64) -> Result<SessionF
     {
         let mut st = conn.prepare_cached(
             "SELECT json_extract(n.attrs_json, '$.image') FROM edges e JOIN nodes n ON n.id = e.dst
-             WHERE e.rel = 'spawned' AND e.ts >= ?1 AND e.ts <= ?2",
+             WHERE e.rel = 'spawned' AND e.ts >= ?1 AND e.ts <= ?2
+               AND COALESCE(json_extract(n.attrs_json, '$.session'), -1) != 0",
         )?;
         let rows = st.query_map(params![from_ts, to_ts], |r| r.get::<_, Option<String>>(0))?;
         for img in rows.filter_map(|r| r.ok()).flatten() {

@@ -25,6 +25,8 @@ export interface InstallRun {
   persistence?: string[];
   /// L060: 부모 연결 없이 2분 안에 이어 시작해 함께 묶은 설치 과정(실행 파일 경로)
   grouped?: string[];
+  /// 실행 파일의 유효 서명 회사(없으면 서명 없음·확인 안 됨)
+  signer?: string | null;
 }
 
 /// 조회 범위(일). 서비스 허용 범위 1..30

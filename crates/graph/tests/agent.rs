@@ -151,3 +151,38 @@ fn activity_collects_subtree_facts() {
     let keys: Vec<&str> = later.iter().map(|a| a.found_by).collect();
     assert_eq!(keys, vec!["image"]);
 }
+
+/// 32차 Gemini Q5: 의미 없는 자식으로 상한을 채워도 접속한 자손은 남는다
+#[test]
+fn busy_descendants_survive_cap() {
+    let st = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&st);
+    ing.ingest(&start(T, 2000, 1, CLAUDE)).unwrap();
+    for i in 0..20u32 {
+        ing.ingest(&start(
+            T + (i as i64 + 1) * S,
+            3000 + i,
+            2000,
+            r"C:\Windows\System32\cmd.exe",
+        ))
+        .unwrap();
+    }
+    ing.ingest(&start(
+        T + 30 * S,
+        4000,
+        2000,
+        r"C:\Users\u\AppData\Local\Temp\x.exe",
+    ))
+    .unwrap();
+    ing.ingest(&connect(T + 31 * S, 4000, "203.0.113.66"))
+        .unwrap();
+    let acts = agent_activity(&st, T, 10, 5).unwrap();
+    let run = &acts[0].run;
+    assert!(run.truncated);
+    assert!(
+        run.procs.iter().any(|p| p.ends_with("x.exe")),
+        "{:?}",
+        run.procs
+    );
+    assert!(run.remotes.iter().any(|r| r.0.contains("203.0.113.66")));
+}

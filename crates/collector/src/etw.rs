@@ -570,6 +570,11 @@ pub fn file_provider(ctx: Arc<Ctx>) -> Provider {
                 };
                 let link = ctx.win32_path(&raw);
                 let names = crate::paths::hardlink_names(&link);
+                // 31차 Gemini Q2: 링크를 만들자마자 지우면(ETW 전달 지연 동안) 이름을 못 얻는다. FileKey 는 커널 객체 주소라
+                // 사용자 모드에서 파일과 이을 수 없다 — 못 얻은 사실을 세어 진단에 남긴다(경쟁이 실제로 일어나는지 실측)
+                if names.is_empty() {
+                    ctx.count("file_link_unresolved");
+                }
                 let Some(target) = names.into_iter().find(|n| {
                     graph::vault::classify(n).is_some()
                         || graph::vault::decoy_candidate(n).is_some()

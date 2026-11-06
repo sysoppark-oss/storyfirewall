@@ -307,9 +307,26 @@ pub fn install_xray(store: &Store, root: i64, max_procs: usize) -> Result<Instal
         .unwrap_or_else(|| node.label.clone());
     let pid = node.attr("pid").and_then(|v| v.as_u64()).map(|p| p as u32);
     let mut ids = vec![root];
-    let desc = descendants(store, root, max_procs + 1)?;
+    // 32차 Gemini Q5: 자손을 상한까지 앞에서부터만 담으면, 의미 없는 자식 수백 개를 먼저 띄워 진짜 행동을 밀어낼 수 있다.
+    // 상한을 넘으면 더 넓게(10배) 읽고, 접속·자동 실행 등록·파일 쓰기를 했거나 판정 장이 붙은 자손을 먼저 담는다
+    let desc = descendants(store, root, max_procs.saturating_mul(10) + 1)?;
     let truncated = desc.len() > max_procs;
-    ids.extend(desc.into_iter().take(max_procs));
+    if truncated {
+        let mut act = store.conn().prepare_cached(
+            "SELECT 1 FROM edges WHERE src = ?1 AND (rel IN ('connected','registered','wrote') OR chapter IS NOT NULL) LIMIT 1",
+        )?;
+        let (mut busy, mut quiet): (Vec<i64>, Vec<i64>) = (Vec::new(), Vec::new());
+        for d in desc {
+            if act.exists(params![d])? {
+                busy.push(d);
+            } else {
+                quiet.push(d);
+            }
+        }
+        ids.extend(busy.into_iter().chain(quiet).take(max_procs));
+    } else {
+        ids.extend(desc);
+    }
 
     let conn = store.conn();
     let mut procs = Vec::new();

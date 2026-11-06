@@ -712,6 +712,9 @@ impl<'a> Ingester<'a> {
                     }
                     Some(_) => {}
                 }
+                // 31차 Gemini Q1: 해시를 확인한 시각은 바뀌지 않았어도 남긴다 — 이번 실행 뒤의 해시가 왔는지 첫 실행 판단이 알 수 있게
+                self.store
+                    .merge_node_attrs(f, &serde_json::json!({ "sha256_seen_ts": ev.ts }))?;
                 Ok(0)
             }
             EventKind::ProcessCommand {

@@ -25,6 +25,8 @@ const SERVICE_EVENT_TITLE: Record<string, string> = {
   defender_cfa_audited: "Windows 기본 보호가 보호 폴더 변경을 기록했습니다(감사 모드)",
   // 17판 23-2 ①: 첫 실행 관찰실
   first_run_watch: "인터넷에서 받은 프로그램이 처음 실행되어 지켜보는 중입니다",
+  // 31차 Q5: 관찰실 차단 자리가 참(채우기 공격일 수 있음 — 단정하지 않는다)
+  first_run_cap: "처음 실행 관찰실의 차단 자리가 찼습니다",
   // 14판 20-4: 원격 제어 사기 경보 — 사실만(상대·의도를 단정하지 않는다)
   remote_session_start: "원격 제어 프로그램이 외부로 데이터를 계속 보내기 시작했습니다",
   remote_session_end: "원격 제어 세션 모양이 끝났습니다",

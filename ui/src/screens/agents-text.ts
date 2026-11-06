@@ -40,3 +40,8 @@ export function agentSummary(run: Pick<InstallRun, "image" | "procs" | "files" |
 export function agentEmptyText(days: number): string {
   return `최근 ${days === 1 ? "하루" : `${days}일`} 동안 찾은 AI 도구 실행이 없습니다.`;
 }
+
+/// 32차 Gemini Q4: 이름·명령줄만으로 알아본 것은 위장일 수 있다 — 유효 서명이 없으면 그 사실을 붙인다(판정은 따로 돈다)
+export function signerText(signer: string | null | undefined): { text: string; warn: boolean } {
+  return signer ? { text: `서명: ${signer}`, warn: false } : { text: "서명 확인 안 됨 — 이름만 같은 다른 프로그램일 수 있습니다", warn: true };
+}

@@ -859,7 +859,8 @@ pub fn register_decoys(world: &mut World, dirs: Vec<String>) {
     let since = unix_to_filetime(world.engine_wall() - 30 * 86_400);
     let mut installs: Vec<(String, Vec<String>)> =
         graph::install::installs(&world.graph, since, 50, 300, |_| true)
-            .map(|v| v.into_iter().map(|r| (r.image, r.files)).collect())
+            // 31차 Gemini Q3: 이름 조각만으로 미끼를 빼면 탈취 도구가 싸게 끈다 — 설치 파일이 유효 서명일 때만
+            .map(|v| v.into_iter().filter(|r| r.signer.is_some()).map(|r| (r.image, r.files)).collect())
             .unwrap_or_default();
     // 설치로 잡히지 않은 설치(이름에 setup 없음)도 그 프로그램이 실행되면 보인다: 이름 조각이 든 실행 파일
     for c in decoy::CANDIDATES {
@@ -889,8 +890,10 @@ pub fn register_decoys(world: &mut World, dirs: Vec<String>) {
 fn ran_images_like(g: &graph::Store, kw: &str, since: i64) -> Vec<(String, Vec<String>)> {
     let pat = format!("%{}%", kw.replace(['%', '_'], ""));
     let Ok(mut st) = g.conn().prepare_cached(
+        // 31차 Gemini Q3: 유효 서명이 있는 실행 파일만(이름에 'exodus' 가 든 아무 파일로 미끼를 끄지 못하게)
         "SELECT DISTINCT n.key FROM nodes n JOIN edges e ON e.src = n.id AND e.rel = 'executed_as' \
-         WHERE n.kind = 'file' AND lower(n.key) LIKE ?1 AND e.ts >= ?2 LIMIT 20",
+         WHERE n.kind = 'file' AND lower(n.key) LIKE ?1 AND e.ts >= ?2 \
+           AND json_extract(n.attrs_json, '$.sig_status') = 'valid' LIMIT 20",
     ) else {
         return Vec::new();
     };
