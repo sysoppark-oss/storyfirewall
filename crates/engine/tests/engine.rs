@@ -1195,6 +1195,10 @@ fn acl_yaml_from_ui_is_accepted() {
     assert_eq!(a1.spec.local_v4.len(), 1);
     let a3 = fs.iter().find(|f| f.spec.name == "acl.3").unwrap();
     assert_eq!(a3.spec.protocols, vec![1]);
+    // 38차 Q1②: ICMP 는 echo(Type 0·8)만 — 오류 메시지(Type 3 경로 MTU 등)는 막지 않는다
+    let types: Vec<(u16, u16)> = a3.spec.local_ports.iter().map(|r| (r.lo, r.hi)).collect();
+    assert_eq!(types, vec![(0, 0), (8, 8)]);
+    assert!(a3.spec.remote_ports.is_empty());
 }
 
 /// 37차 Q2: 어댑터 재설치로 LUID 가 바뀌면 서비스 시작 대조가 인터페이스 조건 필터를 지금 별칭으로 다시 건다.

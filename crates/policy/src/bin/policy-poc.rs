@@ -325,6 +325,11 @@ fn main() {
             ic2.protocols = vec![1];
             ic2.interface = Some(alias.clone());
             ic2.local_v4 = vec![rng(local)];
+            // 38차 Q1②: echo(Type 0·8)만 — ICMP type 은 IP_LOCAL_PORT 칸
+            ic2.local_ports = vec![
+                policy::spec::PortRange { lo: 0, hi: 0 },
+                policy::spec::PortRange { lo: 8, hi: 8 },
+            ];
             let mut ic3 = ic2.clone();
             ic3.direction = Direction::In;
             match eng.apply(&[ic2, ic3]) {

@@ -205,6 +205,13 @@ pub fn expand(p: &Policy, resolver: &dyn Resolver) -> Result<Expanded> {
         // 미지정·any → tcp+udp 만. ICMP 는 절대 안 막는다 (규칙 8)
         None | Some(Protocol::Any) => vec![6, 17],
     };
+    // 38차 Q1②: ICMP 규칙은 echo(Type 8 요청·Type 0 응답)만 건다. 전송 계층(패킷마다)에서 Type 3(경로 MTU 탐색의
+    // Fragmentation Needed)·11 같은 오류 메시지까지 막으면 큰 TCP 전송이 멈출 수 있다. 전송·ALE 계층에서 ICMP 의 type 은
+    // IP_LOCAL_PORT 칸에 실린다(FWPM_CONDITION_ICMP_TYPE = FWPM_CONDITION_IP_LOCAL_PORT). 화면은 ICMP 에 포트를 받지 않는다(validate)
+    if protocols == [1] {
+        local_ports = vec![PortRange { lo: 0, hi: 0 }, PortRange { lo: 8, hi: 8 }];
+        remote_ports.clear();
+    }
 
     // ---- 규칙 8 자동 제외 (차단 정책만) ----
     if p.action == Action::Block {

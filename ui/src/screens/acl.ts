@@ -24,7 +24,7 @@ export interface AclRule {
 }
 
 export const DIR_TEXT: Record<AclDir, string> = { out: "나감", in: "들어옴", both: "양방향" };
-export const PROTO_TEXT: Record<AclProto, string> = { any: "TCP·UDP", tcp: "TCP", udp: "UDP", icmp: "ICMP(IPv4)" };
+export const PROTO_TEXT: Record<AclProto, string> = { any: "TCP·UDP", tcp: "TCP", udp: "UDP", icmp: "ICMP ping(IPv4)" };
 
 /// 쉼표·공백으로 나눈 목록(빈 칸 = 조건 없음)
 export function splitList(s: string): string[] {
@@ -359,7 +359,8 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
         f.input.disabled = icmp;
         if (icmp) { f.input.value = ""; f.input.dispatchEvent(new Event("input")); }
       }
-      portNote.textContent = icmp ? "ICMP 는 IPv4 만 다룹니다(IPv6 ICMP 는 이웃 탐색에 필요해 막지 않습니다). 포트는 없습니다." : "";
+      // 38차 Q1①②: echo 만 다루고, 패킷마다 판정이라 들어옴 차단은 내 ping 의 응답도 막는다
+      portNote.textContent = icmp ? "ICMP 는 IPv4 ping(echo 요청·응답)만 다룹니다. 오류 메시지(경로 MTU 등)와 IPv6 ICMP 는 막지 않습니다. ‘들어옴’ 차단이면 내가 보낸 ping 의 응답도 막힙니다. 포트는 없습니다." : "";
       refresh();
     }, "프로토콜");
     // 출발지·목적지 카드
