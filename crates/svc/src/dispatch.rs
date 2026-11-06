@@ -1217,11 +1217,17 @@ fn handle(
                 + 116_444_736_000_000_000;
             // L060: 부모 연결 없이 이어 시작한 설치 과정은 시간으로 묶는다(graph::install::installs)
             let scope = caller.scope();
-            let items =
+            // L069: 주기 작업이 미리 계산한 것을 읽는다. 아직 한 번도 계산 전(시작 직후)이면 그때만 바로 계산
+            let items = if world.install_cache.primed {
+                world.install_cache.list(since_ft, v.limit as usize, |r| {
+                    scope.process_visible(&world.graph, r)
+                })
+            } else {
                 graph::install::installs(&world.graph, since_ft, v.limit as usize, 300, |r| {
                     scope.process_visible(&world.graph, r)
                 })
-                .map_err(internal)?;
+                .map_err(internal)?
+            };
             j(serde_json::json!({ "items": items }))
         }
         Method::ListenersList => {

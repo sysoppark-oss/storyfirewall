@@ -146,7 +146,12 @@ pub fn installs(
             runs.push(install_xray(store, r, max_procs)?);
         }
     }
-    runs.sort_by_key(|x| x.start_ts);
+    Ok(group_runs(runs, limit))
+}
+
+/// 설치 한 번씩(뿌리마다)의 엑스레이를 시간 묶음으로 합친다. 최신 먼저, `limit` 개
+pub fn group_runs(mut runs: Vec<InstallRun>, limit: usize) -> Vec<InstallRun> {
+    runs.sort_by_key(|x| (x.start_ts, x.root));
     let mut groups: Vec<InstallRun> = Vec::new();
     for x in runs {
         match groups.last_mut() {
@@ -182,7 +187,73 @@ pub fn installs(
     }
     groups.reverse();
     groups.truncate(limit);
-    Ok(groups)
+    groups
+}
+
+/// L069(32차 검수 4): 설치 목록 미리 계산. 조회(installs.list)는 이것을 읽기만 한다(2초 원칙: 무거운 계산은 주기 작업으로).
+/// 뿌리마다 엑스레이를 들고 있고, 주기마다 최근 `FRESH` 안에 시작한 뿌리만 다시 본다(설치가 아직 진행 중일 수 있어서).
+/// 그보다 오래된 설치는 끝난 것으로 보고 다시 계산하지 않는다
+#[derive(Debug, Default, Clone)]
+pub struct InstallCache {
+    /// 뿌리 프로세스 노드 → 그 설치 한 번
+    pub runs: BTreeMap<i64, InstallRun>,
+    /// 처음 전체 훑기를 했는가
+    pub primed: bool,
+}
+
+impl InstallCache {
+    /// 다시 계산하는 최근 구간(FILETIME, 2시간)
+    pub const FRESH: i64 = 2 * 3600 * 10_000_000;
+    /// 들고 있는 기간(FILETIME, 30일 — installs.list days 상한)
+    pub const KEEP: i64 = 30 * 86_400 * 10_000_000;
+    /// 들고 있는 뿌리 상한(오래된 것부터 버린다)
+    pub const MAX_ROOTS: usize = 400;
+
+    /// `now_ts`(FILETIME) 기준으로 맞춘다. 처음에는 30일 전체, 그 뒤에는 최근 `FRESH` 만 훑는다
+    pub fn refresh(&mut self, store: &Store, now_ts: i64, max_procs: usize) -> Result<()> {
+        let since = if self.primed {
+            now_ts - Self::FRESH
+        } else {
+            now_ts - Self::KEEP
+        };
+        for r in installer_roots(store, since, Self::MAX_ROOTS)? {
+            let x = install_xray(store, r, max_procs)?;
+            self.runs.insert(r, x);
+        }
+        self.primed = true;
+        // 오래된 것·상한 넘친 것 버리기
+        self.runs.retain(|_, x| x.start_ts >= now_ts - Self::KEEP);
+        while self.runs.len() > Self::MAX_ROOTS {
+            let oldest = self
+                .runs
+                .iter()
+                .min_by_key(|(_, x)| x.start_ts)
+                .map(|(k, _)| *k);
+            match oldest {
+                Some(k) => {
+                    self.runs.remove(&k);
+                }
+                None => break,
+            }
+        }
+        Ok(())
+    }
+
+    /// 조회: `since_ts` 이후 시작한, 보이는 뿌리만 묶어서 최신 `limit` 개
+    pub fn list(
+        &self,
+        since_ts: i64,
+        limit: usize,
+        visible: impl Fn(i64) -> bool,
+    ) -> Vec<InstallRun> {
+        let runs: Vec<InstallRun> = self
+            .runs
+            .iter()
+            .filter(|(r, x)| x.start_ts >= since_ts && visible(**r))
+            .map(|(_, x)| x.clone())
+            .collect();
+        group_runs(runs, limit)
+    }
 }
 
 /// 이 시각 이후 시작한 설치 프로그램 프로세스(바깥쪽만 — 설치 프로그램이 띄운 설치 프로그램은 같은 묶음). 최신 먼저

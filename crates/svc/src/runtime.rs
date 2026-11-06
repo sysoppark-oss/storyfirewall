@@ -158,6 +158,8 @@ pub struct World<'a> {
     pub first_run_pending: Vec<(String, i64)>,
     /// L066: 실제 설치가 보여 판정 등록에서 뺀 미끼 폴더
     pub decoys_retired: Vec<String>,
+    /// L069: 설치 목록 미리 계산(주기 판정 뒤). installs.list 는 이것만 읽는다
+    pub install_cache: graph::install::InstallCache,
     /// 갈래 C: 증분 주기 판정기(메모리 뷰·사슬 캐시). 결과는 전체 판정과 같다(judge 시험).
     /// 30번에 한 번·보관 정리 뒤·기준선 학습 뒤·"정상" 피드백 뒤·오류 뒤에는 전체를 다시 읽는다.
     /// SF_JUDGE_INCREMENTAL=0 이면 매번 전체(현장에서 되돌리기용)
@@ -271,6 +273,7 @@ impl Runtime {
                     dev_force: None,
                     first_run_pending: Vec::new(),
                     decoys_retired: Vec::new(),
+                    install_cache: graph::install::InstallCache::default(),
                 };
                 crate::first_run::ensure_table(&world.graph);
                 // 재시작 대조: 누락 재등록·고아 제거·미확인 롤백
@@ -433,6 +436,15 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                 let tj = std::time::Instant::now();
                 judge_and_notify(world);
                 world.timings.record("엔진: 주기 판정", tj.elapsed());
+                // L069(32차 검수 4): 설치 목록 미리 계산 — 조회 때 계산하지 않는다(2초 원칙)
+                let ti = std::time::Instant::now();
+                let now_ft = unix_to_filetime(world.engine_wall());
+                if let Err(e) = world.install_cache.refresh(&world.graph, now_ft, 300) {
+                    eprintln!("installs: refresh failed: {e}");
+                }
+                world
+                    .timings
+                    .record("엔진: 설치 목록 미리 계산", ti.elapsed());
                 // 27차: 보관 정리 — 판정이 먼저 장(chapter)을 남긴 뒤(의심 사건 선은 30일 보존), 1시간마다
                 if world.engine_wall() - world.last_retention_wall >= RETENTION_EVERY_SECS {
                     let tr = std::time::Instant::now();

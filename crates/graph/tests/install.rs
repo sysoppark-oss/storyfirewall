@@ -314,3 +314,40 @@ fn detached_setup_started_soon_after_is_grouped_by_time() {
         vec!["schtasks.exe 실행 (명령줄을 받지 못해 무엇을 바꿨는지 모름)".to_string()]
     );
 }
+
+/// L069: 미리 계산한 설치 목록은 바로 계산한 것과 같다. 오래된 설치는 다시 계산하지 않고, 새 설치는 다음 갱신에 들어온다
+#[test]
+fn install_cache_matches_live_and_picks_up_new_installs() {
+    let st = scenario();
+    let now = T + 600 * S;
+    let mut c = graph::install::InstallCache::default();
+    c.refresh(&st, now, 100).unwrap();
+    assert!(c.primed);
+    let live = graph::install::installs(&st, T - S, 10, 100, |_| true).unwrap();
+    assert_eq!(c.list(T - S, 10, |_| true), live, "미리 계산 = 바로 계산");
+    assert!(!live.is_empty());
+    // 보이는 범위 밖 뿌리는 뺀다
+    assert!(c.list(T - S, 10, |_| false).is_empty());
+    // 새 설치(3시간 뒤): 다음 갱신(최근 2시간만 훑음)에 들어온다
+    let later = T + 3 * 3600 * S;
+    Ingester::new(&st)
+        .ingest(&ev(
+            later,
+            "etw:process",
+            EventKind::ProcessStart {
+                pid: 4321,
+                ppid: 1000,
+                image: r"C:\Users\u\Downloads\OtherSetup.exe".into(),
+                create_time: Some(later),
+            },
+        ))
+        .unwrap();
+    let before = c.runs.len();
+    c.refresh(&st, later + 60 * S, 100).unwrap();
+    assert_eq!(c.runs.len(), before + 1);
+    let all = c.list(T - S, 10, |_| true);
+    assert!(all[0].image.ends_with("OtherSetup.exe"), "최신 먼저");
+    // 30일이 지나면 버린다
+    c.refresh(&st, later + 31 * 86_400 * S, 100).unwrap();
+    assert!(c.runs.is_empty());
+}
