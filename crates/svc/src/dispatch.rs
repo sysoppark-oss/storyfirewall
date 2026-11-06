@@ -1728,13 +1728,23 @@ pub(crate) fn set_triage(
 }
 
 /// 사건의 접속지·자리잡기 등록 노드 id(사건 선 중 connected·connected_via·registered 의 도착). 재발 판단의 "새 접속지" 기준
-pub(crate) fn story_dst(g: &graph::Store, s: &judge::Story) -> Vec<i64> {
-    let mut v: Vec<i64> = s
+/// 접속지는 도메인을 알면 도메인(CDN 이 IP 를 돌려도 같은 곳 — install-77 실측에서 IP 노드로 세니 브라더 상태 모니터가 재발로 돌아왔다),
+/// 모르면 ip:port. 자리잡기 등록은 노드 id
+pub(crate) fn story_dst(g: &graph::Store, s: &judge::Story) -> Vec<String> {
+    let mut v: Vec<String> = s
         .edges
         .iter()
         .filter_map(|id| g.edge(*id).ok())
         .filter(|e| matches!(e.rel.as_str(), "connected" | "connected_via" | "registered"))
-        .map(|e| e.dst)
+        .filter_map(|e| {
+            let n = g.node(e.dst).ok()?;
+            Some(if n.kind == "remote" {
+                let domain = n.attr("domain").and_then(|d| d.as_str().map(|x| x.to_string()));
+                crate::triage::dst_mark_remote(domain.as_deref(), &n.key)
+            } else {
+                crate::triage::dst_mark_node(e.dst)
+            })
+        })
         .collect();
     v.sort_unstable();
     v.dedup();

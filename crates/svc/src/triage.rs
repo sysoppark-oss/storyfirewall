@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS incident_state (
   score       INTEGER NOT NULL DEFAULT 0,
   updated_ts  INTEGER NOT NULL,        -- unix 초
   note        TEXT,
-  seen_dst    TEXT,                    -- 조치 시점의 접속지·등록 노드 id(JSON 배열) — 새 것이 생기면 재발
+  seen_dst    TEXT,                    -- 조치 시점의 접속지(도메인 또는 ip:port)·등록 노드 표식(JSON 문자열 배열) — 새 것이 생기면 재발. NULL = 옛 판 행(모름)
   recur_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS incident_log (
@@ -115,7 +115,7 @@ pub struct Rec {
     pub recur_count: i64,
     /// 조치 시점의 접속지·등록 노드 id (화면에는 내지 않음)
     #[serde(skip)]
-    pub seen_dst: Vec<i64>,
+    pub seen_dst: Option<Vec<String>>,
 }
 fn is_zero(n: &i64) -> bool {
     *n == 0
@@ -129,7 +129,7 @@ impl Rec {
             updated_ts: 0,
             note: None,
             recur_count: 0,
-            seen_dst: Vec::new(),
+            seen_dst: None,
         }
     }
 }
@@ -212,9 +212,8 @@ pub fn ensure_table(store: &Store) {
     );
 }
 
-fn parse_dst(s: Option<String>) -> Vec<i64> {
-    s.and_then(|j| serde_json::from_str::<Vec<i64>>(&j).ok())
-        .unwrap_or_default()
+fn parse_dst(s: Option<String>) -> Option<Vec<String>> {
+    s.and_then(|j| serde_json::from_str::<Vec<String>>(&j).ok())
 }
 
 fn row_to_rec(r: &rusqlite::Row) -> rusqlite::Result<Rec> {
@@ -307,7 +306,18 @@ pub fn set(
     )
 }
 
-/// `set` + 조치 시점의 접속지·등록 노드 id(`seen_dst`)와 재발 횟수. 조치함·닫힘으로 바꿀 때 주기 판정의 사건 선에서 모아 넘긴다
+/// 접속지 표식: 도메인을 알면 도메인(CDN 이 IP 를 돌려도 같은 곳), 모르면 ip:port. 등록은 노드 id
+pub fn dst_mark_remote(domain: Option<&str>, key: &str) -> String {
+    match domain.filter(|d| !d.is_empty()) {
+        Some(d) => format!("d:{}", d.trim_end_matches('.').to_ascii_lowercase()),
+        None => format!("r:{key}"),
+    }
+}
+pub fn dst_mark_node(id: i64) -> String {
+    format!("n:{id}")
+}
+
+/// `set` + 조치 시점의 접속지·등록 표식(`seen_dst`)와 재발 횟수. 조치함·닫힘으로 바꿀 때 주기 판정의 사건 선에서 모아 넘긴다
 #[allow(clippy::too_many_arguments)]
 pub fn set_with_dst(
     store: &Store,
@@ -319,7 +329,7 @@ pub fn set_with_dst(
     actor: &str,
     note: Option<&str>,
     now: i64,
-    seen_dst: &[i64],
+    seen_dst: &[String],
     recur_count: i64,
 ) -> rusqlite::Result<Rec> {
     let cur = get(store, root);
@@ -346,7 +356,7 @@ pub fn set_with_dst(
         updated_ts: now,
         note: note.map(|s| s.to_string()),
         recur_count,
-        seen_dst: seen_dst.to_vec(),
+        seen_dst: Some(seen_dst.to_vec()),
     })
 }
 
@@ -367,7 +377,7 @@ pub fn recur_if_escalated(
     rec: &Rec,
     chapter: i64,
     score: u8,
-    dst_now: &[i64],
+    dst_now: &[String],
     now: i64,
 ) -> Option<Recur> {
     if rec.state.is_open() {
@@ -379,7 +389,18 @@ pub fn recur_if_escalated(
             to: chapter,
         }
     } else {
-        let new = dst_now.iter().filter(|d| !rec.seen_dst.contains(d)).count();
+        let Some(seen) = rec.seen_dst.as_ref() else {
+            // 옛 판 행(접속지 기록 없음): 지금 것을 기록만 하고 재발로 보지 않는다 — 판 올림 직후 모든 조치 사건이 되돌아오던 것(install-77 실측)
+            let _ = store.conn().execute(
+                "UPDATE incident_state SET seen_dst = ?2 WHERE root = ?1",
+                rusqlite::params![
+                    root,
+                    serde_json::to_string(dst_now).unwrap_or_else(|_| "[]".into())
+                ],
+            );
+            return None;
+        };
+        let new = dst_now.iter().filter(|d| !seen.contains(d)).count();
         if new == 0 {
             return None;
         }
@@ -500,6 +521,7 @@ mod tests {
     #[test]
     fn recur_only_when_chapter_rises() {
         let s = mem();
+        let d = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         set_with_dst(
             &s,
             1,
@@ -510,23 +532,23 @@ mod tests {
             "user",
             None,
             10,
-            &[100, 101],
+            &d(&["d:a.example", "r:1.2.3.4:443"]),
             0,
         )
         .unwrap();
         let r = get(&s, 1);
         assert_eq!(
-            recur_if_escalated(&s, 1, &r, 3, 75, &[100, 101], 20),
+            recur_if_escalated(&s, 1, &r, 3, 75, &d(&["d:a.example", "r:1.2.3.4:443"]), 20),
             None,
             "같은 장·같은 접속지는 재발 아님"
         );
         assert_eq!(
-            recur_if_escalated(&s, 1, &r, 3, 75, &[100], 20),
+            recur_if_escalated(&s, 1, &r, 3, 75, &d(&["d:a.example"]), 20),
             None,
             "접속지가 줄어도 재발 아님"
         );
         assert_eq!(
-            recur_if_escalated(&s, 1, &r, 4, 80, &[100, 101], 30),
+            recur_if_escalated(&s, 1, &r, 4, 80, &d(&["d:a.example", "r:1.2.3.4:443"]), 30),
             Some(Recur::Escalated { from: 3, to: 4 })
         );
         let r2 = get(&s, 1);
@@ -540,8 +562,42 @@ mod tests {
             .starts_with("재발"));
         // 열린 사건은 재발 판단 대상이 아니다
         assert_eq!(
-            recur_if_escalated(&s, 1, &r2, 4, 80, &[100, 101, 102], 40),
+            recur_if_escalated(&s, 1, &r2, 4, 80, &d(&["d:a.example", "d:b.example"]), 40),
             None
+        );
+    }
+
+    /// 옛 판 행(seen_dst 없음)은 새 접속지 재발로 보지 않고 지금 접속지를 채워 넣는다(판 올림 직후 되돌아오던 것)
+    #[test]
+    fn legacy_row_without_seen_dst_is_backfilled_not_recurred() {
+        let s = mem();
+        set(&s, 7, State::Closed, None, 4, 80, "user", None, 10).unwrap();
+        s.conn()
+            .execute(
+                "UPDATE incident_state SET seen_dst = NULL WHERE root = 7",
+                [],
+            )
+            .unwrap();
+        let r = get(&s, 7);
+        assert_eq!(r.seen_dst, None);
+        assert_eq!(
+            recur_if_escalated(&s, 7, &r, 4, 80, &["d:x.example".to_string()], 20),
+            None
+        );
+        let r = get(&s, 7);
+        assert_eq!(r.state, State::Closed);
+        assert_eq!(r.seen_dst, Some(vec!["d:x.example".to_string()]));
+        assert_eq!(
+            recur_if_escalated(
+                &s,
+                7,
+                &r,
+                4,
+                80,
+                &["d:x.example".to_string(), "d:y.example".to_string()],
+                30
+            ),
+            Some(Recur::NewDst(1))
         );
     }
 
@@ -549,6 +605,7 @@ mod tests {
     #[test]
     fn recur_on_new_destination_and_cap_note() {
         let s = mem();
+        let d = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         set_with_dst(
             &s,
             1,
@@ -559,25 +616,25 @@ mod tests {
             "user",
             Some("무시"),
             10,
-            &[100],
+            &d(&["d:a"]),
             0,
         )
         .unwrap();
         let r = get(&s, 1);
         assert_eq!(
-            recur_if_escalated(&s, 1, &r, 4, 80, &[100, 200], 20),
+            recur_if_escalated(&s, 1, &r, 4, 80, &d(&["d:a", "d:b"]), 20),
             Some(Recur::NewDst(1))
         );
         let r = get(&s, 1);
         assert_eq!(r.state, State::New);
-        assert_eq!(r.seen_dst, vec![100, 200]);
+        assert_eq!(r.seen_dst, Some(d(&["d:a", "d:b"])));
         assert!(log(&s, 1, 10)[0]
             .note
             .as_deref()
             .unwrap()
             .contains("새 접속지"));
         // 다시 닫고 → 또 새 접속지 … 상한(3) 넘는 4번째 재발은 알림 안내가 붙는다
-        for (i, d) in [300, 400, 500].iter().enumerate() {
+        for (i, x) in ["d:c", "d:e", "d:f"].iter().enumerate() {
             let cur = get(&s, 1);
             set_with_dst(
                 &s,
@@ -589,13 +646,13 @@ mod tests {
                 "user",
                 None,
                 30 + i as i64 * 10,
-                &cur.seen_dst,
+                cur.seen_dst.as_deref().unwrap_or(&[]),
                 cur.recur_count,
             )
             .unwrap();
             let cur = get(&s, 1);
-            let mut now = cur.seen_dst.clone();
-            now.push(*d);
+            let mut now = cur.seen_dst.clone().unwrap_or_default();
+            now.push(x.to_string());
             assert!(recur_if_escalated(&s, 1, &cur, 4, 80, &now, 35 + i as i64 * 10).is_some());
         }
         let r = get(&s, 1);

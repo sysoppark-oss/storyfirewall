@@ -594,7 +594,9 @@ fn triage_states_filter_and_recurrence_reopens_and_notifies() {
         ev(t + 7 * s, "etw:network", EventKind::Connect { proc: ProcRef::new(2200, None), proto: Proto::Tcp, direction: Direction::Out, laddr: "10.0.0.2".into(), lport: 50001, raddr: "203.0.113.9".into(), rport: 8443 }),
     ])).unwrap();
     rt.tx.send(Command::Judge).unwrap();
-    assert!(a.next_notification(Duration::from_millis(800)).is_none(), "같은 접속지 반복은 재발 아님");
+    // (별도 배치 = 수집기가 새로 만들어져 DNS 짝이 없다 — 원격지 노드에 전에 붙은 도메인을 이어받아야 같은 접속지로 본다)
+    let nn = a.next_notification(Duration::from_millis(800));
+    assert!(nn.is_none(), "같은 접속지 반복은 재발 아님: {nn:?}");
     // 39차 Q2①: 같은 4장이라도 조치 뒤 새 접속지가 생기면 재발 → 새 사건·알림
     rt.tx.send(Command::Ingest(vec![
         ev(t + 8 * s, "etw:dns", EventKind::DnsQuery { proc: ProcRef::new(2200, None), name: "c2b.evil.example".into(), results: vec!["198.51.100.7".into()] }),

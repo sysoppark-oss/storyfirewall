@@ -526,7 +526,17 @@ impl<'a> Ingester<'a> {
                 let p = self.resolve_proc(proc, ev.ts)?;
                 let ip = normalize_ip(raddr);
                 let key = format!("{ip}:{rport}");
-                let domain = self.dns_cache.get(&ip).map(|(d, _)| d.clone());
+                // 직전 DNS 조회로 도메인을 붙인다. 조회가 이 수집기 수명 안에 없으면(서비스 재시작·배치 경계) 같은 원격지 노드에
+                // 전에 붙은 도메인을 이어받는다 — 없으면 upsert 가 attrs 를 통째로 바꿔 도메인이 지워지고, 사건 추적이 "새 접속지"로 잘못 본다(39차 반영 중 발견)
+                let domain = self.dns_cache.get(&ip).map(|(d, _)| d.clone()).or_else(|| {
+                    self.store
+                        .find_node(NodeKind::Remote, &key)
+                        .ok()
+                        .flatten()
+                        .and_then(|id| self.store.node(id).ok())
+                        .and_then(|n| n.attr("domain"))
+                        .and_then(|v| v.as_str().map(|s| s.to_string()))
+                });
                 let label = match &domain {
                     Some(d) => format!("{d}:{rport}"),
                     None => key.clone(),
