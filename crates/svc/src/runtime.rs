@@ -158,6 +158,8 @@ pub struct World<'a> {
     pub first_run_pending: Vec<(String, i64)>,
     /// L066: 실제 설치가 보여 판정 등록에서 뺀 미끼 폴더
     pub decoys_retired: Vec<String>,
+    /// L070: 지난번 찾기에서 찾은 미끼 폴더(사라짐 비교용). None = 아직 한 번도 안 찾음
+    pub decoys_seen: Option<Vec<String>>,
     /// L069: 설치 목록 미리 계산(주기 판정 뒤). installs.list 는 이것만 읽는다
     pub install_cache: graph::install::InstallCache,
     /// 갈래 C: 증분 주기 판정기(메모리 뷰·사슬 캐시). 결과는 전체 판정과 같다(judge 시험).
@@ -273,6 +275,7 @@ impl Runtime {
                     dev_force: None,
                     first_run_pending: Vec::new(),
                     decoys_retired: Vec::new(),
+                    decoys_seen: None,
                     install_cache: graph::install::InstallCache::default(),
                 };
                 crate::first_run::ensure_table(&world.graph);
@@ -839,6 +842,21 @@ pub fn register_decoys(world: &mut World, dirs: Vec<String>) {
     for c in decoy::CANDIDATES {
         installs.extend(ran_images_like(&world.graph, c.keyword, since));
     }
+    // L070(30차 Q9-b): 지난번에 있던 미끼가 사라졌으면 사실로 남긴다(물러난 것은 빼고). 판단은 하지 않는다
+    if let Some(prev) = &world.decoys_seen {
+        let gone = decoy::vanished(prev, &dirs, &world.decoys_retired);
+        for d in &gone {
+            let _ = world.engine.record_event(
+                "decoy_missing",
+                2,
+                format!("미끼 폴더가 사라졌습니다: {d} — 누가 지웠는지는 이 기록만으로 알 수 없습니다(사용자 정리·백신·다른 프로그램 모두 가능)"),
+            );
+        }
+        if !gone.is_empty() {
+            flush_events(world);
+        }
+    }
+    world.decoys_seen = Some(dirs.clone());
     let (keep, retired) = decoy::retire_for_installs(dirs, &installs);
     world.decoys_retired = retired;
     judge::rules::set_decoy_dirs(keep);

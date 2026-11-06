@@ -297,6 +297,21 @@ pub fn retire_for_installs(
     (keep, retired)
 }
 
+/// L070(30차 Q9-b): 지난번 등록했던 미끼 중 이번 찾기에서 사라진 것(실제 프로그램이 들어와 물러난 것은 뺀다).
+/// 사라진 사실만 남긴다 — 누가 지웠는지는 이 비교만으로 알 수 없다(사용자 정리·백신·탈취 도구 모두 가능)
+pub fn vanished(prev: &[String], found: &[String], retired: &[String]) -> Vec<String> {
+    let norm = |d: &String| {
+        d.replace('/', "\\")
+            .trim_end_matches('\\')
+            .to_ascii_lowercase()
+    };
+    let found: std::collections::HashSet<String> = found.iter().chain(retired).map(norm).collect();
+    prev.iter()
+        .filter(|d| !found.contains(&norm(d)))
+        .cloned()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,5 +462,24 @@ mod tests {
         )];
         let (_, r) = retire_for_installs(dirs, &ran);
         assert_eq!(r, vec![cent]);
+    }
+
+    #[test]
+    fn vanished_reports_only_disappeared_not_retired() {
+        let a = r"C:\Users\u\AppData\Local\CentBrowser\User Data".to_string();
+        let b = r"C:\Users\u\AppData\Roaming\Exodus\exodus.wallet".to_string();
+        let c = r"C:\Users\u\AppData\Roaming\Electrum\wallets".to_string();
+        let prev = vec![a.clone(), b.clone(), c.clone()];
+        // 그대로(끝 구분자·대소문자 달라도 같은 폴더)
+        assert!(vanished(
+            &prev,
+            &[format!("{}\\", a.to_uppercase()), b.clone(), c.clone()],
+            &[]
+        )
+        .is_empty());
+        // b 는 실제 설치로 물러남(사라짐 아님), c 는 사라짐
+        assert_eq!(vanished(&prev, &[a.clone()], &[b.clone()]), vec![c.clone()]);
+        // 처음(지난번 없음)은 아무것도 사라지지 않았다
+        assert!(vanished(&[], &[a], &[]).is_empty());
     }
 }
