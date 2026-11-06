@@ -294,6 +294,36 @@ fn main() {
                 }
                 Err(e) => check(false, &format!("icmpv4 filter added ({e})")),
             }
+            // ④' ICMPv4 는 전송 계층(패킷마다)에 건다 — 인터페이스·이 PC 주소·들어옴 조건도 그 계층에서 받아지는지
+            let mut ic2 = base.clone();
+            ic2.app_path = None;
+            ic2.protocols = vec![1];
+            ic2.interface = Some(alias.clone());
+            ic2.local_v4 = vec![rng(local)];
+            let mut ic3 = ic2.clone();
+            ic3.direction = Direction::In;
+            match eng.apply(&[ic2, ic3]) {
+                Ok(ids) => {
+                    let layers: Vec<String> = eng
+                        .list_ours()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|(id, _, _)| ids.iter().any(|x| x.0 == *id))
+                        .map(|(_, _, l)| format!("{:08x}", l.data1))
+                        .collect();
+                    println!("icmp layers: {layers:?}");
+                    check(
+                        ids.len() == 2,
+                        "icmpv4 out+in with interface/local on transport layers",
+                    );
+                    eng.delete(&ids.iter().map(|x| x.0).collect::<Vec<_>>())
+                        .unwrap_or_else(|e| fail(&e));
+                }
+                Err(e) => check(
+                    false,
+                    &format!("icmpv4 out+in with interface/local on transport layers ({e})"),
+                ),
+            }
             let left = eng.list_ours().unwrap_or_default();
             check(left.is_empty(), "no filters left");
             println!("acltest: {bad} failed");

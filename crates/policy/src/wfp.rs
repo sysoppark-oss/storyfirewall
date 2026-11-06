@@ -23,12 +23,39 @@ pub const SUBLAYER_KEY: GUID = GUID::from_u128(0x5f1a2b3c_4d5e_4f60_8172_839405a
 /// Sublayer weight: Defender(0x2000~0x7FFF 추정)보다 높게. 차단은 어느 Sublayer 든 이기므로 값 자체는 결정적이지 않다.
 pub const SUBLAYER_WEIGHT: u16 = 0x8000;
 /// 우리가 쓰는 계층. 열거·구독 템플릿은 layerKey 가 필수(run-1: 비우면 FWP_E_LAYER_NOT_FOUND)라 계층마다 돈다.
-pub const LAYERS: [GUID; 4] = [
+/// 우리 필터가 들어갈 수 있는 계층 전부 — 열거·정리·대조가 이 목록을 돈다(빠지면 고아·재등록 반복)
+pub const LAYERS: [GUID; 6] = [
     FWPM_LAYER_ALE_AUTH_CONNECT_V4,
     FWPM_LAYER_ALE_AUTH_CONNECT_V6,
     FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
     FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
+    FWPM_LAYER_OUTBOUND_TRANSPORT_V4,
+    FWPM_LAYER_INBOUND_TRANSPORT_V4,
 ];
+
+/// 명세 → (V4 계층, V6 계층). 2026-11-06 노트북 실측: ALE_AUTH_CONNECT 의 ICMP 차단이 ping 을 막지 못했다.
+/// ICMPv4 만인 명세는 패킷마다 판정하는 전송 계층에 건다(ICMPv6 는 가드가 거부하므로 V6 계층은 쓰이지 않음)
+fn layers_for(s: &BlockSpec) -> (GUID, GUID) {
+    let icmp_only = !s.protocols.is_empty() && s.protocols.iter().all(|p| *p == 1);
+    match (s.direction, icmp_only) {
+        (Direction::Out, true) => (
+            FWPM_LAYER_OUTBOUND_TRANSPORT_V4,
+            FWPM_LAYER_ALE_AUTH_CONNECT_V6,
+        ),
+        (Direction::In, true) => (
+            FWPM_LAYER_INBOUND_TRANSPORT_V4,
+            FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
+        ),
+        (Direction::Out, false) => (
+            FWPM_LAYER_ALE_AUTH_CONNECT_V4,
+            FWPM_LAYER_ALE_AUTH_CONNECT_V6,
+        ),
+        (Direction::In, false) => (
+            FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
+            FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
+        ),
+    }
+}
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -355,16 +382,7 @@ impl Engine {
         let mut out = Vec::new();
         let result: Result<()> = (|| {
             for s in specs {
-                let (l4, l6) = match s.direction {
-                    Direction::Out => (
-                        FWPM_LAYER_ALE_AUTH_CONNECT_V4,
-                        FWPM_LAYER_ALE_AUTH_CONNECT_V6,
-                    ),
-                    Direction::In => (
-                        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
-                        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
-                    ),
-                };
+                let (l4, l6) = layers_for(s);
                 if s.wants_v4() {
                     out.push((self.add_one(s, l4, false)?, s.clone()));
                 }
@@ -406,16 +424,7 @@ impl Engine {
             }
             let mut out = Vec::new();
             for s in add {
-                let (l4, l6) = match s.direction {
-                    Direction::Out => (
-                        FWPM_LAYER_ALE_AUTH_CONNECT_V4,
-                        FWPM_LAYER_ALE_AUTH_CONNECT_V6,
-                    ),
-                    Direction::In => (
-                        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
-                        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
-                    ),
-                };
+                let (l4, l6) = layers_for(s);
                 if s.wants_v4() {
                     out.push((self.add_one(s, l4, false)?, s.clone()));
                 }
