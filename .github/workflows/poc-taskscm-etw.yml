@@ -22,7 +22,8 @@ jobs:
           $d = "C:\tsc-test"
           New-Item -ItemType Directory -Force $d | Out-Null
           logman create trace tsc -p "Microsoft-Windows-TaskScheduler" 0xffffffffffffffff 5 -o "$d\tsc.etl" -ets | Out-Null
-          logman update trace tsc -p "Service Control Manager" 0xffffffffffffffff 5 -ets | Out-Null
+          logman update trace tsc -p "{555908d1-a6d7-4695-8e1e-26931d2012f4}" 0xffffffffffffffff 5 -ets | Out-Null
+          logman query providers | Select-String -Pattern "TaskScheduler|Service Control" | ForEach-Object { "provider: $_" }
           Start-Sleep -Seconds 2
           "caller pid = $PID"
           $a = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c echo x > $d\out.txt"
