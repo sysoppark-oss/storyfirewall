@@ -60,6 +60,10 @@ export function watchUntilText(until: unknown, fmt: (unix: number) => string): s
 export const LEDGER_SCOPE =
   "관찰 시간 동안 이 프로그램과 그 자손이 새로 만들거나 이름을 바꾼 파일을 적습니다(위치·종류 상관없음). 있던 파일의 내용을 고친 것과 지운 것은 아직 적지 못합니다.";
 
+/// 33차 Q1: 대리 실행(시각으로 이음) 안내 — 무엇을 근거로 이었고 무엇을 놓치는지
+export const LEDGER_PROXY_NOTE =
+  "이 프로그램이 예약 작업·WMI·서비스 도구를 실행한 뒤 2분 안에 그 시스템 기능이 띄운 프로그램(최대 3개)이 만든 파일입니다. 부모-자식 관계가 아니라 시각으로 이은 것이라 다른 프로그램의 것이 섞일 수 있습니다. 도구 없이 직접 맡긴 일과 나중 시각으로 걸어 둔 예약 작업은 잡지 못합니다.";
+
 /// 변경 장부 한 줄 요약(사실의 개수만)
 export function ledgerSummary(run: { procs: string[]; files: string[]; autoruns: unknown[]; remotes: unknown[]; truncated?: boolean; facts_complete?: boolean }): string {
   const more = run.truncated ? " 이상" : "";

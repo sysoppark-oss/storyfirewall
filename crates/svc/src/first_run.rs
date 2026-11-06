@@ -678,7 +678,7 @@ fn start_watch(world: &mut crate::runtime::World, t: &Target, s: Settings) {
                 // 프로세스 키 "pid@생성 시각" 의 생성 시각(33차 Q2: pid + 생성 시각으로 구분)
                 let ct = n.key.rsplit_once('@').and_then(|(_, t)| t.parse::<i64>().ok()).unwrap_or(0);
                 if let (false, Some(p)) = (ended, n.attr("pid").and_then(|v| v.as_u64())) {
-                    graph::ledger::watch(p as u32, ct, until_ft);
+                    graph::ledger::watch_under(p as u32, ct, until_ft, (t.pid, t.create_ft));
                 }
             }
         }

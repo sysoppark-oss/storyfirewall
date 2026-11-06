@@ -8,7 +8,7 @@ import { processPanel } from "./process";
 import { watchUntilText } from "./first-run";
 import { buildCard } from "./installs";
 import type { InstallRun } from "./installs-text";
-import { LEDGER_SCOPE, ledgerSummary } from "./first-run";
+import { LEDGER_SCOPE, LEDGER_PROXY_NOTE, ledgerSummary } from "./first-run";
 
 /// 서비스가 남긴 보호 사건 (A29): 파이프 이름 가로채기, 데이터 폴더 점유 등. 대상이 그래프의 프로세스면 상세로 잇는다
 interface ServiceEvent {
@@ -183,10 +183,17 @@ export function dashboard(): HTMLElement {
             row.append(" ", button("변경 장부", () => {
               clear(slot);
               slot.append(loadingBox());
-              void rpc<{ run: InstallRun }>("ledger.get", { node_id: node }).then((r) => {
+              void rpc<{ run: InstallRun; inferred?: { path: string; bulk: boolean }[] }>("ledger.get", { node_id: node }).then((r) => {
                 clear(slot);
                 if (!r.ok) return void slot.append(failBox(r.error, () => {}, "변경 장부"));
                 slot.append(el("p", "muted small", LEDGER_SCOPE), buildCard(r.result.run, ledgerSummary(r.result.run)));
+                // 33차 Q1: 예약 작업·WMI·서비스로 맡긴 일 — 부모-자식이 아니라 시각으로 이은 것
+                const inf = r.result.inferred ?? [];
+                if (inf.length) {
+                  const ul = el("ul", "install-list");
+                  for (const f of inf) ul.append(ext("li", f.bulk ? `${f.path} (파일이 많아 폴더로 묶음)` : f.path, "mono"));
+                  slot.append(el("h4", undefined, `대리 실행으로 이어 적은 파일 (시각으로 이음, ${inf.length})`), el("p", "muted small", LEDGER_PROXY_NOTE), ul);
+                }
               });
             }));
           }

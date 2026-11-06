@@ -1248,7 +1248,37 @@ fn handle(
             }
             // 자손 300까지(상한을 넘으면 접속·쓰기를 한 자손 먼저 — install_xray)
             let run = graph::install::install_xray(&world.graph, v.node_id, 300).map_err(internal)?;
-            j(serde_json::json!({ "run": run }))
+            // 33차 Q1: 대리 실행(예약 작업·WMI·서비스)으로 이어 적은 파일 — 추정. 관찰 기간(시작~끝) 안에서 뿌리 꼬리표로
+            let (start, until): (i64, i64) = world
+                .graph
+                .conn()
+                .query_row(
+                    "SELECT start_ts, until_ts FROM first_run_watch WHERE proc_node = ?1",
+                    [v.node_id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap_or((0, 0));
+            let node = world.graph.node(v.node_id).map_err(internal)?;
+            let root = node
+                .key
+                .rsplit_once('@')
+                .and_then(|(p, t)| Some((p.parse::<u32>().ok()?, t.parse::<i64>().ok()?)));
+            let inferred = match root {
+                Some(r) => graph::ledger::inferred_files(
+                    &world.graph,
+                    r,
+                    crate::runtime::unix_to_filetime(start),
+                    crate::runtime::unix_to_filetime(until + 60),
+                    200,
+                )
+                .map_err(internal)?,
+                None => Vec::new(),
+            };
+            let inferred: Vec<serde_json::Value> = inferred
+                .into_iter()
+                .map(|(path, source)| serde_json::json!({ "path": path, "bulk": source.contains(":bulk:") }))
+                .collect();
+            j(serde_json::json!({ "run": run, "inferred": inferred }))
         }
         Method::AgentsList => {
             let v: api::methods::AgentsParams = serde_json::from_value(p)

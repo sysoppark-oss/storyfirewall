@@ -189,9 +189,12 @@ pub fn process_provider(ctx: Arc<Ctx>) -> Provider {
                     }
                     // 17판 23-2 ③ 변경 장부: 관찰 대상의 자손은 같은 기한을 물려받는다
                     // 33차 Q2: pid 가 다시 쓰였으면 옛 항목을 먼저 지운다(끝 이벤트를 놓쳤을 때)
-                    graph::ledger::on_start(pid, create_time.unwrap_or(0));
-                    if graph::ledger::on_spawn(ppid, pid, create_time.unwrap_or(0), ts) {
-                        ctx.count("ledger_spawn");
+                    graph::ledger::on_start(pid, create_time.unwrap_or(0), &image);
+                    match graph::ledger::on_spawn(ppid, pid, create_time.unwrap_or(0), &image, ts) {
+                        graph::ledger::Inherit::No => {}
+                        graph::ledger::Inherit::Child => ctx.count("ledger_spawn"),
+                        // 33차 Q1: 대리 창(예약 작업·WMI·서비스)으로 물려받음 — 추정
+                        graph::ledger::Inherit::Proxy(_) => ctx.count("ledger_proxy"),
                     }
                     // A30: 로그온 세션 (Kernel-Process ProcessStart 의 SessionID). 노드 키와 같은 생성 시각으로 보낸다
                     let session = u32f(&p, "SessionID");
@@ -638,13 +641,21 @@ pub fn file_provider(ctx: Arc<Ctx>) -> Provider {
             if kind != "namedelete" && !path.ends_with(":Zone.Identifier") {
                 let (write_path, source) = match graph::ledger::record_file(pid, &path, ts) {
                     graph::ledger::Write::Skip => (None, String::new()),
-                    graph::ledger::Write::Each => (
+                    // 대리 창으로 물려받은 프로세스(추정)는 출처에 뿌리를 단다 — ledger.get 이 뿌리로 찾는다
+                    graph::ledger::Write::Each { inferred_root: Some(r) } => {
+                        (Some(path.clone()), graph::ledger::inferred_source(r))
+                    }
+                    graph::ledger::Write::Each { inferred_root: None } => (
                         Some(path.clone()),
                         if kind == "rename" { "etw:file:ledger:rename".to_string() } else { "etw:file:ledger".to_string() },
                     ),
-                    graph::ledger::Write::Summary { folder_glob, count } => {
+                    graph::ledger::Write::Summary { folder_glob, count, inferred_root } => {
                         ctx.count("ledger_bulk");
-                        (Some(folder_glob), format!("etw:file:ledger:bulk:{count}"))
+                        let src = match inferred_root {
+                            Some(r) => format!("{}:bulk:{count}", graph::ledger::inferred_source(r)),
+                            None => format!("etw:file:ledger:bulk:{count}"),
+                        };
+                        (Some(folder_glob), src)
                     }
                 };
                 if let Some(wp) = write_path {
