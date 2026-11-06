@@ -1,10 +1,18 @@
 # Story Firewall
 
-**내 PC의 연결을 "이야기"로 보여 주는 Windows 개인 방화벽** — 개발 중(출시 전)
+**내 PC의 연결을 "이야기"로 보여 주는 Windows 개인 방화벽** — v0.1 공개판
 
 > A personal firewall for Windows that explains every connection as a short story —
 > *where it came from → what it ran → where it connected* — and lets you turn that story into a block rule.
-> Local-only, no kernel driver, no TLS interception. Korean UI. **Work in progress, not released yet.**
+> Local-only, no kernel driver, no TLS interception. Korean UI. **First public build (v0.1).**
+
+## 설치 파일 받기
+
+- 최신 판: **https://github.com/sysoppark-oss/storyfirewall/releases/latest** → 아래 Assets 의 `story-firewall-<판>-setup.exe`
+- 대상: Windows 11 x64, Windows 10 22H2 x64
+- 받은 파일 확인: `Get-FileHash .\story-firewall-<판>-setup.exe -Algorithm SHA256` 결과가 같은 페이지의 `SHA256SUMS.txt` 와 같아야 합니다.
+- 공인 코드 서명 인증서가 아직 없어 SmartScreen 경고("Windows의 PC 보호")가 뜹니다 → **추가 정보 → 실행**. 설치 때 관리자 승인(UAC)이 한 번 필요합니다.
+- 설치 전에 알아 둘 것·이 판의 한계는 릴리스 노트에 있습니다.
 
 ---
 

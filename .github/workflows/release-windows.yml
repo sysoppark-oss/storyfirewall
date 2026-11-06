@@ -127,8 +127,10 @@ jobs:
         run: |
           $f = "story-firewall-" + "${{ inputs.tag }}" + "-setup.exe"
           $sha = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
-          @("$sha  $f", "", "commit $env:GITHUB_SHA", "signing key leaf sha256 $env:SF_RELEASE_PIN (self-signed, per release, key destroyed)") | Set-Content SHA256SUMS.txt -Encoding ascii
-          gh release create "${{ inputs.tag }}" $f SHA256SUMS.txt release-test.txt --draft --target $env:GITHUB_SHA --title "Story Firewall ${{ inputs.tag }}" --notes-file docs/release-notes.md
+          # SHA256SUMS.txt is hash lines only (sha256sum -c / Get-FileHash friendly); build facts go to BUILD-INFO.txt
+          @("$sha  $f") | Set-Content SHA256SUMS.txt -Encoding ascii
+          @("commit $env:GITHUB_SHA", "signing key leaf sha256 $env:SF_RELEASE_PIN (self-signed, per release, key destroyed)") | Set-Content BUILD-INFO.txt -Encoding ascii
+          gh release create "${{ inputs.tag }}" $f SHA256SUMS.txt BUILD-INFO.txt release-test.txt --draft --target $env:GITHUB_SHA --title "Story Firewall ${{ inputs.tag }}" --notes-file docs/release-notes.md
 
       - name: Logs
         if: always()
