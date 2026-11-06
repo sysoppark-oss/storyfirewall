@@ -19,6 +19,13 @@ export async function runScenario(page, outDir, must, opts = {}) {
   await page.waitForTimeout(800);
   must((await page.evaluate(() => document.querySelectorAll(".cy canvas").length)) > 0, "mindmap canvas rendered");
   await page.locator(".mindmap").screenshot({ path: `${outDir}/2-mindmap.png` });
+  // D049 흐름 보기: 네 열 상자 + 선(SVG) + 장 레일 5칸
+  await pay.locator("button", { hasText: "흐름 보기" }).click();
+  await page.waitForSelector(".flowview .flow-box", { timeout: 10000 });
+  await page.waitForTimeout(500);
+  must((await page.evaluate(() => document.querySelectorAll(".flowview .rail-step").length)) === 5, "flow rail has 5 steps");
+  must((await page.evaluate(() => document.querySelectorAll(".flowview .flow-line").length)) > 0, "flow lines drawn");
+  await page.locator(".flowview").screenshot({ path: `${outDir}/2b-flow.png` });
 
   await pay.locator("button", { hasText: "여기서부터 끊기…" }).click();
   await page.waitForSelector("dialog.ack[open]");

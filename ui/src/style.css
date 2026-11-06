@@ -245,3 +245,35 @@ table.grid.empty thead { display: none; }
 .btn:disabled, button:disabled, select:disabled, input:disabled { opacity: .45; cursor: not-allowed; }
 /* AI 도구 화면: 서명 확인 안 됨 — 주황 대신 굵게(명세 2-1: 주황은 판정 결과에만) */
 .strong { font-weight: 600; }
+/* D049 흐름 보기: 장 레일(왼쪽) · 관계 지도(가운데, 네 열 + SVG 선) · 선택한 것(오른쪽) · 오늘 한 일 꼬리(아래). 늘 움직이는 장식 없음 */
+.flowview { margin-top: 10px; }
+.flow-hint { margin: 0 0 8px; }
+.flow-body { display: grid; grid-template-columns: 240px minmax(0, 1fr) 280px; gap: 12px; align-items: start; }
+.flow-rail { list-style: none; margin: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); display: flex; flex-direction: column; gap: 12px; }
+.rail-step { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 6px; font-size: 13px; }
+.rail-mark { color: var(--brand-strong); line-height: 1.4; }
+.rail-step.off .rail-mark, .rail-step.off .rail-head { color: var(--muted); }
+.rail-step.destroy.on .rail-mark, .rail-step.destroy.on .rail-head b { color: var(--bad); }
+.rail-body > div { overflow-wrap: anywhere; }
+.flow-map { position: relative; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 10px; min-height: 240px; }
+.flow-lines { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.flow-line { fill: none; stroke: var(--mm-edge); stroke-width: 1.5; }
+.flow-line.chapter { stroke: var(--bad); stroke-width: 2.5; }
+.flow-cols { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; }
+.flow-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.flow-col-name { font-size: 11px; color: var(--muted); letter-spacing: .06em; }
+.flow-box { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); cursor: pointer; min-width: 0; }
+.flow-box:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.flow-box.selected { border-color: var(--brand-strong); box-shadow: 0 0 0 1px var(--brand-strong); }
+.flow-box.hero { border-width: 2px; border-color: var(--mm-center); }
+.flow-box.chapter, .flow-box.command { border-color: var(--bad); }
+.flow-box .flag { width: 16px; height: 12px; }
+.flow-box-sub { font-size: 11px; color: var(--muted); }
+.flow-box-title { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.flow-box-title.path { font-family: Consolas, 'Cascadia Mono', monospace; font-weight: 500; }
+.flow-side { border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 10px; font-size: 13px; max-height: 560px; overflow: auto; }
+.flow-side-title { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.flow-tail { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 10px; }
+.flow-tail h4 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 500; }
+.flow-tail-row { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 8px; font-size: 13px; padding: 2px 0; }
+@media (max-width: 1100px) { .flow-body { grid-template-columns: minmax(0, 1fr); } .flow-rail { flex-direction: row; flex-wrap: wrap; } .flow-rail .rail-step { flex: 1 1 160px; } }

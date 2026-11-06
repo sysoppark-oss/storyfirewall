@@ -11,13 +11,13 @@ import { sanitize } from "../sanitize";
 import { processPanel } from "./process";
 
 const SCOPE_SHORT: Record<string, string> = { loopback: "이 PC", private: "로컬망", link_local: "로컬망", multicast: "멀티캐스트", broadcast: "브로드캐스트", cgnat: "통신사 NAT" };
-interface NodeJ {
+export interface NodeJ {
   id: number;
   kind: string;
   key: string;
   label: string;
 }
-interface EdgeJ {
+export interface EdgeJ {
   id: number;
   src: number;
   dst: number;
@@ -25,7 +25,7 @@ interface EdgeJ {
   ts: number;
   chapter: number | null;
 }
-interface Branch {
+export interface Branch {
   depth: number;
   node: NodeJ;
   via: EdgeJ | null;

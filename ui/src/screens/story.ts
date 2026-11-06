@@ -1,6 +1,7 @@
 import { mutation, rpc, uuid, type RpcResult, type RpcError } from "../rpc";
 import { approvalBox, countdown, type ApplyReply } from "../confirm";
 import { fileName } from "../sanitize";
+import { flowView } from "./flow";
 import { mindmap } from "./mindmap";
 import type { Where } from "./connections";
 import { summarizeGaps, groupStories, sumGroupSources } from "./story-group";
@@ -526,6 +527,12 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       }
       // D043-3·D044-3: 정상 처리를 못 하는 사건은 단추 줄 아래 회색 한 줄(단추 줄 순서는 그대로)
       actions.append(
+        // D049: 흐름 보기(장 레일 + 관계 지도 + 선택한 것 + 오늘 한 일 꼬리). 보조 단추 — 주 단추(마인드맵) 왼쪽(D1)
+        button("흐름 보기", () => {
+          const old = card.querySelector(".flowview");
+          if (old) return old.remove();
+          card.append(flowView(ev));
+        }),
         button("마인드맵", () => {
           const old = card.querySelector(".mindmap");
           if (old) return old.remove();
@@ -598,7 +605,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       else for (const pol of res.policies) box.append(countdown(pol, root, () => {}, "끊기 "));
       for (const t of res.terminated) box.append(el("div", "muted", ext("span", `${fileName(t.image)} (PID ${t.pid}): ${t.outcome}`)));
       card.append(box);
-    }, "btn danger");
+    }, "btn danger-outline");
     go.disabled = !!(p.validation?.errors?.length) || (!p.block_images.length && !p.system_addresses.length);
     dlg.append(out, el("div", "actions", button("취소", () => dlg.close()), go));
     document.body.append(dlg);
