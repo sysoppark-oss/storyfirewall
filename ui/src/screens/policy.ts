@@ -132,7 +132,8 @@ export function policy(): HTMLElement {
     const live = r.result.items.find((x) => x.acl_yaml && (x.state === "Applied" || x.state === "Confirmed"));
     if (!aclLoaded) {
       aclLoaded = true;
-      const row = r.result.items.find((x) => x.acl_yaml && x.state !== "RolledBack" && x.state !== "Expired");
+      // 걸린 ACL 이 없으면 마지막 ACL(되돌림·일시 중지 포함)을 '걸려 있지 않은 표'로 보여 준다 — 되돌린 뒤 빈 표가 되어 다시 입력하던 것(노트북 제보)
+      const row = live ?? r.result.items.find((x) => x.acl_yaml);
       acl.load(row?.acl_yaml ?? null, live?.acl_yaml ?? null);
     } else acl.setActive(live?.acl_yaml ?? null);
     // D032-3: 비어 있음(2-5)
