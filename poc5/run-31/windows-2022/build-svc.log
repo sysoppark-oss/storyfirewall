@@ -1,0 +1,14 @@
+   Compiling windows-sys v0.61.2
+   Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
+   Compiling geo v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\geo)
+   Compiling ferrisetw v1.2.0 (D:\a\storyfirewall\storyfirewall\third_party\ferrisetw)
+   Compiling graph v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\graph)
+   Compiling api v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\api)
+   Compiling judge v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\judge)
+   Compiling policy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\policy)
+   Compiling collector v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\collector)
+   Compiling dsl v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\dsl)
+   Compiling engine v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\engine)
+   Compiling story v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\story)
+   Compiling svc v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\svc)
+    Finished `release` profile [optimized] target(s) in 52.33s
