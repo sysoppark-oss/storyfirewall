@@ -29,6 +29,19 @@ pub fn summary(yaml: &str) -> String {
     let Some(p) = doc.policies.first() else {
         return "빈 정책".into();
     };
+    // ACL 묶음: 규칙 수와 허용·차단 수(규칙 하나하나는 정책 화면의 ACL 표에서)
+    if doc.policies.iter().all(|x| x.priority.is_some()) {
+        let allow = doc
+            .policies
+            .iter()
+            .filter(|x| x.action == dsl::model::Action::Allow)
+            .count();
+        return format!(
+            "ACL 규칙 {}개 (허용 {allow} · 차단 {})",
+            doc.policies.len(),
+            doc.policies.len() - allow
+        );
+    }
     let m = &p.matcher;
     let mut who: Vec<String> = m.process.iter().map(|x| proc_label(x)).collect();
     if let Some(d) = &m.descendants_of {

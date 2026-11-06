@@ -259,12 +259,29 @@ impl<'a> Engine<'a> {
         if !v.needs_ack.is_empty() {
             return Err(EngineError::NeedsAck(v.needs_ack));
         }
-        // 1차: 문서 1건 = 정책 1건 (여러 정책 문서는 UI 가 나눠 보낸다)
-        let p = doc
+        let first = doc
             .policies
             .first()
             .ok_or_else(|| EngineError::Invalid(vec!["정책 없음".into()]))?;
-        let expanded = dsl::expand(p, self.resolver)?;
+        // ACL 정책 관리(2026-11-06): 모든 정책에 ACL 번호(priority)가 있으면 "ACL" 묶음 하나 — 한 판·한 WFP 트랜잭션으로
+        // 통째로 바꾸고 통째로 되돌린다. 번호가 없는 문서는 예전처럼 정책 1건만 받는다.
+        // 결함 수정: 전에는 여러 정책 문서에서 첫 정책만 조용히 적용했다 → 이제 거부
+        let acl = acl_set(&doc.policies)?;
+        let record_name = if acl {
+            ACL_RECORD_NAME.to_string()
+        } else {
+            first.name.clone()
+        };
+        let mut expanded = dsl::expand(first, self.resolver)?;
+        if acl {
+            for more in doc.policies.iter().skip(1) {
+                let e = dsl::expand(more, self.resolver)?;
+                expanded.specs.extend(e.specs);
+                expanded.warnings.extend(e.warnings);
+                expanded.excluded_system.extend(e.excluded_system);
+            }
+            expanded.schedule = None;
+        }
         let mut warnings = expanded.warnings.clone();
         let mut specs = expanded.specs.clone();
 
@@ -301,7 +318,7 @@ impl<'a> Engine<'a> {
                 },
             };
             addr_specs.push(BlockSpec {
-                name: format!("{} (주소 차단: {who})", p.name),
+                name: format!("{record_name} (주소 차단: {who})"),
                 action: Action::Block,
                 direction: Direction::Out,
                 app_path: None,
@@ -359,7 +376,7 @@ impl<'a> Engine<'a> {
         let now = self.clock.wall();
         let (policy_id, version) =
             self.store
-                .new_version(&p.name, yaml, &specs, schedule.as_ref(), now, actor)?;
+                .new_version(&record_name, yaml, &specs, schedule.as_ref(), now, actor)?;
         // 활성 여부(스케줄 구간 안인가)
         let active = schedule.as_ref().map_or(true, |s| self.in_window(s));
         // 이전 판 → 새 판 을 한 WFP 트랜잭션으로 (11차 Q1: 보호 공백 없음). 실패하면 이전 판이 그대로 남는다.
@@ -392,7 +409,8 @@ impl<'a> Engine<'a> {
             actor,
             &format!("version {version}, filters {filters}, active {active}"),
         )?;
-        self.register_open_conds(policy_id, version, p, &expanded);
+        // ACL 묶음은 와일드카드·자손 조건이 없다(acl_set 이 거부) — 보충할 열린 조건 없음. 첫 정책으로 예전 판의 조건만 내린다
+        self.register_open_conds(policy_id, version, first, &expanded);
         let result = ApplyResult {
             policy_id,
             version,
@@ -1385,4 +1403,42 @@ fn rules_file_name(p: &str) -> String {
         .next()
         .unwrap_or(p)
         .to_ascii_lowercase()
+}
+
+/// ACL 묶음의 정책 기록 이름(정책 목록에 보이는 이름, 판이 쌓이는 단위)
+pub const ACL_RECORD_NAME: &str = "ACL";
+
+/// 문서가 ACL 묶음인가. 모두 번호가 있으면 true. 정책이 여럿인데 번호 없는 것이 섞이면 오류(첫 정책만 적용되던 결함 방지).
+/// ACL 묶음 안에서는 규칙별 기한·시간대·부가 동작을 받지 않는다(묶음 전체가 한 판)
+pub fn acl_set(policies: &[dsl::Policy]) -> Result<bool> {
+    let numbered = policies.iter().filter(|p| p.priority.is_some()).count();
+    if numbered == 0 {
+        if policies.len() > 1 {
+            return Err(EngineError::Invalid(vec![format!(
+                "정책이 {}개입니다. 여러 정책은 ACL 번호(priority)를 모두 붙여 한 묶음으로 적용하거나 하나씩 적용하세요",
+                policies.len()
+            )]));
+        }
+        return Ok(false);
+    }
+    if numbered != policies.len() {
+        return Err(EngineError::Invalid(vec![
+            "ACL 묶음에서는 모든 정책에 번호(priority)가 있어야 합니다".into(),
+        ]));
+    }
+    for p in policies {
+        if p.when.is_some()
+            || p.expires.is_some()
+            || p.until.is_some()
+            || !p.also.is_empty()
+            || p.matcher.descendants_of.is_some()
+            || p.matcher.process.iter().any(|x| x.ends_with('*'))
+        {
+            return Err(EngineError::Invalid(vec![format!(
+                "{}: ACL 규칙에는 시간대·기한·부가 동작·자손·와일드카드 조건을 쓸 수 없습니다(묶음 전체가 한 판)",
+                p.name
+            )]));
+        }
+    }
+    Ok(true)
 }
