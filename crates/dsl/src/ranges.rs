@@ -7,10 +7,7 @@ use policy::spec::{V4Range, V6Prefix};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 fn r(lo: [u8; 4], hi: [u8; 4]) -> V4Range {
-    V4Range {
-        lo: Ipv4Addr::from(lo),
-        hi: Ipv4Addr::from(hi),
-    }
+    V4Range { lo: Ipv4Addr::from(lo), hi: Ipv4Addr::from(hi) }
 }
 
 /// 사설·링크로컬·CGNAT (RFC 1918, 3927, 6598)
@@ -26,14 +23,8 @@ pub fn lan_v4() -> Vec<V4Range> {
 
 pub fn lan_v6() -> Vec<V6Prefix> {
     vec![
-        V6Prefix {
-            addr: "fc00::".parse().unwrap(),
-            prefix: 7,
-        }, // ULA
-        V6Prefix {
-            addr: "fe80::".parse().unwrap(),
-            prefix: 10,
-        }, // link-local
+        V6Prefix { addr: "fc00::".parse().unwrap(), prefix: 7 },  // ULA
+        V6Prefix { addr: "fe80::".parse().unwrap(), prefix: 10 }, // link-local
     ]
 }
 
@@ -62,27 +53,18 @@ pub fn internet_v4() -> Vec<V4Range> {
         let lo = u32::from(e.lo) as u64;
         let hi = u32::from(e.hi) as u64;
         if lo > cursor {
-            out.push(V4Range {
-                lo: Ipv4Addr::from(cursor as u32),
-                hi: Ipv4Addr::from((lo - 1) as u32),
-            });
+            out.push(V4Range { lo: Ipv4Addr::from(cursor as u32), hi: Ipv4Addr::from((lo - 1) as u32) });
         }
         cursor = hi + 1;
     }
     if cursor <= u32::MAX as u64 {
-        out.push(V4Range {
-            lo: Ipv4Addr::from(cursor as u32),
-            hi: Ipv4Addr::from(u32::MAX),
-        });
+        out.push(V4Range { lo: Ipv4Addr::from(cursor as u32), hi: Ipv4Addr::from(u32::MAX) });
     }
     out
 }
 
 pub fn internet_v6() -> Vec<V6Prefix> {
-    vec![V6Prefix {
-        addr: "2000::".parse().unwrap(),
-        prefix: 3,
-    }]
+    vec![V6Prefix { addr: "2000::".parse().unwrap(), prefix: 3 }]
 }
 
 /// "1.2.3.4" | "1.2.3.0/24" | "2001:db8::/32" → 범위. 예약어는 호출자가 먼저 처리.
@@ -97,33 +79,17 @@ pub fn parse_addr(s: &str) -> Option<(Vec<V4Range>, Vec<V6Prefix>)> {
             return None;
         }
         let base = u32::from(v4);
-        let mask = if p == 0 {
-            0
-        } else {
-            u32::MAX << (32 - p as u32)
-        };
+        let mask = if p == 0 { 0 } else { u32::MAX << (32 - p as u32) };
         let lo = base & mask;
         let hi = lo | !mask;
-        return Some((
-            vec![V4Range {
-                lo: Ipv4Addr::from(lo),
-                hi: Ipv4Addr::from(hi),
-            }],
-            vec![],
-        ));
+        return Some((vec![V4Range { lo: Ipv4Addr::from(lo), hi: Ipv4Addr::from(hi) }], vec![]));
     }
     if let Ok(v6) = addr.parse::<Ipv6Addr>() {
         let p = prefix.unwrap_or(128);
         if p > 128 {
             return None;
         }
-        return Some((
-            vec![],
-            vec![V6Prefix {
-                addr: v6,
-                prefix: p,
-            }],
-        ));
+        return Some((vec![], vec![V6Prefix { addr: v6, prefix: p }]));
     }
     None
 }

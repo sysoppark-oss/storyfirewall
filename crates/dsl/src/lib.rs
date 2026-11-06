@@ -21,11 +21,7 @@ pub enum DslError {
     #[error("지원하지 않는 문법 판: {0} (지원: 1)")]
     Version(u32),
     #[error("검증 실패 [{rule}] {policy}: {msg}")]
-    Rule {
-        rule: u8,
-        policy: String,
-        msg: String,
-    },
+    Rule { rule: u8, policy: String, msg: String },
 }
 
 pub type Result<T> = std::result::Result<T, DslError>;

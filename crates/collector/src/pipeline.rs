@@ -393,9 +393,7 @@ pub fn start(cfg: Config, sink: Option<Sender<Vec<Event>>>) -> Result<Session> {
                         // 34차 Q2: 변경 장부 대리 창 — 작업 스케줄러 서비스(Schedule)를 담은 svchost 만 예약 작업 호스트로
                         let sched: Vec<u32> = map
                             .iter()
-                            .filter(|(_, svcs)| {
-                                svcs.iter().any(|s| s.eq_ignore_ascii_case("Schedule"))
-                            })
+                            .filter(|(_, svcs)| svcs.iter().any(|s| s.eq_ignore_ascii_case("Schedule")))
                             .map(|(p, _)| *p)
                             .collect();
                         graph::ledger::set_schedule_hosts(&sched);
