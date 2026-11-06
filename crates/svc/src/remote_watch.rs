@@ -96,11 +96,19 @@ pub fn sample(world: &mut World) -> bool {
                 sent_window,
                 ..
             } => {
-                let target = target_of(world.remote.nodes.get(&pid).copied(), pid, tool, None);
+                let mut target =
+                    target_of(world.remote.nodes.get(&pid).copied(), pid, tool, None);
+                // 32차 Gemini Q2: 처음(최근 30일에 이 도구의 세션이 없었음)은 크게(3), 반복은 작게(2). 끄지는 않는다
+                let first = !seen_recently(world, tool, now);
+                target["first_time"] = serde_json::json!(first);
+                let mut text = remote::start_text(remote::display_of(tool), sent_window);
+                if first {
+                    text.push_str(" 최근 30일 동안 이 프로그램의 원격 세션은 처음입니다.");
+                }
                 let _ = world.engine.record_event_ref(
                     "remote_session_start",
-                    3,
-                    remote::start_text(remote::display_of(tool), sent_window),
+                    if first { 3 } else { 2 },
+                    text,
                     Some(target.to_string()),
                 );
                 any = true;
@@ -164,4 +172,19 @@ fn target_of(
         v["started_ts"] = serde_json::json!(t);
     }
     v
+}
+
+/// 최근 30일에 같은 도구의 세션 시작 사건이 있었나
+fn seen_recently(world: &World, tool: &str, now: i64) -> bool {
+    let needle = format!("\"tool\":\"{tool}\"");
+    world
+        .engine
+        .list_events(now - 30 * 86_400, 500)
+        .map(|evs| {
+            evs.iter().any(|e| {
+                e.kind == "remote_session_start"
+                    && e.ref_json.as_deref().is_some_and(|r| r.contains(&needle))
+            })
+        })
+        .unwrap_or(false)
 }

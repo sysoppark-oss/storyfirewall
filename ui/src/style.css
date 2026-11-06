@@ -243,3 +243,5 @@ table.grid.empty thead { display: none; }
 
 /* 32차 검수 1·2: 잠긴 단추·선택 상자가 눌리는 것처럼 보이지 않게 */
 .btn:disabled, button:disabled, select:disabled, input:disabled { opacity: .45; cursor: not-allowed; }
+/* AI 도구 화면: 서명 확인 안 됨 — 주황 대신 굵게(명세 2-1: 주황은 판정 결과에만) */
+.strong { font-weight: 600; }

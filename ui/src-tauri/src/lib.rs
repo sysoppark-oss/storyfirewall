@@ -38,7 +38,7 @@ pub(crate) fn probe_service() -> bool {
 }
 
 /// events.new 중 원격 세션 시작이면 알림 본문(서비스가 만든 사실 문장)
-fn remote_session_toast(v: &serde_json::Value) -> Option<String> {
+fn remote_session_toast(v: &serde_json::Value) -> Option<(String, bool)> {
     if v.get("method").and_then(|m| m.as_str()) != Some("events.new") {
         return None;
     }
@@ -47,7 +47,8 @@ fn remote_session_toast(v: &serde_json::Value) -> Option<String> {
         return None;
     }
     // 문장에는 외부에서 온 이름이 섞이지 않는다(도구 표시 이름은 서비스 목록의 상수) — 길이만 자른다
-    Some(p.get("detail").and_then(|d| d.as_str()).unwrap_or("").chars().take(240).collect())
+    let body: String = p.get("detail").and_then(|d| d.as_str()).unwrap_or("").chars().take(240).collect();
+    Some((body, p.get("severity").and_then(|s| s.as_u64()).unwrap_or(3) >= 3))
 }
 
 pub(crate) fn notify(app: &tauri::AppHandle, title: &str, body: &str) {
@@ -72,8 +73,9 @@ async fn connect(app: tauri::AppHandle, state: State<'_, AppState>, endpoint: St
                 link2.up.store(false, std::sync::atomic::Ordering::SeqCst);
             }
             // 14판 20-4: 원격 제어 세션 시작은 창을 열지 않아도 바로 Windows 알림(조용함 원칙의 예외)
-            if let Some(body) = remote_session_toast(&v) {
-                notify(&app2, "원격 제어 경보", &body);
+            // 32차 Gemini Q2: 처음 보는 도구는 "경보", 반복은 "알림"으로 제목만 낮춘다(알림 자체는 끄지 않음)
+            if let Some((body, first)) = remote_session_toast(&v) {
+                notify(&app2, if first { "원격 제어 경보 (처음)" } else { "원격 제어 알림" }, &body);
             }
             let _ = app2.emit("svc-notify", v);
         }))

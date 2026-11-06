@@ -66,7 +66,8 @@ export function buildCard(run: InstallRun, summary: string = summaryText(run)): 
   card.append(meta);
 
   card.append(el("p", "install-summary", summary));
-  if (run.truncated) card.append(el("p", "warn small", "기록이 많아 일부만 모았습니다. 아래 목록은 전부가 아닐 수 있습니다."));
+  // 검수(AI 도구 1): 수집 한계는 주의 뜻이 아니라 회색(명세 2-1: 주황은 주의·오늘 처음에만)
+  if (run.truncated) card.append(el("p", "muted small", "기록이 많아 일부만 모았습니다(접속·자동 실행·파일 쓰기를 한 것 먼저). 아래 목록은 전부가 아닙니다."));
 
   const det = el("details", "install-detail");
   det.append(el("summary", undefined, "자세히"));
