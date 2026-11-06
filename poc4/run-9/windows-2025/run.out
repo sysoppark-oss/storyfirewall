@@ -1,0 +1,13 @@
+=== 0. timezone ===
+local_offset_minutes=0
+wall=1793930479 utc=1793930479 local=1793930479 wall_is_utc=true
+=== 1. server (expects 3 connections) ===
+=== 2. signed client: hello -> policy.list -> settings.set (admin) ===
+client: pipe=\\.\pipe\story-firewall
+client: {"jsonrpc":"2.0","id":1,"result":{"api":[1,0],"engine_busy_ms":0,"server_version":"0.1.0-poc"}}
+client: {"jsonrpc":"2.0","id":2,"result":{"address_block_items":[],"address_blocks":0,"items":[]}}
+client: {"jsonrpc":"2.0","id":3,"result":{"ok":true}}
+=== 3. unsigned client: must be rejected before hello ===
+client: pipe=\\.\pipe\story-firewall
+client: closed by server
+=== 4. signed client as standard user: settings.set must be Unauthorized (-32001) ===
