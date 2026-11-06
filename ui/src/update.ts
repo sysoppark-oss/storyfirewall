@@ -66,3 +66,25 @@ export function updateBanner(u: UpdateInfo, onClose: () => void): HTMLElement {
   bar.append(msg, note, el("span", "spacer"), later, go);
   return bar;
 }
+
+// 실시간 2(2026-11-07): 의심 사건 Windows 알림(창을 열지 않아도). 기본 켬. 설정은 이 PC 화면 저장소에, Rust 쪽에는 시작할 때·바꿀 때 알려 준다
+const TOAST_KEY = "sf.toast.story";
+export function storyToast(): boolean {
+  try {
+    return localStorage.getItem(TOAST_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+export async function setStoryToast(on: boolean): Promise<void> {
+  try {
+    localStorage.setItem(TOAST_KEY, on ? "1" : "0");
+  } catch {
+    /* 무시 */
+  }
+  try {
+    await invoke("set_story_toast", { on });
+  } catch {
+    /* 브라우저 미리보기 등 — 무시 */
+  }
+}

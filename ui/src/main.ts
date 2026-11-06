@@ -7,7 +7,7 @@ import { policy } from "./screens/policy";
 import { settings } from "./screens/settings";
 import { engineStuckText, state } from "./state";
 import { applyTheme } from "./theme";
-import { autoCheck, checkUpdate, updateBanner, updaterEnabled } from "./update";
+import { autoCheck, checkUpdate, updateBanner, updaterEnabled, storyToast, setStoryToast } from "./update";
 applyTheme();
 import { el, button, clear } from "./ui";
 import { isElevated, setUnauthorizedHandler } from "./rpc";
@@ -110,6 +110,8 @@ async function boot() {
   }
   go("dashboard");
   // 자동 업데이트(기본 켬, 공개 빌드에서만): 켜고 5초 뒤 한 번 확인 — 새 판이 있으면 맨 위 알림 띠
+  // 실시간 2: 저장된 의심 사건 알림 설정을 Rust 쪽에 알려 준다(기본 켬)
+  if ("__TAURI_INTERNALS__" in window && !storyToast()) void setStoryToast(false);
   if ("__TAURI_INTERNALS__" in window && autoCheck()) {
     window.setTimeout(async () => {
       if (!(await updaterEnabled())) return;

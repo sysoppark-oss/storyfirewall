@@ -52,6 +52,39 @@ fn remote_session_toast(v: &serde_json::Value) -> Option<(String, bool)> {
     Some((body, p.get("severity").and_then(|s| s.as_u64()).unwrap_or(3) >= 3))
 }
 
+/// 실시간 2(사용자 "실시간으로 문제를 찾아야 바로 해결가능함" 2026-11-07, 제품): 새 의심 사건(장이 올라갈 때만 — 서비스 should_notify)을
+/// 창을 열지 않아도 Windows 알림으로. 설정에서 끌 수 있다(기본 켬, 화면이 시작할 때 알려 준다)
+static STORY_TOAST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+#[tauri::command]
+fn set_story_toast(on: bool) {
+    STORY_TOAST.store(on, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// 의심 사건 알림 → (제목, 본문). 프로그램 이름은 외부에서 온 문자열이라 자료로만: 제어·방향 바꿈(RLO 등) 문자를 빼고 길이를 자른다.
+/// 의도를 단정하지 않는다 — 어느 장까지 이어졌는지 사실만
+pub(crate) fn story_toast(v: &serde_json::Value) -> Option<(String, String)> {
+    if v.get("method").and_then(|m| m.as_str()) != Some("events.new") {
+        return None;
+    }
+    let p = v.get("params")?;
+    if p.get("kind").and_then(|k| k.as_str()) != Some("story_suspicious") {
+        return None;
+    }
+    let label: String = p.get("label").and_then(|l| l.as_str()).unwrap_or("").chars().filter(|c| !c.is_control() && !matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')).take(80).collect();
+    let label = if label.is_empty() { "알 수 없는 프로그램".to_string() } else { label };
+    let ch = match p.get("chapter").and_then(|c| c.as_i64()).unwrap_or(0) {
+        1 => "1장 유입",
+        2 => "2장 실행",
+        3 => "3장 자리잡기",
+        4 => "4장 외부 접속",
+        5 => "5장 파괴 징후",
+        _ => "",
+    };
+    let body = if ch.is_empty() { "트레이 아이콘을 눌러 '이야기'에서 확인하세요.".to_string() } else { format!("{ch}까지 이어졌습니다. 트레이 아이콘을 눌러 '이야기'에서 확인하세요.") };
+    Some((format!("의심 사건: {label}"), body))
+}
+
 pub(crate) fn notify(app: &tauri::AppHandle, title: &str, body: &str) {
     use tauri_plugin_notification::NotificationExt;
     let _ = app.notification().builder().title(title).body(body).show();
@@ -77,6 +110,11 @@ async fn connect(app: tauri::AppHandle, state: State<'_, AppState>, endpoint: St
             // 33차 Gemini Q4: 사용자가 "내가 쓰는 원격 도구"로 표시한 도구만 "알림"으로 낮춘다(알림 자체는 끄지 않음)
             if let Some((body, alarm)) = remote_session_toast(&v) {
                 notify(&app2, if alarm { "원격 제어 경보" } else { "원격 제어 알림 (내가 쓰는 도구)" }, &body);
+            }
+            if STORY_TOAST.load(std::sync::atomic::Ordering::SeqCst) {
+                if let Some((title, body)) = story_toast(&v) {
+                    notify(&app2, &title, &body);
+                }
             }
             let _ = app2.emit("svc-notify", v);
         }))
@@ -169,7 +207,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![connect, rpc, endpoint, elevated, approve, update_enabled, update_check, update_install])
+        .invoke_handler(tauri::generate_handler![connect, rpc, endpoint, elevated, approve, update_enabled, update_check, update_install, set_story_toast])
         .on_window_event(|w, e| {
             // 닫기(X) = 트레이로 숨김. 끝내기는 트레이 메뉴 (A28)
             if let tauri::WindowEvent::CloseRequested { api, .. } = e {
@@ -204,4 +242,18 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("tauri");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::story_toast;
+    #[test]
+    fn story_toast_only_for_suspicious_story_and_strips_control_chars() {
+        let v = serde_json::json!({"method": "events.new", "params": {"kind": "story_suspicious", "label": "pay\u{202e}load.exe", "chapter": 4}});
+        let (t, b) = story_toast(&v).unwrap();
+        assert_eq!(t, "의심 사건: payload.exe");
+        assert!(b.starts_with("4장 외부 접속까지 이어졌습니다"));
+        let other = serde_json::json!({"method": "events.new", "params": {"kind": "remote_session_start"}});
+        assert!(story_toast(&other).is_none());
+    }
 }

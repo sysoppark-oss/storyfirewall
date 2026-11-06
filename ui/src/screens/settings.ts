@@ -2,7 +2,7 @@ import { mutation, rpc } from "../rpc";
 import { el, ext, button, errorBox, clear } from "../ui";
 import { state } from "../state";
 import { loadTheme, setTheme, type Theme } from "../theme";
-import { autoCheck, setAutoCheck, checkUpdate, updateBanner, updaterEnabled } from "../update";
+import { autoCheck, setAutoCheck, checkUpdate, updateBanner, updaterEnabled, storyToast, setStoryToast } from "../update";
 import { diagnostics } from "./diag";
 import { FIRST_RUN_CHOICES, FIRST_RUN_MINUTES, FIRST_RUN_MINUTES_SENTENCE, firstRunSentence, firstRunSetting, umbrellaText, type FirstRunMode } from "./first-run";
 import { approvalBox, countdown, type ApplyReply } from "../confirm";
@@ -132,10 +132,18 @@ export function settings(): HTMLElement {
       upNote.textContent = ` 확인하지 못했습니다: ${String(e)}`;
     }
   }, "btn small");
+  // 실시간 2: 의심 사건 Windows 알림(기본 켬)
+  const toastBox = el("input") as HTMLInputElement;
+  toastBox.type = "checkbox";
+  toastBox.checked = storyToast();
+  toastBox.addEventListener("change", () => void setStoryToast(toastBox.checked));
   const upLine = el("div", "update-line", el("label", undefined, upAuto, " 켤 때 새 판이 있는지 확인(기본)"), " ", upBtn, upNote);
   root.append(
     el("div", "form",
       el("label", undefined, "화면 테마 ", theme),
+      el("h3", undefined, "알림"),
+      el("label", undefined, toastBox, " 새 의심 사건을 Windows 알림으로 알리기(기본)"),
+      el("p", "muted small", "앱 창을 닫아 두어도(트레이) 사건이 한 장 더 나아갈 때마다 한 번 알립니다. 원격 제어 시작 알림은 이 설정과 상관없이 늘 뜹니다."),
       el("h3", undefined, "업데이트"),
       upLine,
       el("p", "muted small", "GitHub 공개 릴리스에서 새 판 정보(latest.json)만 받아 봅니다. 이 PC 의 기록은 보내지 않습니다. 설치 파일은 서명을 확인한 뒤에만 실행하고, 설치할 때 승인 창(UAC)이 한 번 뜹니다."),
