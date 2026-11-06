@@ -1,0 +1,67 @@
+groups: Users
+ui pid=2836 owner=runnervmquqza\sfuiuser
+PASS attached to WebView2 over CDP
+PASS found app page (http://tauri.localhost/)
+PASS UI runs non-elevated (view mode) as standard user (elevated=false)
+PASS connected to service
+PASS dashboard shows suspicious count
+PASS story card for payload.exe
+PASS mindmap canvas rendered
+PASS cut dialog lists payload.exe
+PASS cut dialog separates injected browser
+PASS cut dialog lists precise addresses (ip:port/proto)
+PASS approval helper saw service-computed summary (targets, addresses)
+PASS cut kept via approval helper (no in-UI countdown)
+PASS connections show c2 domain (UTC window)
+PASS process detail opens from connection row
+PASS process detail closes with Esc
+PASS policy needs_ack round-trip then approval helper
+PASS direct policy.apply from standard-user UI rejected -32001 ({"error":{"code":-32001,"message":"unauthorized: δí£∞╗¼ Ω┤Çδª¼∞₧É Ω╖╕δú╣δºî"},"id":25,"jsonrpc":"2.0"})
+PASS change.get from standard-user UI rejected -32001 ({"error":{"code":-32001,"message":"unauthorized: δí£∞╗¼ Ω┤Çδª¼∞₧É Ω╖╕δú╣δºî"},"id":26,"jsonrpc":"2.0"})
+PASS approval helper exit 0 ({"code":0,"res":{"id":28,"jsonrpc":"2.0","result":{"policies":[{"policy_id":3,"state":"Confirmed"}],"result":{"confirm_deadline_ts":1793929799,"filters":2,"policy_id":3,"version":1,"warnings":[]},"state":"done"}}})
+PASS helper committed and confirmed (change.result)
+PASS helper showed service-computed summary
+PASS helper logged exit 0
+PASS helper recorded pipe server session (pid 7476 session 2)
+PASS no CSP violations ()
+PASS no page errors ()
+PASS only app/ipc origins (http://tauri.localhost, http://ipc.localhost)
+PASS ui process owner is sfuiuser
+--- stand-in ---
+helper 6f841306-1ba7-45ee-a53a-822dcdec9857 exit=0
+helper ebb7c4ac-7599-41b1-ab4a-a87afeb75815 exit=0
+helper e93af80e-dc23-4d40-b789-990be4bae3e6 exit=0
+--- svc-user.out ---
+server: waiting connection 1
+server: client pid=2836 image=Some("D:\\a\\storyfirewall\\storyfirewall\\ui\\src-tauri\\target\\release\\story-firewall-ui.exe") signature_ok=true (D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe: status=valid signer=Some("StoryFirewall Test") catalog=false)
+server: waiting connection 2
+server: client pid=2836 image=Some("D:\\a\\storyfirewall\\storyfirewall\\ui\\src-tauri\\target\\release\\story-firewall-ui.exe") signature_ok=true (D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe: status=valid signer=Some("StoryFirewall Test") catalog=false)
+server: waiting connection 3
+authn: admin=false
+authn: admin=false
+server: connection 2 closed: closed
+server: client pid=7772 image=Some("D:\\a\\storyfirewall\\storyfirewall\\ui\\src-tauri\\target\\release\\story-firewall-ui.exe") signature_ok=true (D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe: status=valid signer=Some("StoryFirewall Test") catalog=false)
+server: waiting connection 4
+authn: admin=true
+authn: admin=true
+authn: admin=true
+authn: admin=true
+server: connection 3 closed: closed
+server: client pid=3780 image=Some("D:\\a\\storyfirewall\\storyfirewall\\ui\\src-tauri\\target\\release\\story-firewall-ui.exe") signature_ok=true (D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe: status=valid signer=Some("StoryFirewall Test") catalog=false)
+server: waiting connection 5
+authn: admin=true
+authn: admin=true
+authn: admin=true
+authn: admin=true
+server: connection 4 closed: closed
+authn: admin=false
+authn: admin=false
+server: client pid=1836 image=Some("D:\\a\\storyfirewall\\storyfirewall\\ui\\src-tauri\\target\\release\\story-firewall-ui.exe") signature_ok=true (D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe: status=valid signer=Some("StoryFirewall Test") catalog=false)
+server: waiting connection 6
+authn: admin=true
+authn: admin=true
+authn: admin=true
+authn: admin=true
+server: connection 5 closed: closed
+server: connection 1 closed: closed
+--- svc-user.err ---
