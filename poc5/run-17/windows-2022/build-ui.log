@@ -6,18 +6,18 @@
 
 [36mvite v7.3.7 [32mbuilding client environment for production...[36m[39m
 transforming...
-[32m✓[39m 31 modules transformed.
+[32m✓[39m 33 modules transformed.
 rendering chunks...
 computing gzip size...
 [2mdist/[22m[32mindex.html                 [39m[1m[2m  0.41 kB[22m[1m[22m[2m │ gzip:   0.28 kB[22m
-[2mdist/[22m[35massets/index-4nybNAC2.css  [39m[1m[2m 18.56 kB[22m[1m[22m[2m │ gzip:   4.60 kB[22m
-[2mdist/[22m[36massets/index-DUJN0sIy.js   [39m[1m[33m769.47 kB[39m[22m[2m │ gzip: 267.27 kB[22m
+[2mdist/[22m[35massets/index-BVD41WXZ.css  [39m[1m[2m 18.60 kB[22m[1m[22m[2m │ gzip:   4.61 kB[22m
+[2mdist/[22m[36massets/index-CEEVYkbq.js   [39m[1m[33m776.31 kB[39m[22m[2m │ gzip: 269.22 kB[22m
 
 (!) Some chunks are larger than 500 kB after minification. Consider:
 - Using dynamic import() to code-split the application
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-[32m✓ built in 1.54s[39m
+[32m✓ built in 2.26s[39m
     Updating crates.io index
      Locking 455 packages to highest compatible versions
       Adding generic-array v0.14.7 (available: v0.14.9)
@@ -27,3 +27,5 @@ computing gzip size...
       Adding toml_edit v0.20.2 (available: v0.20.7)
    Compiling story-firewall-ui v0.1.0 (D:\a\storyfirewall\storyfirewall\ui\src-tauri)
    Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
+    Finished `release` profile [optimized] target(s) in 1m 17s
+       Built application at: D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe
