@@ -1,6 +1,6 @@
 === 0. timezone ===
 local_offset_minutes=0
-wall=1793939805 utc=1793939805 local=1793939805 wall_is_utc=true
+wall=1793990817 utc=1793990817 local=1793990817 wall_is_utc=true
 === 1. server (expects 3 connections) ===
 === 2. signed client: hello -> policy.list -> settings.set (admin) ===
 client: pipe=\\.\pipe\story-firewall
@@ -17,15 +17,15 @@ client: {"jsonrpc":"2.0","id":2,"result":{"address_block_items":[],"address_bloc
 client: {"jsonrpc":"2.0","id":3,"error":{"code":-32001,"message":"unauthorized: 로컬 관리자 그룹만"}}
 --- server.out ---
 server: waiting connection 1
-server: client pid=8488 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc.exe") signature_ok=true (D:\a\storyfirewall\storyfirewall\target\release\svc-poc.exe: status=valid signer=Some("StoryFirewall Test") catalog=false)
+server: client pid=3564 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc.exe") signature_ok=true (D:\a\storyfirewall\storyfirewall\target\release\svc-poc.exe: status=valid signer=Some("StoryFirewall Test") catalog=false)
 authn: admin=true
 authn: admin=true
 server: connection 1 closed: closed
 server: waiting connection 2
-server: client pid=9060 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc-unsigned.exe") signature_ok=false (D:\a\storyfirewall\storyfirewall\target\release\svc-poc-unsigned.exe: status=nosignature signer=None catalog=false)
+server: client pid=4032 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc-unsigned.exe") signature_ok=false (D:\a\storyfirewall\storyfirewall\target\release\svc-poc-unsigned.exe: status=nosignature signer=None catalog=false)
 server: connection 2 closed: signature_failed
 server: waiting connection 3
-server: client pid=4724 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc.exe") signature_ok=true (D:\a\storyfirewall\storyfirewall\target\release\svc-poc.exe: status=valid signer=Some("StoryFirewall Test") catalog=false)
+server: client pid=3404 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc.exe") signature_ok=true (D:\a\storyfirewall\storyfirewall\target\release\svc-poc.exe: status=valid signer=Some("StoryFirewall Test") catalog=false)
 authn: admin=false
 authn: admin=false
 server: connection 3 closed: closed
@@ -41,62 +41,62 @@ install: ok ("D:\a\storyfirewall\storyfirewall\target\release\svc-poc.exe" servi
 start: ok
 state=4
 === 13. A25: clients reach the LocalSystem service through the published random name ===
-client: pipe=\\.\pipe\story-firewall-55bf6e5ba4174d21a95e2a3bc3a0cb55
+client: pipe=\\.\pipe\story-firewall-cf0e3fa1d6dd4a91b1b928ba4d01d1c3
 client: {"jsonrpc":"2.0","id":1,"result":{"api":[1,0],"engine_busy_ms":0,"server_version":"0.1.0-poc"}}
 client: {"jsonrpc":"2.0","id":2,"result":{"address_block_items":[],"address_blocks":0,"items":[]}}
 client: {"jsonrpc":"2.0","id":3,"result":{"ok":true}}
-probe: name=\\.\pipe\story-firewall-55bf6e5ba4174d21a95e2a3bc3a0cb55 valid=true server_pid=7676 session=0 image_query=denied(open Access is denied. (os error 5))
+probe: name=\\.\pipe\story-firewall-cf0e3fa1d6dd4a91b1b928ba4d01d1c3 valid=true server_pid=2628 session=0 image_query=denied(open Access is denied. (os error 5))
 probe: hello ok
-published=\\.\pipe\story-firewall-55bf6e5ba4174d21a95e2a3bc3a0cb55
-squat-instance: \\.\pipe\story-firewall-55bf6e5ba4174d21a95e2a3bc3a0cb55 denied CreateNamedPipeW 실패 0x5
+published=\\.\pipe\story-firewall-cf0e3fa1d6dd4a91b1b928ba4d01d1c3
+squat-instance: \\.\pipe\story-firewall-cf0e3fa1d6dd4a91b1b928ba4d01d1c3 denied CreateNamedPipeW 실패 0x5
 stop: ok
 state=1
 uninstall: ok
 published_after_stop=[]
 --- service.log ---
-1793939844 service: running
-1793939844 squat: fixed pipe name held by pid=7680 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc.exe") session=Some(2)
-1793939844 pipe: published \\.\pipe\story-firewall-55bf6e5ba4174d21a95e2a3bc3a0cb55
+1793990846 service: running
+1793990846 squat: fixed pipe name held by pid=2448 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc.exe") session=Some(2)
+1793990846 pipe: published \\.\pipe\story-firewall-cf0e3fa1d6dd4a91b1b928ba4d01d1c3
 pipe: connection 1 closed: closed
 pipe: connection 2 closed: closed
-1793939968 event: TimeChanged
-1793939968 event: TimeChanged
-1793939850 event: TimeChanged
-1793939850 event: TimeChanged
-1793939852 event: Stop
-1793939852 pipe: unpublished
-1793939852 service: stopped
+1793990969 event: TimeChanged
+1793990969 event: TimeChanged
+1793990851 event: TimeChanged
+1793990851 event: TimeChanged
+1793990853 event: Stop
+1793990853 pipe: unpublished
+1793990853 service: stopped
 === 14. A26: product service story-firewall-svc (real WFP, data dir, published pipe) ===
 plant: created C:\ProgramData\StoryFirewall
 install: ok ("D:\a\storyfirewall\storyfirewall\target\release\story-firewall-svc.exe" run --test-signer "StoryFirewall Test")
 start: ok state=Some(4)
-status: state=4 published=\\.\pipe\story-firewall-3cb6d230d4704cf5a0bfc7c0d3146047 wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+status: state=4 published=\\.\pipe\story-firewall-c96d7142b7574911a22745ea63bc8fe6 wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
 --- 14b. clients ---
-client: pipe=\\.\pipe\story-firewall-3cb6d230d4704cf5a0bfc7c0d3146047
+client: pipe=\\.\pipe\story-firewall-c96d7142b7574911a22745ea63bc8fe6
 client: {"jsonrpc":"2.0","id":1,"result":{"api":[1,0],"engine_busy_ms":0,"server_version":"0.1.0"}}
 client: {"jsonrpc":"2.0","id":2,"result":{"address_block_items":[],"address_blocks":0,"items":[]}}
 client: {"jsonrpc":"2.0","id":3,"result":{"ok":true}}
 roundtrip: baseline=0 blocked=7 filters=2 after=0 confirm_ok=true rollback_ok=true
-probe: name=\\.\pipe\story-firewall-3cb6d230d4704cf5a0bfc7c0d3146047 valid=true server_pid=7072 session=0 image_query=denied(open Access is denied. (os error 5))
+probe: name=\\.\pipe\story-firewall-c96d7142b7574911a22745ea63bc8fe6 valid=true server_pid=1484 session=0 image_query=denied(open Access is denied. (os error 5))
 probe: hello ok
 stop: ok state=Some(1)
 --- product service.log ---
-1793939855 service: start v0.1.0 dir=C:\ProgramData\StoryFirewall
-1793939855 judge: self dir=D:\a\storyfirewall\storyfirewall\target\release
-1793939855 geo: country=false built=None errors=["dbip-country-lite.mmdb: i/o error: The system cannot find the path specified. (os error 3)", "dbip-asn-lite.mmdb: i/o error: The system cannot find the path specified. (os error 3)"]
-1793939855 data_dir: pruned 3 old untrusted folders (keep 5)
-1793939855 data_dir: untrusted folder moved aside -> C:\ProgramData\StoryFirewall.untrusted-1793939855467742200
-1793939855 collector: started
-1793939855 pipe: published \\.\pipe\story-firewall-3cb6d230d4704cf5a0bfc7c0d3146047
-1793939855 service: running
-1793939861 pipe: connection 1 closed: closed
-1793939862 pipe: connection 2 closed: closed
-1793939862 pipe: connection 3 closed: closed
-1793939863 event: Stop
-1793939863 collector: stopped ingested=533 dropped=0 lost=Some(0)
-1793939863 service: stopped
+1793990856 service: start v0.1.0 dir=C:\ProgramData\StoryFirewall
+1793990856 judge: self dir=D:\a\storyfirewall\storyfirewall\target\release
+1793990856 geo: country=false built=None errors=["dbip-country-lite.mmdb: i/o error: The system cannot find the path specified. (os error 3)", "dbip-asn-lite.mmdb: i/o error: The system cannot find the path specified. (os error 3)"]
+1793990856 data_dir: pruned 3 old untrusted folders (keep 5)
+1793990856 data_dir: untrusted folder moved aside -> C:\ProgramData\StoryFirewall.untrusted-1793990856825801600
+1793990856 collector: started
+1793990856 pipe: published \\.\pipe\story-firewall-c96d7142b7574911a22745ea63bc8fe6
+1793990856 service: running
+1793990862 pipe: connection 1 closed: closed
+1793990864 pipe: connection 2 closed: closed
+1793990864 pipe: connection 3 closed: closed
+1793990864 event: Stop
+1793990865 collector: stopped ingested=530 dropped=0 lost=Some(0)
+1793990865 service: stopped
 data dir entry: StoryFirewall
-data dir entry: StoryFirewall.untrusted-1793939855467742200
+data dir entry: StoryFirewall.untrusted-1793990856825801600
 data dir entry: StoryFirewall.untrusted-4
 data dir entry: StoryFirewall.untrusted-5
 data dir entry: StoryFirewall.untrusted-6
@@ -110,36 +110,36 @@ untrusted folders kept=5
 === 15. A26/21st: standard user holds the planted data folder (no share-delete) -> fallback folder ===
 plant-hold: holding C:\ProgramData\SFHoldBase (no FILE_SHARE_DELETE)
 console: done
-fallback folder: SFHoldBase.e2a3734f1ab14086
-1793939867 service: start v0.1.0 dir=C:\ProgramData\SFHoldBase.e2a3734f1ab14086
-1793939867 judge: self dir=D:\a\storyfirewall\storyfirewall\target\release
-1793939867 geo: country=false built=None errors=["dbip-country-lite.mmdb: i/o error: The system cannot find the path specified. (os error 3)", "dbip-asn-lite.mmdb: i/o error: The system cannot find the path specified. (os error 3)"]
-1793939867 data_dir: fallback (could not move untrusted base: The process cannot access the file because it is being used by another process. (os error 32)) -> C:\ProgramData\SFHoldBase.e2a3734f1ab14086
-1793939867 collector: started
-1793939867 pipe: published \\.\pipe\story-firewall-99b5e4c9c83c44e7a1c073c4fff323b1
-1793939867 service: running
-1793939875 event: Stop
-1793939876 collector: stopped ingested=412 dropped=0 lost=Some(0)
-1793939876 service: stopped
+fallback folder: SFHoldBase.9bcfe95816af462a
+1793990868 service: start v0.1.0 dir=C:\ProgramData\SFHoldBase.9bcfe95816af462a
+1793990868 judge: self dir=D:\a\storyfirewall\storyfirewall\target\release
+1793990868 geo: country=false built=None errors=["dbip-country-lite.mmdb: i/o error: The system cannot find the path specified. (os error 3)", "dbip-asn-lite.mmdb: i/o error: The system cannot find the path specified. (os error 3)"]
+1793990868 data_dir: fallback (could not move untrusted base: The process cannot access the file because it is being used by another process. (os error 32)) -> C:\ProgramData\SFHoldBase.9bcfe95816af462a
+1793990868 collector: started
+1793990868 pipe: published \\.\pipe\story-firewall-0903116c3f4b49799e4618879659294f
+1793990868 service: running
+1793990876 event: Stop
+1793990876 collector: stopped ingested=416 dropped=0 lost=Some(0)
+1793990876 service: stopped
 === 6. TerminateProcess with create-time check ===
-victim pid=5400 create_time=134384134761447850
-kill pid=5400 expected=Some(134384134761447851) -> CreateTimeMismatch { actual: 134384134761447850 }
+victim pid=2896 create_time=134384644767683639
+kill pid=2896 expected=Some(134384644767683640) -> CreateTimeMismatch { actual: 134384644767683639 }
 victim alive after mismatch kill (expect True): True
-kill pid=5400 expected=Some(134384134761447850) -> Terminated
+kill pid=2896 expected=Some(134384644767683639) -> Terminated
 victim alive after matching kill (expect False): False
 === 8. A19: listeners (GetExtendedTcpTable LISTEN + GetExtendedUdpTable) ===
-listeners: tcp=45 udp=16
+listeners: tcp=45 udp=20
 listener: tcp 0.0.0.0:135 pid=1072 any=true
 listener: tcp 0.0.0.0:445 pid=4 any=true
 listener: tcp :::135 pid=1072 any=true
 listener: tcp :::445 pid=4 any=true
 === 7. A18: collector session + engine (sink batches reach the engine) ===
-collect: ingested=468 edges=311 dropped=0 lost=Some(0)
-collect: sink batches=17 events=325 process_starts=6
-collect: process_nodes=149
+collect: ingested=449 edges=304 dropped=0 lost=Some(0)
+collect: sink batches=10 events=305 process_starts=2
+collect: process_nodes=146
 === 10. A24: pipe read race (requests at 200ms slice boundaries) ===
 stress: busy threads=8
 stress: done n=300 lost=0 max_ms=0
 === 9. graph lock fairness on Windows ===
-busy batches=500 worst engine wait=111.1µs
+busy batches=500 worst engine wait=162µs
 END
