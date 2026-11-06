@@ -7,7 +7,7 @@
       Adding toml_edit v0.20.2 (available: v0.20.7)
    Compiling story-firewall-ui v0.1.0 (D:\a\storyfirewall\storyfirewall\ui\src-tauri)
    Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
-    Finished `release` profile [optimized] target(s) in 5.65s
+    Finished `release` profile [optimized] target(s) in 4.83s
      Running unittests src\lib.rs (target\release\deps\story_firewall_ui_lib-386a550111877501.exe)
 
 running 2 tests
