@@ -100,13 +100,16 @@ export function failBox(err: RpcError, retry?: () => void, what = "목록"): HTM
 
 /// 수집 안 됨: 주황 안내 + 설정 진단으로
 export function noDataBox(onMore?: () => void): HTMLElement {
-  const b = el("div", "fail nodata", "아직 기록된 것이 없습니다 — 수집이 시작되지 않았거나 멈췄을 수 있습니다.");
+  // F2: "자세히 ›"가 홀로 다음 줄로 떨어지지 않게 마지막 말과 한 덩어리(nowrap)로 묶는다
+  const b = el("div", "fail nodata", "아직 기록된 것이 없습니다 — 수집이 시작되지 않았거나 멈췄을 수 ");
+  const tail = el("span", "nowrap", "있습니다.");
   if (onMore) {
-    const a = el("a", undefined, " 자세히 ›");
+    const a = el("a", undefined, "자세히 ›");
     a.href = "#";
     a.addEventListener("click", (e) => { e.preventDefault(); onMore(); });
-    b.append(a);
+    tail.append(" ", a);
   }
+  b.append(tail);
   return b;
 }
 

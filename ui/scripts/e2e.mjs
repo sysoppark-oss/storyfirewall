@@ -180,6 +180,7 @@ if (mode === "acl") {
   await page.waitForTimeout(1500);
   const after = await page.evaluate(() => ({ txt: document.querySelector(".acl-foot")?.textContent ?? "", dis: document.querySelector(".acl-foot .btn.primary")?.disabled }));
   must(after.txt.includes("걸려 있지 않습니다") && after.dis === false, `acl: after rollback table is re-appliable (${after.txt} disabled=${after.dis})`);
+  await page.screenshot({ path: path.join(outDir, "acl-5b-rolledback.png"), fullPage: true });
   await page.click(".acl-foot .btn.primary");
   await page.waitForTimeout(1500);
   // 화면을 다시 열면 걸린 ACL 을 표로 읽는다

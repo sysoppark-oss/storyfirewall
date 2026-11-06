@@ -343,3 +343,6 @@ dialog.acl-dialog > .actions { padding: 12px 20px 16px; display: flex; gap: 8px;
   .acl-ends { grid-template-columns: minmax(0, 1fr); }
   .acl-ends-arrow { justify-self: center; transform: rotate(90deg); }
 }
+
+/* F2: 함께 줄바꿈되는 덩어리 */
+.nowrap { white-space: nowrap; }
