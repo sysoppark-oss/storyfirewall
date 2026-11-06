@@ -25,7 +25,12 @@ export async function runScenario(page, outDir, must, opts = {}) {
   await page.waitForTimeout(500);
   must((await page.evaluate(() => document.querySelectorAll(".flowview .rail-step").length)) === 5, "flow rail has 5 steps");
   must((await page.evaluate(() => document.querySelectorAll(".flowview .flow-line").length)) > 0, "flow lines drawn");
+  await page.locator(".flowview").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
   await page.locator(".flowview").screenshot({ path: `${outDir}/2b-flow.png` });
+  // 같은 접속지가 도메인·접속지 상자로 두 번 나오지 않는다
+  const dup = await page.evaluate(() => { const t = [...document.querySelectorAll(".flowview .col-did .flow-box-title")].map((e) => e.textContent?.toLowerCase()); return t.length - new Set(t).size; });
+  must(dup === 0, `flow did-column has no duplicate boxes (${dup})`);
 
   await pay.locator("button", { hasText: "여기서부터 끊기…" }).click();
   await page.waitForSelector("dialog.ack[open]");

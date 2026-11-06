@@ -43,3 +43,13 @@ describe("장 레일", () => {
     expect(railSteps({ sentences: [] })[4]!.on).toBe(false);
   });
 });
+
+describe("도메인·접속지 합치기", () => {
+  it("같은 호스트의 도메인 노드는 접속지 노드로", async () => {
+    const { domainAliases } = await import("./flow");
+    const n = (id: number, kind: string, label: string) => ({ node: { id, kind, key: label, label } });
+    const m = domainAliases([n(1, "remote", "mail.google.com:443"), n(2, "domain", "Mail.Google.com"), n(3, "domain", "other.net")]);
+    expect(m.get(2)).toBe(1);
+    expect(m.has(3)).toBe(false);
+  });
+});

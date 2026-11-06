@@ -69,11 +69,32 @@ export function boxText(b: Branch): { title: string; sub: string; mono: boolean;
   const place = b.where ? placeName(b.where) ?? "" : "";
   const viaWord = b.via ? REL[b.via.rel] ?? b.via.rel : "";
   const kindWord: Record<string, string> = { process: "프로그램", file: "파일", remote: "접속지", domain: "도메인", autorun: "시작 프로그램", command: "명령줄" };
-  const sub = [b.depth === 0 ? "주인공" : viaWord, kindWord[k] ?? "", port && `포트 ${port}`, place].filter(Boolean).join(" · ");
+  // 관계 말(접속·실행 등)이 있으면 종류 말은 겹치므로 뺀다("접속 · 접속지" 방지). 주인공·관계 없는 것만 종류 말
+  const head = b.depth === 0 ? `주인공 · ${kindWord[k] ?? ""}` : viaWord || kindWord[k] || "";
+  const sub = [head, port && `포트 ${port}`, place].filter(Boolean).join(" · ");
   return { title: s.text, sub, mono: k === "command" || k === "remote", spoof: s.spoofRisk };
 }
 
 const SVG = "http://www.w3.org/2000/svg";
+/// 열마다 보이는 상자 수(나머지는 "외 N개" — 전부는 마인드맵)
+export const PER_COL = 8;
+
+/// 도메인 노드 id → 같은 호스트의 접속지 노드 id
+export function domainAliases(branches: { node: { id: number; kind: string; key: string; label: string } }[]): Map<number, number> {
+  const remoteByHost = new Map<string, number>();
+  for (const b of branches) {
+    if (b.node.kind !== "remote") continue;
+    const host = hostOf(b.node.label || b.node.key);
+    if (host && !remoteByHost.has(host)) remoteByHost.set(host, b.node.id);
+  }
+  const alias = new Map<number, number>();
+  for (const b of branches) {
+    if (b.node.kind !== "domain") continue;
+    const to = remoteByHost.get((b.node.label || b.node.key).toLowerCase());
+    if (to != null) alias.set(b.node.id, to);
+  }
+  return alias;
+}
 
 export function flowView(ev: {
   root: number;
@@ -180,12 +201,15 @@ export function flowView(ev: {
     if (!r.ok) return map.append(errorBox(`graph.neighbors: ${r.error.message}`));
     // 같은 노드는 가장 얕은 자리 하나에만(마인드맵과 같은 규칙)
     const rank = (b: Branch) => b.depth * 2 + (b.side === "origin" ? 1 : 0);
+    // 같은 접속지의 "도메인"(조회) 노드는 "접속지" 노드와 하나로 — 상자가 두 번 보이지 않게(마인드맵 D003-6 과 같은 규칙)
+    const alias = domainAliases(r.result.branches);
     const best = new Map<number, Branch>();
     for (const b of r.result.branches) {
+      if (alias.has(b.node.id)) continue;
       const cur = best.get(b.node.id);
       if (!cur || rank(b) < rank(cur)) best.set(b.node.id, b);
     }
-    // 열 안 순서: 판정 선(chapter) 먼저, 그다음 시각순. 열마다 12개까지(나머지는 "외 N개")
+    // 열 안 순서: 판정 선(chapter) 먼저, 그다음 시각순. 열마다 PER_COL 개까지(나머지는 "외 N개" — 화면이 길어지지 않게)
     const byCol = new Map<FlowCol, Branch[]>();
     for (const b of best.values()) {
       const c = flowColumn(b);
@@ -195,7 +219,7 @@ export function flowView(ev: {
       const list = (byCol.get(c.key) ?? []).sort((a, b) => Number(b.via?.chapter != null) - Number(a.via?.chapter != null) || (a.via?.ts ?? 0) - (b.via?.ts ?? 0));
       const col = colEls.get(c.key)!;
       if (!list.length) col.append(el("div", "muted small flow-empty", "기록 없음"));
-      for (const b of list.slice(0, 12)) {
+      for (const b of list.slice(0, PER_COL)) {
         const t = boxText(b);
         const box = el("button", `flow-box kind-${b.node.kind}${b.depth === 0 ? " hero" : ""}${b.via?.chapter != null ? " chapter" : ""}${b.node.kind === "command" ? " command" : ""}`);
         box.type = "button";
@@ -218,10 +242,11 @@ export function flowView(ev: {
         boxes.set(b.node.id, box);
         col.append(box);
       }
-      if (list.length > 12) col.append(el("div", "muted small", `… 외 ${list.length - 12}개 (마인드맵에서 전부)`));
+      if (list.length > PER_COL) col.append(el("div", "muted small", `… 외 ${list.length - PER_COL}개 (마인드맵에서 전부)`));
     }
     if (r.result.truncated) map.append(el("p", "badge warn", `축약됨: 가지가 많아 ${r.result.cap}개까지만 — 전체 그림이 아닙니다`));
-    links = [...best.values()].filter((b) => b.via).map((b) => ({ src: b.via!.src, dst: b.via!.dst, chapter: b.via!.chapter != null, eid: b.via!.id, rel: b.via!.rel }));
+    const nid = (id: number) => alias.get(id) ?? id;
+    links = [...best.values()].filter((b) => b.via).map((b) => ({ src: nid(b.via!.src), dst: nid(b.via!.dst), chapter: b.via!.chapter != null, eid: b.via!.id, rel: b.via!.rel })).filter((l) => l.src !== l.dst);
     // 처음 선택 = 주인공
     const hero = [...best.values()].find((b) => b.depth === 0);
     if (hero) showSide(hero);
