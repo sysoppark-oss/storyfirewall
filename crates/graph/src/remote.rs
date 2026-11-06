@@ -26,6 +26,9 @@ pub struct RemoteTool {
     pub display: &'static str,
     pub images: &'static [&'static str],
     pub signer: &'static str,
+    /// 서명자만으로 이 도구라고 볼 수 있는가(제조사가 원격 도구 전문일 때만). Microsoft·Google 처럼 다른 프로그램에도
+    /// 같은 이름으로 서명하는 제조사는 false — 서명자로 찾으면 svchost·Chrome 이 원격 도구로 잡힌다(diag-17 실측 결함)
+    pub signer_identifies: bool,
     /// 이름 확인에 쓴 출처(외부 데이터 원칙: 의미·정확도·출처를 문서로)
     pub source: &'static str,
 }
@@ -44,6 +47,7 @@ pub const TOOLS: &[RemoteTool] = &[
             "teamviewerqs.exe",
         ],
         signer: "TeamViewer Germany GmbH",
+        signer_identifies: true,
         source: "MITRE ATT&CK T1219.002; 노트북 설치본",
     },
     RemoteTool {
@@ -51,6 +55,7 @@ pub const TOOLS: &[RemoteTool] = &[
         display: "AnyDesk",
         images: &["anydesk.exe"],
         signer: "AnyDesk Software GmbH",
+        signer_identifies: true,
         source: "MITRE ATT&CK T1219.002; CISA AA23-025A",
     },
     RemoteTool {
@@ -58,6 +63,7 @@ pub const TOOLS: &[RemoteTool] = &[
         display: "RustDesk",
         images: &["rustdesk.exe"],
         signer: "Purslane Ltd",
+        signer_identifies: true,
         source: "MITRE ATT&CK T1219.002",
     },
     RemoteTool {
@@ -65,6 +71,7 @@ pub const TOOLS: &[RemoteTool] = &[
         display: "Chrome 원격 데스크톱",
         images: &["remoting_host.exe", "remoting_desktop.exe"],
         signer: "Google LLC",
+        signer_identifies: false,
         source: "MITRE ATT&CK T1219.002",
     },
     RemoteTool {
@@ -72,6 +79,7 @@ pub const TOOLS: &[RemoteTool] = &[
         display: "Windows 빠른 지원",
         images: &["quickassist.exe"],
         signer: "Microsoft Corporation",
+        signer_identifies: false,
         source: "MITRE ATT&CK S1209 (Quick Assist)",
     },
     RemoteTool {
@@ -81,6 +89,7 @@ pub const TOOLS: &[RemoteTool] = &[
         display: "Windows 원격 지원",
         images: &["msra.exe"],
         signer: "Microsoft Windows",
+        signer_identifies: false,
         source: "Microsoft 문서 msra; Elastic 원격 데스크톱 섀도 규칙",
     },
     RemoteTool {
@@ -91,6 +100,7 @@ pub const TOOLS: &[RemoteTool] = &[
             "screenconnect.windowsclient.exe",
         ],
         signer: "ConnectWise, LLC",
+        signer_identifies: true,
         source: "CISA AA23-025A",
     },
 ];
@@ -118,8 +128,14 @@ pub fn tool_of_signer(store: &Store, proc_node: i64) -> Option<&'static RemoteTo
     if v.get("sig_status").and_then(|x| x.as_str()) != Some("valid") {
         return None;
     }
-    let signer = v.get("signer").and_then(|x| x.as_str())?;
-    TOOLS.iter().find(|t| t.signer.eq_ignore_ascii_case(signer))
+    tool_by_signer(v.get("signer").and_then(|x| x.as_str())?)
+}
+
+/// 서명자 이름으로 원격 도구 찾기(서명자만으로 판별되는 제조사만)
+pub fn tool_by_signer(signer: &str) -> Option<&'static RemoteTool> {
+    TOOLS
+        .iter()
+        .find(|t| t.signer_identifies && t.signer.eq_ignore_ascii_case(signer))
 }
 
 /// 실행 파일 경로가 원격 제어 프로그램인가
@@ -511,6 +527,29 @@ pub fn display_of(key: &str) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+
+    /// diag-17 결함: Microsoft·Google 서명 프로그램(svchost·Chrome)이 원격 도구로 잡히면 안 된다
+    #[test]
+    fn signer_fallback_only_for_remote_vendors() {
+        for sg in [
+            "Microsoft Windows",
+            "Microsoft Corporation",
+            "Google LLC",
+            "microsoft windows",
+        ] {
+            assert!(tool_by_signer(sg).is_none(), "{sg}");
+        }
+        assert_eq!(
+            tool_by_signer("TeamViewer Germany GmbH").map(|t| t.key),
+            Some("teamviewer")
+        );
+        for t in TOOLS {
+            if t.signer.contains("Microsoft") || t.signer.contains("Google") {
+                assert!(!t.signer_identifies, "{}", t.key);
+            }
+        }
+    }
+
     use super::*;
 
     #[test]
