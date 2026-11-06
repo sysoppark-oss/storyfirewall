@@ -464,13 +464,17 @@ pub fn dispatch(
             return Response::ok(id, v);
         }
     }
-    // L030 캐시: 변경 요청(모두 request_id 를 가진다 — 멱등 키)은 판정·이야기를 바꿀 수 있으니 버린다
-    if params.get("request_id").is_some() {
+    // L030 캐시: 변경 요청(모두 request_id 를 가진다 — 멱등 키)은 판정·이야기를 바꿀 수 있으니 버린다.
+    // 사건 추적 구현 중 발견: 전에는 handle 전에 버려서, 변경 처리 자체가 지금 판정 결과를 읽는 길(L063 금고 경비 정상 처리의
+    // 뿌리 종류 확인, 사건 추적의 조치 시점 장)이 늘 "없음"을 봤다 — 금고 경비 '이건 정상입니다'는 항상 거부됐다. 처리 뒤에 버린다
+    let mutation = params.get("request_id").is_some();
+    let out = handle(world, method, params, caller);
+    if mutation {
         world.judge_cache = None;
         world.invalidate_reads();
         world.judged = None;
     }
-    match handle(world, method, params, caller) {
+    match out {
         Ok(v) => Response::ok(id, v),
         Err(e) => Response::err(Some(id), e),
     }
@@ -723,6 +727,10 @@ fn handle(
                 _ => 70,
             };
             let scope = caller.scope();
+            // 사건 추적: 처리 상태는 한 번에 읽고(사건마다 묻지 않는다), 수준·범위를 거른 뒤 상태별 개수를 센 다음 필터를 건다
+            let triage_all = crate::triage::all(&world.graph);
+            let triage_filter = crate::triage::Filter::parse(&v.triage).unwrap_or(crate::triage::Filter::Open);
+            let mut counts = crate::triage::Counts::default();
             // A30: 다른 사용자 세션의 프로세스가 든 이야기는 통째로 숨긴다
             let kept: Vec<judge::Story> = stories
                 .iter()
@@ -730,6 +738,11 @@ fn handle(
                     s.score as i32 >= min
                         && scope.process_visible(&world.graph, s.root)
                         && scope.edges_visible(&world.graph, &s.edges)
+                })
+                .filter(|s| {
+                    let st = triage_all.get(&s.root).map_or(crate::triage::State::New, |r| r.state);
+                    counts.add(st);
+                    triage_filter.keeps(st)
                 })
                 .cloned()
                 .collect();
@@ -769,6 +782,8 @@ fn handle(
                     // L063: 금고 경비 사건(프로세스 뿌리)도 정상 처리 가능(그 판정에 한정)
                     let vault = page_stories.iter().any(|s| s.root == n.root && s.root_kind == judge::RootKind::VaultAccess);
                     v["feedback_ok"] = serde_json::json!(root_kind == "file" || vault);
+                    // 사건 추적: 처리 상태(없으면 새 사건)
+                    v["triage"] = serde_json::to_value(triage_all.get(&n.root).cloned().unwrap_or_else(crate::triage::Rec::new_default)).unwrap_or_default();
                     // 프로세스 뿌리만 process_detail(파일 노드에도 Ok 를 돌려주지만 경로가 빈다 — L046 "위치 줄 없음")
                     let pd = if root_kind == "process" { graph::views::process_detail(&world.graph, n.root, 0).ok() } else { None };
                     if let Some(d) = pd {
@@ -835,8 +850,42 @@ fn handle(
                 .timings
                 .record("이야기 목록: 기록 없는 구간", t_gaps.elapsed());
             j(
-                serde_json::json!({ "items": page.items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(), "next": page.next, "gaps": gaps }),
+                serde_json::json!({ "items": page.items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(), "next": page.next, "gaps": gaps, "counts": counts }),
             )
+        }
+        Method::StoryTriage => {
+            let v: TriageParams = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            if world.graph.node(v.root).is_err() {
+                return Err(RpcError::with(ErrorCode::InvalidParams, format!("없음: {}", v.root)));
+            }
+            if !caller.scope().process_visible(&world.graph, v.root) {
+                return Err(out_of_scope());
+            }
+            let state = crate::triage::State::parse(&v.state)
+                .filter(|s| *s != crate::triage::State::New)
+                .ok_or_else(|| RpcError::with(ErrorCode::InvalidParams, "state"))?;
+            let action = if state == crate::triage::State::Acted {
+                Some(
+                    v.action
+                        .as_deref()
+                        .and_then(crate::triage::Action::parse)
+                        .ok_or_else(|| RpcError::with(ErrorCode::InvalidParams, "action"))?,
+                )
+            } else {
+                None
+            };
+            let rec = set_triage(world, v.root, state, action, &actor(caller), v.note.as_deref())?;
+            j(serde_json::to_value(rec).unwrap_or_default())
+        }
+        Method::StoryTriageLog => {
+            let v: TriageLogParams = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            if !caller.scope().process_visible(&world.graph, v.root) {
+                return Err(out_of_scope());
+            }
+            let rows = crate::triage::log(&world.graph, v.root, v.limit);
+            j(serde_json::json!({ "root": v.root, "state": crate::triage::get(&world.graph, v.root), "items": rows }))
         }
         Method::StoryToday => {
             // 구조 개선 C: 읽기 작업자가 없을 때(메모리 DB 테스트·작업자 실패)만 엔진에서 직접
@@ -986,6 +1035,8 @@ fn handle(
                     .mark_normal_vault(&world.graph, &f)
                     .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
                 world.judge_inc.invalidate();
+                // 사건 추적: 정상 처리 = 조치함(정상)
+                let _ = set_triage(world, v.root, crate::triage::State::Acted, Some(crate::triage::Action::Normal), &actor(caller), None);
                 return j(serde_json::json!({ "ok": true, "scope": "vault" }));
             }
             world
@@ -994,6 +1045,8 @@ fn handle(
                 .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
             // 갈래 C: 다음 주기 판정은 전체 다시(점수는 캐시하지 않아 결과에는 필요 없지만 안전망 — 드문 일)
             world.judge_inc.invalidate();
+            // 사건 추적: 정상 처리 = 조치함(정상)
+            let _ = set_triage(world, v.root, crate::triage::State::Acted, Some(crate::triage::Action::Normal), &actor(caller), None);
             j(serde_json::json!({ "ok": true }))
         }
         Method::JudgeBaselineStatus => {
@@ -1557,11 +1610,40 @@ fn handle(
                 ),
             );
             crate::runtime::flush_events(world);
+            // 사건 추적: 끊기 = 조치함(끊음)
+            let _ = set_triage(world, v.story_root, crate::triage::State::Acted, Some(crate::triage::Action::Cut), &actor(caller), None);
             j(
                 serde_json::json!({ "policies": applied, "terminated": killed, "pending": pending, "autoruns": plan.autoruns, "written_executables": plan.written_executables, "warnings": plan.warnings }),
             )
         }
     }
+}
+
+/// 사건 추적: 상태를 바꾸고(조치할 때만 DB 쓰기) 기록을 남긴다. 장·점수는 지금 판정 결과에서(없으면 0).
+/// 처리 안 한 사건으로 되돌아오는 길(재발)은 주기 판정(runtime::judge_and_notify)에서만.
+pub(crate) fn set_triage(
+    world: &mut World,
+    root: i64,
+    state: crate::triage::State,
+    action: Option<crate::triage::Action>,
+    actor: &str,
+    note: Option<&str>,
+) -> Result<crate::triage::Rec, RpcError> {
+    // 판정 결과가 비어 있으면(직전 변경이 버림) 다시 계산한다 — 장 0 으로 적으면 다음 주기 판정이 바로 "재발"로 되돌린다
+    let (chapter, score) = judged_stories(world, 0)
+        .map_err(internal)?
+        .iter()
+        .find(|s| s.root == root)
+        .map(|s| (s.chapter as i64, s.score))
+        .unwrap_or((0, 0));
+    let now = world.engine_wall();
+    let rec = crate::triage::set(&world.graph, root, state, action, chapter, score, actor, note, now)
+        .map_err(internal)?;
+    // 조치함·닫힘이 되면 그 사건의 알림 기록은 지운다 — 재발로 돌아올 때 다시 알리기 위해
+    if !state.is_open() {
+        world.notified.remove(&root);
+    }
+    Ok(rec)
 }
 
 /// 서비스 사건 → 응답 (A29). 대상이 프로세스 {pid, create_ft} 면 그래프의 프로세스 노드(`pid@create_ft`)를 찾아 `node_id` 를 붙인다 —

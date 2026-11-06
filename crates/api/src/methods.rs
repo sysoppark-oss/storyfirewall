@@ -30,6 +30,11 @@ pub enum Method {
     /// 서명, 브라우저 확장 보조 프로그램 등록 대조 → 판단과 권장 조치. 조회(사용자), DB 에 쓰지 않음
     StoryInvestigate,
     StoryEvents,
+    /// 사건 추적(사용자 "분류된 사건에 대한 추적이 반듯이 필요함" 2026-11-07): 처리 상태 바꾸기
+    /// (조사됨 / 조치함[정상·끊음·지켜보기] / 닫힘). 조치할 때만 DB 에 쓴다. 조회 권한(사용자) — 차단·설정을 바꾸지 않는다
+    StoryTriage,
+    /// 사건 하나의 처리 기록(최신 먼저). 조회(사용자)
+    StoryTriageLog,
     EventsSubscribe,
     JudgeFeedbackNormal,
     JudgeBaselineStatus,
@@ -81,6 +86,8 @@ impl Method {
         ("story.explain", Method::StoryExplain),
         ("story.investigate", Method::StoryInvestigate),
         ("story.events", Method::StoryEvents),
+        ("story.triage", Method::StoryTriage),
+        ("story.triage_log", Method::StoryTriageLog),
         ("installs.list", Method::InstallsList),
         ("agents.list", Method::AgentsList),
         ("ledger.get", Method::LedgerGet),
@@ -247,6 +254,9 @@ pub struct StoryEventsParams {
     /// "normal" | "watch" | "suspicious"
     #[serde(default = "StoryEventsParams::default_level")]
     pub level_min: String,
+    /// 처리 상태 필터: "open"(처리 안 한 사건 — 기본) | "done"(조치함·닫힘) | "all"
+    #[serde(default = "StoryEventsParams::default_triage")]
+    pub triage: String,
     #[serde(default = "StoryEventsParams::default_voice")]
     pub voice: String,
     #[serde(default)]
@@ -258,6 +268,35 @@ impl StoryEventsParams {
     }
     fn default_voice() -> String {
         "plain".into()
+    }
+    fn default_triage() -> String {
+        "open".into()
+    }
+}
+/// story.triage
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TriageParams {
+    /// 이야기 뿌리
+    pub root: i64,
+    /// "investigated" | "acted" | "closed"
+    pub state: String,
+    /// state 가 acted 일 때 필수: "normal" | "cut" | "watch"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    /// 사용자 메모(200자까지)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+/// story.triage_log
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TriageLogParams {
+    pub root: i64,
+    #[serde(default = "TriageLogParams::default_limit")]
+    pub limit: usize,
+}
+impl TriageLogParams {
+    fn default_limit() -> usize {
+        50
     }
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -421,6 +460,31 @@ pub fn validate_params(
                 matches!(v.voice.as_str(), "plain" | "expert" | "one_line"),
                 "voice 는 plain|expert|one_line",
             )?;
+            check(
+                matches!(v.triage.as_str(), "open" | "done" | "all"),
+                "triage 는 open|done|all",
+            )?;
+        }
+        Method::StoryTriage => {
+            let v: TriageParams = serde_json::from_value(p.clone())
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            check(
+                matches!(v.state.as_str(), "investigated" | "acted" | "closed"),
+                "state 는 investigated|acted|closed",
+            )?;
+            check(
+                v.state != "acted" || matches!(v.action.as_deref(), Some("normal" | "cut" | "watch")),
+                "acted 는 action(normal|cut|watch) 필수",
+            )?;
+            check(
+                v.note.as_ref().is_none_or(|n| n.chars().count() <= 200),
+                "note 는 200자까지",
+            )?;
+        }
+        Method::StoryTriageLog => {
+            let v: TriageLogParams = serde_json::from_value(p.clone())
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            check((1..=200).contains(&v.limit), "limit 은 1~200")?;
         }
         Method::StoryToday => {
             let v: StoryTodayParams = serde_json::from_value(p.clone())

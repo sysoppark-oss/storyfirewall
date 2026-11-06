@@ -296,6 +296,7 @@ impl Runtime {
                     if_seen: None,
                 };
                 crate::first_run::ensure_table(&world.graph);
+                crate::triage::ensure_table(&world.graph);
                 // 35차 Q2: 보관했던 장부 이름 되살리기(기한 지난 것은 버림)
                 if let Some(js) = world.graph.get_meta("ledger_names").ok().flatten() {
                     if let Ok(rows) =
@@ -795,6 +796,8 @@ pub fn run_retention(world: &mut World) {
         rec["phases"]["vacuum_optimize"] = serde_json::json!(tv.elapsed().as_millis() as u64);
     }
     let _ = world.graph.set_meta("retention_last", &rec.to_string());
+    // 사건 추적: 1년 넘은 처리 기록, 뿌리가 사라진 상태 행
+    let _ = crate::triage::prune(&world.graph, now);
     if let Ok(rep) = r {
         if rep.edges_compacted + rep.provenance_deleted + rep.suspicious_deleted + rep.nodes_deleted
             > 0
@@ -865,8 +868,22 @@ pub fn judge_and_notify(world: &mut World) {
             .timings
             .record("엔진: 이야기 문장 미리 만들기", t.elapsed());
     }
+    // 사건 추적: 조치함·닫힘인 사건은 알리지 않는다. 다만 조치 때보다 높은 장까지 이어졌으면(재발) 새 사건으로 되돌리고 알린다
+    let triage = crate::triage::all(&world.graph);
+    let now = world.engine_wall();
     for s in stories.iter() {
         let ch = s.chapter as i64;
+        if let Some(rec) = triage.get(&s.root).filter(|r| !r.state.is_open()) {
+            if !crate::triage::recur_if_escalated(&world.graph, s.root, rec, ch, s.score, now) {
+                continue;
+            }
+            world.notified.remove(&s.root);
+            let _ = world.engine.record_event(
+                "story_recurred",
+                2,
+                format!("뿌리 {} {} — {}장에서 조치했는데 {}장까지 이어짐", s.root, s.root_label, rec.chapter, ch),
+            );
+        }
         if should_notify(world.notified.get(&s.root).copied(), s.level, ch) {
             world.notified.insert(s.root, ch);
             world.notify(api::methods::NOTIFY_EVENT, serde_json::json!({"kind": "story_suspicious", "severity": 2, "root": s.root, "label": s.root_label, "chapter": ch, "score": s.score}));

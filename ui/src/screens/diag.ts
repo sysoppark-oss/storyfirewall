@@ -70,7 +70,7 @@ export function diagnostics(): HTMLElement {
     body.append(loadingBox());
     const [h, ev, c, ret, elevated] = await Promise.all([
       rpc<Health>("collector.health", {}),
-      rpc<{ items: { root: number; title: string; started_in_gap?: [number, number] }[] }>("story.events", { level_min: "normal", cursor: { limit: 200 } }),
+      rpc<{ items: { root: number; title: string; started_in_gap?: [number, number] }[] }>("story.events", { level_min: "normal", triage: "all", cursor: { limit: 200 } }),
       rpc<{ geo?: { built?: number | null } }>("connections.list", { since_secs: 1 }),
       rpc<Record<string, unknown>>("retention.get", {}),
       isElevated(),

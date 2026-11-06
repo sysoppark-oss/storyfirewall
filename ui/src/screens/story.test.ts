@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardNote, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned, liveText, recommendText, chainKids, chainTitle, adjustForDestroy } from "./story";
+import { triageText, triageCountsText, emptyText, cardNote, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned, liveText, recommendText, chainKids, chainTitle, adjustForDestroy } from "./story";
 import { hostOf, portOf, REL } from "./mindmap";
 // 그래프 관계 이름의 원본(Rust) — vite ?raw 로 글자 그대로 읽는다
 import graphLib from "../../../crates/graph/src/lib.rs?raw";
@@ -153,5 +153,23 @@ describe("UI 3판 초안: 카드 제목 사슬·파괴 징후 권장", () => {
     expect(adjustForDestroy(base, true).recommend).toBe("cut");
     expect(adjustForDestroy({ ...base, verdict: "known_normal", recommend: "mark_normal" }, true).recommend).toBe("mark_normal");
     expect(adjustForDestroy(base, false).recommend).toBe("review");
+  });
+});
+
+describe("사건 추적(처리 상태)", () => {
+  it("상태 칩 글자: 조치함은 조치 종류까지, 없으면 새 사건", () => {
+    expect(triageText(undefined)).toBe("새 사건");
+    expect(triageText({ state: "investigated", chapter: 2, updated_ts: 1 })).toBe("조사됨");
+    expect(triageText({ state: "acted", action: "watch", chapter: 3, updated_ts: 1 })).toBe("조치함 · 지켜보기");
+    expect(triageText({ state: "acted", action: "cut", chapter: 3, updated_ts: 1 })).toBe("조치함 · 끊음");
+    expect(triageText({ state: "closed", chapter: 3, updated_ts: 1 })).toBe("닫힘");
+  });
+  it("상태별 개수 한 줄과 빈 목록 문구", () => {
+    const c = { new: 2, investigated: 1, acted: 4, closed: 1 };
+    expect(triageCountsText(c)).toBe("처리 안 한 사건 3 (새 사건 2 · 조사됨 1) · 조치함 4 · 닫힘 1");
+    expect(triageCountsText(undefined)).toBe("");
+    expect(emptyText("open", c)).toContain("처리한 사건 5건");
+    expect(emptyText("open", { new: 0, investigated: 0, acted: 0, closed: 0 })).toBe("해당하는 사건이 없습니다.");
+    expect(emptyText("done", c)).toBe("처리한 사건이 없습니다.");
   });
 });

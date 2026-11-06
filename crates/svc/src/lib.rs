@@ -28,6 +28,8 @@ pub mod reads;
 pub mod remote_watch;
 pub mod resolver;
 pub mod runtime;
+/// 사건 추적: 처리 상태(새 사건 → 조사됨 → 조치함 → 닫힘)·처리 기록·재발
+pub mod triage;
 /// Windows 전용: 네임드 파이프 Transport, 토큰·서명 Authn, 시각대. Linux 는 `--features host-check` 로 check 만
 #[cfg(any(windows, feature = "host-check"))]
 pub mod win;

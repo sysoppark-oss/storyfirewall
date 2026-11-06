@@ -73,6 +73,13 @@ img.flag { width: 16px; height: 12px; flex: none; border: 1px solid rgba(127, 12
 .chip.level-suspicious { background: var(--bad); }
 .chip.level-watch { background: var(--warn); }
 .chip.level-normal { background: var(--muted); }
+/* 사건 추적 상태 칩: 새 사건=테두리만(강조는 수준 칩이), 조사됨=회색, 조치함=초록, 닫힘=연회색 */
+.chip.triage { font-weight: 500; }
+.chip.triage.new { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+.chip.triage.investigated { background: var(--muted); }
+.chip.triage.acted { background: var(--ok); }
+.chip.triage.closed { background: var(--line); color: var(--fg); }
+.triage-counts { margin: 4px 0 8px; }
 /* 4칸 진행 막대 (D003-1): 단추처럼 보이지 않게 — 6px 막대 + 아래 12px 글자, 클릭 불가 */
 .steps { display: flex; gap: 4px; margin: 8px 0; cursor: default; user-select: none; }
 .step { flex: 1; display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }

@@ -482,8 +482,105 @@ fn ingest_judge_story_events_and_suspicious_notification() {
         serde_json::json!({"request_id": UUID, "root": root}),
     );
     assert_eq!(v["result"]["ok"], serde_json::json!(true));
+    // 사건 추적: 정상 처리는 조치함(정상)이 되어 기본 목록(처리 안 한 사건)에서 빠진다. 전체 목록에는 점수 0 으로 남는다
     let v = a.call("story.events", serde_json::json!({"level_min": "normal"}));
+    assert!(v["result"]["items"].as_array().unwrap().is_empty(), "{v}");
+    assert_eq!(v["result"]["counts"]["acted"], serde_json::json!(1), "{v}");
+    let v = a.call("story.events", serde_json::json!({"level_min": "normal", "triage": "all"}));
     assert_eq!(v["result"]["items"][0]["score"], serde_json::json!(0));
+    assert_eq!(v["result"]["items"][0]["triage"]["state"], serde_json::json!("acted"), "{v}");
+    assert_eq!(v["result"]["items"][0]["triage"]["action"], serde_json::json!("normal"));
+    let v = a.call("story.triage_log", serde_json::json!({"root": root}));
+    let log = v["result"]["items"].as_array().unwrap();
+    assert_eq!(log.len(), 1, "{v}");
+    assert_eq!(log[0]["state"], serde_json::json!("acted"));
+    rt.shutdown();
+}
+
+/// 사건 추적: 조사됨 → 지켜보기 → 닫힘 상태 전이와 필터·개수, 그리고 재발(조치 뒤 더 높은 장까지 이어짐)은 새 사건으로 되돌아와 다시 알린다
+#[test]
+fn triage_states_filter_and_recurrence_reopens_and_notifies() {
+    let (rt, _, _) = boot();
+    let mut a = Client::connect(&rt, 100, 1);
+    a.hello();
+    a.call("events.subscribe", serde_json::json!({}));
+    let t = 133_800_000_000_000_000i64;
+    let s = 10_000_000;
+    let payload = r"C:\Users\pjg\AppData\Local\Temp\payload.exe";
+    let ev = |ts: i64, source: &str, kind: EventKind| Event { ts, source: source.into(), kind };
+    // 3장(자리잡기)까지만
+    let events = vec![
+        ev(t, "snapshot", EventKind::ProcessSnapshot { pid: 1000, ppid: 4, image: r"C:\Windows\explorer.exe".into(), create_time: t, services: vec![] }),
+        ev(t + s, "etw:file", EventKind::FileWrite { proc: ProcRef::new(1000, None), path: payload.into() }),
+        ev(t + s, "motw", EventKind::Downloaded { path: payload.into(), host_url: Some("https://evil.example/p".into()), referrer_url: None, zone_id: Some(3) }),
+        ev(t + 2 * s, "signature", EventKind::Signature { path: payload.into(), signer: None, issuer: None, status: "untrusted".into(), catalog: false }),
+        ev(t + 3 * s, "etw:process", EventKind::ProcessStart { pid: 2200, ppid: 1000, image: payload.into(), create_time: Some(t + 3 * s) }),
+        ev(t + 4 * s, "autorun", EventKind::AutorunRegistered { proc: ProcRef::new(2200, None), location: "HKCU\\...\\Run\\x".into(), target: payload.into() }),
+    ];
+    rt.tx.send(Command::Ingest(events)).unwrap();
+    rt.tx.send(Command::Judge).unwrap();
+    let mut got = None;
+    for _ in 0..5 {
+        if let Some(n) = a.next_notification(Duration::from_secs(2)) {
+            if n["params"]["kind"] == serde_json::json!("story_suspicious") {
+                got = Some(n);
+                break;
+            }
+        }
+    }
+    let n = got.expect("의심 사건 알림(3장)");
+    assert_eq!(n["params"]["chapter"], serde_json::json!(3), "{n}");
+    let v = a.call("story.events", serde_json::json!({}));
+    let root = v["result"]["items"][0]["root"].as_i64().unwrap();
+    assert_eq!(v["result"]["items"][0]["triage"]["state"], serde_json::json!("new"), "{v}");
+    assert_eq!(v["result"]["counts"]["new"], serde_json::json!(1));
+    // 조사됨 (조회 권한으로 된다 — 차단·설정을 바꾸지 않는다)
+    let v = a.call("story.triage", serde_json::json!({"root": root, "state": "investigated"}));
+    assert_eq!(v["result"]["state"], serde_json::json!("investigated"), "{v}");
+    // acted 는 action 필수
+    let v = a.call("story.triage", serde_json::json!({"root": root, "state": "acted"}));
+    assert!(v["error"].is_object(), "{v}");
+    let v = a.call("story.triage", serde_json::json!({"root": root, "state": "acted", "action": "watch", "note": "며칠 지켜봄"}));
+    assert_eq!(v["result"]["action"], serde_json::json!("watch"), "{v}");
+    assert_eq!(v["result"]["chapter"], serde_json::json!(3), "조치 시점의 장");
+    // 기본 목록(처리 안 한 사건)에서 빠지고, done 목록에 있다
+    let v = a.call("story.events", serde_json::json!({}));
+    assert!(v["result"]["items"].as_array().unwrap().is_empty(), "{v}");
+    assert_eq!(v["result"]["counts"]["acted"], serde_json::json!(1));
+    let v = a.call("story.events", serde_json::json!({"triage": "done"}));
+    assert_eq!(v["result"]["items"][0]["triage"]["note"], serde_json::json!("며칠 지켜봄"), "{v}");
+    // 같은 장에서 다시 판정해도 알림 없음(조치함)
+    rt.tx.send(Command::Judge).unwrap();
+    assert!(a.next_notification(Duration::from_millis(800)).is_none(), "조치한 사건은 알리지 않음");
+    // 재발: 4장(외부 접속)까지 이어짐 → 새 사건으로 되돌아오고 다시 알린다
+    rt.tx.send(Command::Ingest(vec![
+        ev(t + 5 * s, "etw:dns", EventKind::DnsQuery { proc: ProcRef::new(2200, None), name: "c2.evil.example".into(), results: vec!["203.0.113.9".into()] }),
+        ev(t + 6 * s, "etw:network", EventKind::Connect { proc: ProcRef::new(2200, None), proto: Proto::Tcp, direction: Direction::Out, laddr: "10.0.0.2".into(), lport: 50000, raddr: "203.0.113.9".into(), rport: 8443 }),
+    ])).unwrap();
+    rt.tx.send(Command::Judge).unwrap();
+    let mut got = None;
+    for _ in 0..5 {
+        if let Some(n) = a.next_notification(Duration::from_secs(2)) {
+            if n["params"]["kind"] == serde_json::json!("story_suspicious") {
+                got = Some(n);
+                break;
+            }
+        }
+    }
+    let n = got.expect("재발 알림(4장)");
+    assert_eq!(n["params"]["chapter"], serde_json::json!(4), "{n}");
+    let v = a.call("story.triage_log", serde_json::json!({"root": root}));
+    assert_eq!(v["result"]["state"]["state"], serde_json::json!("new"), "{v}");
+    let log = v["result"]["items"].as_array().unwrap();
+    assert_eq!(log.len(), 3, "조사됨·지켜보기·재발 {v}");
+    assert!(log[0]["note"].as_str().unwrap().starts_with("재발"), "{v}");
+    assert_eq!(log[0]["actor"], serde_json::json!("system"));
+    // 닫힘
+    let v = a.call("story.triage", serde_json::json!({"root": root, "state": "closed"}));
+    assert_eq!(v["result"]["state"], serde_json::json!("closed"), "{v}");
+    assert_eq!(v["result"]["chapter"], serde_json::json!(4));
+    let v = a.call("story.events", serde_json::json!({"triage": "all"}));
+    assert_eq!(v["result"]["counts"]["closed"], serde_json::json!(1), "{v}");
     rt.shutdown();
 }
 

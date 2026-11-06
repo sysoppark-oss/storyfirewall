@@ -256,7 +256,7 @@ export function dashboard(): HTMLElement {
     // D013: 불러오지 못하면 숫자 대신 "—" + 주황 "불러오지 못함"
     // D015-1: 기록이 멈췄으면 0 은 믿을 수 없는 숫자 — 초록 0 대신 회색 "—"
     const susBody = !ev.ok
-      ? cardFail(ev.error, "의심 사건")
+      ? cardFail(ev.error, "처리 안 한 의심 사건")
       : stalledNow && !sus.length
         ? el("div", undefined, el("div", "big muted", "—"), el("div", "warn small", "기록이 없어 셀 수 없음"))
         : el("div", undefined, el("div", "big " + (sus.length ? "bad" : "ok"), String(groups.length)));
@@ -264,7 +264,8 @@ export function dashboard(): HTMLElement {
     if (ev.ok && stalledNow && sus.length) susBody.append(el("div", "warn small", "기록이 멈췄을 수 있어 그 뒤 일은 세지 못했을 수 있음"));
     if (ev.ok && groups.length !== sus.length) susBody.append(el("div", "muted small", `사건 ${sus.length}건`));
     if (staleN) susBody.append(el("div", "muted small", `그 밖에 수집 전부터 실행 중 ${staleN}건`));
-    status.append(card("의심 사건", susBody, sus.length ? "card alert alert-bad" : "card"));
+    // 사건 추적: story.events 기본(triage=open)이라 조치함·닫힘은 빠진다 — 제목도 그렇게
+    status.append(card("처리 안 한 의심 사건", susBody, sus.length ? "card alert alert-bad" : "card"));
     // D006-3: 지금 Windows 에 걸려 있는 정책 수(확인 대기 + 적용 중, 일시 중지 제외). 서비스는 상태를 "Applied"·"Confirmed"로 준다 —
     // 전에는 소문자와 비교해 늘 0 이었다
     const applied = pol.ok ? pol.result.items.filter((p) => /^(applied|confirmed)$/i.test(p.state)).length : 0;

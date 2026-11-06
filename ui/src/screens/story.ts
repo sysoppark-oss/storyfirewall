@@ -83,6 +83,43 @@ interface StoryEvent {
   egress_where?: Where | null;
   /// 오늘(관측 뒤) 새 활동이 있는가(D004-2). 없으면 접힌 묶음
   fresh?: boolean;
+  /// 사건 추적: 처리 상태(서비스가 카드마다 붙임. 없으면 새 사건)
+  triage?: Triage | null;
+}
+/// 사건 추적 — 처리 상태. 새 사건 → 조사됨 → 조치함(정상·끊음·지켜보기) → 닫힘
+export type TriageState = "new" | "investigated" | "acted" | "closed";
+export type TriageAction = "normal" | "cut" | "watch";
+export interface Triage {
+  state: TriageState;
+  action?: TriageAction;
+  chapter: number;
+  /// unix 초
+  updated_ts: number;
+  note?: string;
+}
+export interface TriageCounts { new: number; investigated: number; acted: number; closed: number }
+export const TRIAGE_STATE_KO: Record<TriageState, string> = { new: "새 사건", investigated: "조사됨", acted: "조치함", closed: "닫힘" };
+export const TRIAGE_ACTION_KO: Record<TriageAction, string> = { normal: "정상", cut: "끊음", watch: "지켜보기" };
+/// 상태 칩 글자: "조치함 · 지켜보기"처럼 조치 종류까지
+export function triageText(t: Triage | null | undefined): string {
+  const st = t?.state ?? "new";
+  return st === "acted" && t?.action ? `${TRIAGE_STATE_KO[st]} · ${TRIAGE_ACTION_KO[t.action]}` : TRIAGE_STATE_KO[st];
+}
+/// 처리 상태 칩. 새 사건=테두리만(눈에 띄게 할 것은 수준 칩), 조사됨=회색, 조치함=초록, 닫힘=연회색
+export function triageChip(t: Triage | null | undefined): HTMLElement {
+  const st = t?.state ?? "new";
+  const c = el("span", `chip triage ${st}`, triageText(t));
+  const parts: string[] = [];
+  if (t && t.updated_ts) parts.push(`${fmtTs(t.updated_ts)}에 바뀜`);
+  if (t?.note) parts.push(`메모: ${t.note}`);
+  c.title = parts.length ? parts.join(" · ") : "아직 아무 처리도 하지 않은 사건입니다.";
+  return c;
+}
+/// 화면 위 상태별 개수 한 줄: "처리 안 한 사건 3 (새 사건 2 · 조사됨 1) · 조치함 4 · 닫힘 1"
+export function triageCountsText(c: TriageCounts | undefined): string {
+  if (!c) return "";
+  const open = c.new + c.investigated;
+  return `처리 안 한 사건 ${open} (새 사건 ${c.new} · 조사됨 ${c.investigated}) · 조치함 ${c.acted} · 닫힘 ${c.closed}`;
 }
 
 const LEVEL_KO: Record<string, string> = { suspicious: "의심", watch: "주의", normal: "평범" };
@@ -274,6 +311,15 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     o.value = v;
     level.append(o);
   }
+  // 사건 추적: 처리 상태 필터(기본 "처리 안 한 사건") + 상태별 개수
+  const triageSel = el("select");
+  for (const [v, l] of [["open", "처리 안 한 사건"], ["done", "처리한 사건"], ["all", "전부"]] as const) {
+    const o = el("option", undefined, l);
+    o.value = v;
+    triageSel.append(o);
+  }
+  triageSel.addEventListener("change", () => void load());
+  const countsLine = el("div", "muted small triage-counts");
   const cards = el("div", "cards-col");
   const today = el("div", "story-today");
   // D014-4: 오늘 한 일 범위(기본 오늘 = 지역 0시 이후)
@@ -284,7 +330,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     range.append(o);
   }
   range.addEventListener("change", () => void load());
-  root.append(el("div", "toolbar", "사건 수준 ", level), cards, el("h2", "today-head", "오늘 한 일 ", range), today);
+  root.append(el("div", "toolbar", "사건 수준 ", level, " 처리 상태 ", triageSel), countsLine, cards, el("h2", "today-head", "오늘 한 일 ", range), today);
 
   const explain = async (edgeId: number, into: HTMLElement) => {
     clear(into);
@@ -302,7 +348,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     cards.append(loadingBox());
     today.append(loadingBox());
     const [r, t, h] = await Promise.all([
-      rpc<{ items: StoryEvent[]; gaps?: Gap[] }>("story.events", { level_min: level.value, cursor: { limit: 50 } }),
+      rpc<{ items: StoryEvent[]; gaps?: Gap[]; counts?: TriageCounts }>("story.events", { level_min: level.value, triage: triageSel.value, cursor: { limit: 50 } }),
       // L030: 범위를 서비스에 넘긴다(전에는 서비스가 DB 전체를 문장으로 만들었다)
       rpc<{ sentences: Sentence[]; truncated?: boolean }>("story.today", { since_ts: sinceOf(range.value === "24h" ? "24h" : "today") * 10_000_000 + 116_444_736_000_000_000 }),
       rpc<HealthLike>("collector.health", {}),
@@ -312,6 +358,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     clear(cards);
     // D013: 오류는 "사건 없음"으로 그리지 않는다
     if (!r.ok) return cards.append(failBox(r.error, () => void load(), "이야기 목록"));
+    countsLine.textContent = triageCountsText(r.result.counts);
     // 저장 실패·과부하로 버린 구간만(기록 없는 구간 no_record 는 이 문장이 아니다 — 카드의 ⚠ 줄·진단 화면에서 따로 보인다)
     // L053: 구간마다 카드 한 장씩이면 이야기가 화면 밖으로 밀린다 → 한 줄 요약 + 펼쳐 보기
     const gs = summarizeGaps(r.result.gaps ?? []);
@@ -322,7 +369,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       cards.append(det);
     }
     // D015-4: 0건이어도 수집이 멈췄으면 "없음"이 아니라 "수집 안 됨"
-    if (!r.result.items.length) cards.append(collectionStalled(health) ? noDataBox() : el("p", "muted", "해당하는 사건이 없습니다."));
+    if (!r.result.items.length) cards.append(collectionStalled(health) ? noDataBox() : el("p", "muted", emptyText(triageSel.value, r.result.counts)));
     // D004-2: 오늘 새 활동이 없는 "수집 전부터 실행 중" 사건은 아래 접힌 묶음(한 줄 목록)으로
     const stale = r.result.items.filter((ev) => ev.fresh === false);
     // D020-2: 같은 프로그램·같은 판정은 한 장 + "N건" + 발생 시각 목록(최신 먼저)
@@ -464,7 +511,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       }
       h3.title = chainTitle(name, ch);
       if (members.length > 1) h3.append(el("span", "badge count", `${members.length}번`));
-      const head = el("div", "card-head", levelChip(ev.level), h3, when);
+      const head = el("div", "card-head", levelChip(ev.level), triageChip(ev.triage), h3, when);
       card.append(head);
       if (members.length > 1) {
         const first = members.reduce((a, m) => Math.min(a, m.last_ts || a), Infinity);
@@ -498,7 +545,28 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
         // D1: 빨간 채움 단추는 쓰지 않는다 — 권장이면 테두리를 굵게 하고 "권장" 표시만
         if (rec === "cut") { cutBtn.classList.add("recommended"); cutBtn.prepend("권장 · "); }
         if (rec === "mark_normal" && normalBtn) normalBtn.classList.add("primary");
+        // 사건 추적: 자동 조사가 끝난 새 사건은 "조사됨"으로(한 번만 — 서비스는 상태가 바뀔 때만 기록한다)
+        if ((ev.triage?.state ?? "new") === "new") {
+          void rpc<Triage>("story.triage", { root: ev.root, state: "investigated" }).then((r) => {
+            if (!r.ok) return;
+            ev.triage = r.result;
+            head.querySelector(".chip.triage")?.replaceWith(triageChip(r.result));
+            countsLine.textContent = "";
+          });
+        }
       }));
+      // 사건 추적 단추: 지켜보기(조치함) · 닫기. 끊기·정상은 서비스가 성공할 때 스스로 조치함으로 적는다
+      const triageSet = async (state: TriageState, action?: TriageAction) => {
+        const note = state === "closed" ? (prompt("닫는 이유(선택, 200자까지)") ?? undefined) : undefined;
+        const r = await rpc<Triage>("story.triage", { root: ev.root, state, ...(action ? { action } : {}), ...(note ? { note: note.slice(0, 200) } : {}) });
+        if (!r.ok) return alert(`실패: ${r.error.message}`);
+        void load();
+      };
+      const st = ev.triage?.state ?? "new";
+      const watchBtn = button("지켜보기", () => void triageSet("acted", "watch"), "btn");
+      watchBtn.title = "조치함(지켜보기)으로 표시합니다. 더 높은 장까지 이어지면 새 사건으로 돌아와 다시 알립니다.";
+      const closeBtn = button("닫기", () => void triageSet("closed"), "btn");
+      closeBtn.title = "닫힘으로 표시합니다. 더 높은 장까지 이어지면 새 사건으로 돌아옵니다.";
       // 3) 조치 + 4) 자세히(탭 단추: 누르면 아래 한 칸에 하나만)
       const panel = el("div", "detail-panel");
       const tabs: HTMLButtonElement[] = [];
@@ -523,7 +591,10 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
         tab("흐름 보기", "flow", () => flowView(ev)),
         tab("마인드맵", "mindmap", () => mindmap(ev.root)));
       if (members.length > 1) actions.append(tab(`발생 ${members.length}번`, "occ", () => occurrencesPanel(members)));
+      if (st !== "new") actions.append(tab("처리 기록", "log", () => triageLogPanel(ev.root)));
       actions.append(el("span", "spacer"));
+      if (!(st === "acted" && ev.triage?.action === "watch")) actions.append(watchBtn);
+      if (st !== "closed") actions.append(closeBtn);
       if (normalBtn) actions.append(normalBtn);
       actions.append(cutBtn);
       card.append(actions);
@@ -671,6 +742,30 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
   return root;
 }
 
+/// 목록이 비었을 때 — 필터 때문에 비었으면 그렇게 말한다(처리한 사건이 있는데 "없다"고 하지 않게)
+export function emptyText(filter: string, c?: TriageCounts): string {
+  if (filter === "open" && c && c.acted + c.closed > 0) return `처리 안 한 사건이 없습니다. (처리한 사건 ${c.acted + c.closed}건은 "처리 상태"에서 "처리한 사건"을 고르세요.)`;
+  if (filter === "done") return "처리한 사건이 없습니다.";
+  return "해당하는 사건이 없습니다.";
+}
+/// "처리 기록" 탭: 최신 먼저. 상태 · 조치 · 누가 · 언제 · 메모
+function triageLogPanel(root: number): HTMLElement {
+  const box = el("div", "facts-panel triage-log");
+  box.append(loadingBox());
+  void (async () => {
+    const r = await rpc<{ items: { ts: number; state: TriageState; action?: TriageAction; actor: string; note?: string }[] }>("story.triage_log", { root });
+    clear(box);
+    if (!r.ok) return box.append(errorBox(r.error.message));
+    if (!r.result.items.length) return box.append(el("p", "muted", "처리 기록이 없습니다."));
+    for (const it of r.result.items) {
+      const who = it.actor === "system" ? "자동(주기 판정)" : it.actor;
+      const line = el("div", "sentence item", el("b", undefined, triageText({ state: it.state, action: it.action, chapter: 0, updated_ts: it.ts })), ` · ${fmtTs(it.ts)}`, el("span", "muted", ` · ${who}`));
+      if (it.note) line.append(" · ", ext("span", it.note));
+      box.append(line);
+    }
+  })();
+  return box;
+}
 /// D039-2: 상세 패널 머리 한 줄 "이 파일로 실행 N번 · 처음~마지막"
 /// D044-3: 단추 줄 아래 안내 한 줄(핵심 프로세스 + 정상 처리 못 함은 한 줄로 합친다)
 export function cardNote(core: boolean, noFeedback: boolean): string | null {
