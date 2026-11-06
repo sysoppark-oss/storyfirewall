@@ -705,7 +705,22 @@ pub fn file_provider(ctx: Arc<Ctx>) -> Provider {
                             path: wp,
                         },
                     );
+                    // 35차 Q1: 공동 추정(등록 때 관찰 대상이 여럿)이면 나머지 뿌리마다 같은 기록을 하나씩 더(뿌리 꼬리표만 다름)
+                    let extra: Vec<String> = if source.starts_with("etw:file:ledger:inferred:") {
+                        let tail = source.split_once(":bulk:").map(|(_, n)| format!(":bulk:{n}")).unwrap_or_default();
+                        graph::ledger::co_roots(pid)
+                            .into_iter()
+                            .map(|r| format!("{}{tail}", graph::ledger::inferred_source(r)))
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
                     ev.source = source;
+                    for src in extra {
+                        let mut e2 = ev.clone();
+                        e2.source = src;
+                        ctx.emit(e2);
+                    }
                     ctx.emit(ev);
                 }
             }

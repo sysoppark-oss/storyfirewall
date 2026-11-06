@@ -75,6 +75,15 @@ pub const TOOLS: &[RemoteTool] = &[
         source: "MITRE ATT&CK S1209 (Quick Assist)",
     },
     RemoteTool {
+        // 35차 Gemini Q4: Windows 원격 지원(Remote Assistance). 도와주는 쪽·받는 쪽 모두 msra 가 돈다 —
+        // 받는 쪽(화면을 내보냄)만 송신량 모양으로 경보된다
+        key: "msra",
+        display: "Windows 원격 지원",
+        images: &["msra.exe"],
+        signer: "Microsoft Windows",
+        source: "Microsoft 문서 msra; Elastic 원격 데스크톱 섀도 규칙",
+    },
+    RemoteTool {
         key: "screenconnect",
         display: "ScreenConnect",
         images: &[

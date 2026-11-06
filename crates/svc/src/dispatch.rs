@@ -1268,7 +1268,8 @@ fn handle(
                     &world.graph,
                     r,
                     crate::runtime::unix_to_filetime(start),
-                    crate::runtime::unix_to_filetime(until + 60),
+                    // 35차 Q2: 관찰이 끝난 뒤(재부팅 뒤 포함) 이은 작업·서비스가 실행돼 적힌 것까지 — 지금까지
+                    crate::runtime::unix_to_filetime(world.engine_wall().max(until + 60)),
                     200,
                 )
                 .map_err(internal)?,

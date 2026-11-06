@@ -319,6 +319,16 @@ pub fn start(cfg: Config, sink: Option<Sender<Vec<Event>>>) -> Result<Session> {
             let poll_tx = ctx.tx.clone();
             let poll_ctx = ctx.clone();
             let poll_stop = stop.clone();
+            // 35차 Q3: 서비스 레지스트리 변경 알림 — 새 서비스·ImagePath 바꿔치기를 바로(5초 목록 비교의 틈을 메움)
+            let reg_stop = stop.clone();
+            let reg_ctx = ctx.clone();
+            let _svcreg = thread::spawn(move || {
+                crate::svcreg::watch(reg_stop, |name| {
+                    if graph::ledger::service_registered(name, now_filetime()) {
+                        reg_ctx.count("ledger_service_reg_notify");
+                    }
+                });
+            });
             let poller = thread::spawn(move || -> (u64, Vec<session_stats::SessionStats>) {
                 let mut reported: HashSet<(u32, String, u16)> = HashSet::new();
                 let mut last_services: HashMap<u32, Vec<String>> = HashMap::new();

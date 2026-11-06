@@ -72,6 +72,8 @@ struct Entry {
     root: Root,
     /// 부모-자식이 아니라 대리 창으로 물려받음(화면에 "추정")
     inferred: bool,
+    /// 35차 Q1: 등록 때 관찰 대상이 여럿이었으면 나머지 뿌리(공동 추정) — 수집기가 뿌리마다 기록을 남긴다
+    also: Vec<Root>,
     folders: HashMap<String, u32>,
 }
 
@@ -95,7 +97,9 @@ struct State {
     /// 작업 스케줄러 서비스를 담은 svchost pid(서비스 대조표)
     sched: std::collections::HashSet<u32>,
     /// 34차 Q1: 관찰 중에 등록된 예약 작업 이름(소문자) → (뿌리, 기한). 작업 스케줄러 ETW 106·140 이 넣고 129 가 쓴다
-    tasks: HashMap<String, (Root, i64)>,
+    tasks: HashMap<String, (Vec<Root>, i64)>,
+    /// 35차 Q2: 이름 목록이 바뀌어 저장할 것이 있음(서비스가 그래프 DB 에 30일 보관)
+    names_dirty: bool,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -140,6 +144,7 @@ pub fn watch_under(pid: u32, create_ft: i64, until_ft: i64, root: Root) {
                         until_ft,
                         root,
                         inferred: false,
+                        also: Vec::new(),
                         folders: HashMap::new(),
                     },
                 );
@@ -192,44 +197,104 @@ fn live_roots(s: &State, now_ft: i64) -> Vec<(Root, i64)> {
     v
 }
 
+/// 관찰 대상이 여럿일 때 함께 잇는 상한(미끼 대상을 잔뜩 띄워 표를 키우지 못하게)
+pub const MAX_CO_ROOTS: usize = 8;
+/// 35차 Q2: 이은 작업·서비스 이름을 기억하는 기간(FILETIME, 30일) — 관찰이 끝난 뒤·재부팅 뒤 실행돼도 잇는다
+pub const NAME_KEEP_FT: i64 = 30 * 86_400 * 10_000_000;
+/// 늦게(관찰 기한 뒤) 실행된 프로세스를 적는 시간(FILETIME, 10분)
+pub const LATE_WATCH_FT: i64 = 600 * 10_000_000;
+
 /// 34차 Gemini Q1: 예약 작업이 등록·변경됨(작업 스케줄러 ETW 106·140). 이벤트에 등록한 프로세스 pid 가 없다(러너 실측 —
-/// 헤더 pid 는 작업 스케줄러 svchost). 그래서 **지금 관찰 중인 대상이 하나뿐일 때만** 그 대상에 잇는다(여럿이면 어느 쪽인지 모름).
-/// 이은 작업이 나중에 실행되면(129) 실행된 프로세스를 정확히 그 pid 로 물려받는다 — 시각 창이 아니라 작업 이름으로. 이었으면 true
+/// 헤더 pid 는 작업 스케줄러 svchost). 35차 Q1: 지금 관찰 중인 대상 **모두**(최대 8)에 잇는다 — 하나뿐일 때만 이으면
+/// 미끼 대상 하나로 끊을 수 있다. 여럿이면 화면에 공동 추정으로 보인다.
+/// 35차 Q2: 이름은 30일 기억해(서비스가 그래프 DB 에도 보관) 관찰이 끝난 뒤·재부팅 뒤 실행돼도 잇는다. 이었으면 true
 pub fn task_registered(name: &str, now_ft: i64) -> bool {
     with(|s| {
         let roots = live_roots(s, now_ft);
-        if roots.len() != 1 {
+        if roots.is_empty() || roots.len() > MAX_CO_ROOTS {
             return false;
         }
-        let (root, until) = roots[0];
         if s.tasks.len() > 256 {
             s.tasks.retain(|_, (_, u)| *u >= now_ft);
         }
-        s.tasks.insert(name.to_ascii_lowercase(), (root, until));
+        let keep = now_ft + NAME_KEEP_FT;
+        s.tasks.insert(
+            name.to_ascii_lowercase(),
+            (roots.iter().map(|r| r.0).collect(), keep),
+        );
+        s.names_dirty = true;
         true
     })
 }
 
 /// 예약 작업이 프로세스를 실행함(작업 스케줄러 ETW 129: TaskName·ProcessID). 이은 작업이면 그 pid 를 추정으로 물려받는다
+/// (관찰 기한이 지났으면 실행 뒤 10분 동안)
 pub fn task_launched(name: &str, pid: u32, now_ft: i64) -> bool {
     with(|s| {
-        let Some(&(root, until)) = s.tasks.get(&name.to_ascii_lowercase()) else {
+        let Some((roots, keep)) = s.tasks.get(&name.to_ascii_lowercase()).cloned() else {
             return false;
         };
-        if until < now_ft || s.watch.len() >= MAX_PIDS {
+        if keep < now_ft || s.watch.len() >= MAX_PIDS || roots.is_empty() {
             return false;
         }
+        // 뿌리 관찰이 아직이면 그 기한, 끝났으면 지금부터 10분
+        let live = live_roots(s, now_ft);
+        let until = roots
+            .iter()
+            .filter_map(|r| live.iter().find(|l| l.0 == *r).map(|l| l.1))
+            .max()
+            .unwrap_or(now_ft + LATE_WATCH_FT);
         s.watch.insert(
             pid,
             Entry {
                 create_ft: 0,
                 until_ft: until,
-                root,
+                root: roots[0],
                 inferred: true,
+                also: roots[1..].to_vec(),
                 folders: HashMap::new(),
             },
         );
         true
+    })
+}
+
+/// 35차 Q1: 공동 추정의 나머지 뿌리(수집기가 뿌리마다 기록을 하나씩 더 남긴다)
+pub fn co_roots(pid: u32) -> Vec<Root> {
+    with(|s| {
+        s.watch
+            .get(&pid)
+            .map(|e| e.also.clone())
+            .unwrap_or_default()
+    })
+}
+
+/// 35차 Q2: 저장할 이름 목록이 바뀌었으면 (이름, 뿌리들, 기억 기한) 목록을 넘기고 표시를 지운다
+pub fn take_dirty_names() -> Option<Vec<(String, Vec<Root>, i64)>> {
+    with(|s| {
+        if !s.names_dirty {
+            return None;
+        }
+        s.names_dirty = false;
+        Some(
+            s.tasks
+                .iter()
+                .map(|(k, (r, u))| (k.clone(), r.clone(), *u))
+                .collect(),
+        )
+    })
+}
+
+/// 서비스 시작 때 그래프 DB 에 보관했던 이름 목록을 되살린다(기한 지난 것은 버림)
+pub fn import_names(rows: Vec<(String, Vec<Root>, i64)>, now_ft: i64) {
+    with(|s| {
+        for (k, r, u) in rows
+            .into_iter()
+            .filter(|x| x.2 >= now_ft && !x.1.is_empty())
+            .take(256)
+        {
+            s.tasks.entry(k).or_insert((r, u));
+        }
     })
 }
 
@@ -260,13 +325,16 @@ pub fn on_spawn(ppid: u32, pid: u32, create_ft: i64, image: &str, now_ft: i64) -
     with(|s| {
         let base = base_lower(image);
         s.arms.retain(|(_, a)| a.close_ft >= now_ft && a.left > 0);
-        let parent = s.watch.get(&ppid).map(|e| (e.until_ft, e.root, e.inferred));
-        let (until, root, inferred, how) = match parent {
-            Some((until, _, _)) if until < now_ft => {
+        let parent = s
+            .watch
+            .get(&ppid)
+            .map(|e| (e.until_ft, e.root, e.inferred, e.also.clone()));
+        let (until, root, inferred, also, how) = match parent {
+            Some((until, _, _, _)) if until < now_ft => {
                 s.watch.remove(&ppid);
                 return Inherit::No;
             }
-            Some((until, root, inf)) => (until, root, inf, Inherit::Child),
+            Some((until, root, inf, also)) => (until, root, inf, also, Inherit::Child),
             None => {
                 let kind = match s.hosts.get(&ppid).copied() {
                     Some(k) => k,
@@ -277,7 +345,13 @@ pub fn on_spawn(ppid: u32, pid: u32, create_ft: i64, image: &str, now_ft: i64) -
                     return Inherit::No;
                 };
                 arm.left -= 1;
-                (arm.until_ft, arm.root, true, Inherit::Proxy(kind))
+                (
+                    arm.until_ft,
+                    arm.root,
+                    true,
+                    Vec::new(),
+                    Inherit::Proxy(kind),
+                )
             }
         };
         if s.watch.len() >= MAX_PIDS {
@@ -290,6 +364,7 @@ pub fn on_spawn(ppid: u32, pid: u32, create_ft: i64, image: &str, now_ft: i64) -
                 until_ft: until,
                 root,
                 inferred,
+                also,
                 folders: HashMap::new(),
             },
         );

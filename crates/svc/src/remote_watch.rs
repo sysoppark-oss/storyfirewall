@@ -28,8 +28,8 @@ pub struct RemoteWatch {
     pub last_seed_wall: i64,
     /// 32차 Q1: 지난번 본 활성 RDP 세션 → (시작 엔진 벽시각, 접속한 쪽 이름)
     pub rdp: BTreeMap<u32, (i64, String)>,
-    /// 34차 Q3: 들어오는 RDP 연결을 알린 주소 → 엔진 벽시각(하루 한 번)
-    pub inbound_seen: std::collections::HashMap<String, i64>,
+    /// 35차 Q5: 들어오는 RDP 연결 시간 단위 묶음
+    pub inbound: InboundTally,
 }
 
 /// 수집 배치에서 원격 도구의 시작·끝을 받는다(배치는 이미 그래프에 들어간 뒤 온다)
@@ -54,27 +54,29 @@ pub fn on_batch(world: &mut World, events: &[graph::Event]) {
             _ => {}
         }
         // 34차 Gemini Q3: RDP 섀도(화면 엿보기)·세션 가로채기(tscon)·들어오는 RDP 연결 — 새 세션이 생기지 않아 WTS 로는 안 보인다
-        if let Some((kind, sev, text, target)) = rdp_signal(ev, world.host.rdp_port()) {
+        let host = &world.host;
+        let sig = rdp_signal(ev, host.rdp_port(), &|p: &str| host.original_name(p));
+        if let Some((kind, sev, text, target)) = sig {
             if kind == "rdp_inbound" {
-                // 같은 주소는 하루 한 번(인터넷에 열린 RDP 포트는 훑기가 잦다)
-                let key = target
+                // 35차 Gemini Q5: 주소를 바꿔 가며 두드리는 무작위 대입은 1시간 단위로 묶는다 — 그 시간의 첫 연결만 기록하고
+                // 나머지는 세었다가 시간이 바뀌면 "N건·주소 M곳" 한 줄(세션이 실제로 열리면 WTS 쪽이 따로 경보)
+                let addr = target
                     .get("raddr")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
                 let now = world.engine_wall();
-                if world
-                    .remote
-                    .inbound_seen
-                    .get(&key)
-                    .is_some_and(|t| now - t < 86_400)
-                {
+                let first = inbound_tally(&mut world.remote.inbound, now, &addr);
+                if let Some((n, m, from)) = world.remote.inbound.flushed.take() {
+                    let _ = world.engine.record_event(
+                        "rdp_inbound",
+                        2,
+                        format!("지난 1시간({}부터) 원격 데스크톱 포트로 들어온 연결 {n}건, 주소 {m}곳. 세션이 열린 것은 따로 알립니다.", hm(from)),
+                    );
+                }
+                if !first {
                     continue;
                 }
-                if world.remote.inbound_seen.len() > 4096 {
-                    world.remote.inbound_seen.retain(|_, t| now - *t < 86_400);
-                }
-                world.remote.inbound_seen.insert(key, now);
             }
             let _ = world
                 .engine
@@ -83,18 +85,28 @@ pub fn on_batch(world: &mut World, events: &[graph::Event]) {
     }
 }
 
+/// 섀도·세션 가로채기 도구의 파일 이름(소문자)
+pub const RDP_NAMES: &[&str] = &["rdpsaproxy.exe", "rdpsauachelper.exe", "tscon.exe"];
+
 /// RDP 관련 수집 이벤트 하나 → 서비스 사건(순수 함수 — 시험 대상). 판정이 아니라 사실 문장
 pub fn rdp_signal(
     ev: &graph::Event,
     rdp_port: u16,
+    original_name: &dyn Fn(&str) -> Option<String>,
 ) -> Option<(&'static str, u8, String, serde_json::Value)> {
     match &ev.kind {
         graph::EventKind::ProcessStart { pid, image, .. } => {
-            let b = image
+            let mut b = image
                 .rsplit(['\\', '/'])
                 .next()
                 .unwrap_or(image)
                 .to_ascii_lowercase();
+            // 35차 Gemini Q4: 이름을 바꾼 복사본 — 버전 리소스의 원래 이름(OriginalFileName)으로도 본다
+            if !RDP_NAMES.contains(&b.as_str()) {
+                if let Some(o) = original_name(image).filter(|o| RDP_NAMES.contains(&o.as_str())) {
+                    b = o;
+                }
+            }
             match b.as_str() {
                 // Elastic 탐지 규칙 "Potential Remote Desktop Shadowing Activity" 의 프로세스 이름
                 "rdpsaproxy.exe" | "rdpsauachelper.exe" => Some((
@@ -374,6 +386,7 @@ mod tests {
     #[test]
     fn rdp_signals() {
         use graph::event::{Direction, ProcRef, Proto};
+        let none = |_: &str| -> Option<String> { None };
         let ev = |kind| graph::Event {
             ts: 1,
             source: "t".into(),
@@ -388,18 +401,26 @@ mod tests {
             })
         };
         assert_eq!(
-            rdp_signal(&start(r"C:\Windows\System32\RdpSaProxy.exe"), 3389)
+            rdp_signal(&start(r"C:\Windows\System32\RdpSaProxy.exe"), 3389, &none)
                 .unwrap()
                 .0,
             "rdp_shadow"
         );
         assert_eq!(
-            rdp_signal(&start(r"C:\Windows\System32\tscon.exe"), 3389)
+            rdp_signal(&start(r"C:\Windows\System32\tscon.exe"), 3389, &none)
                 .unwrap()
                 .0,
             "rdp_hijack"
         );
-        assert!(rdp_signal(&start(r"C:\Windows\System32\notepad.exe"), 3389).is_none());
+        assert!(rdp_signal(&start(r"C:\Windows\System32\notepad.exe"), 3389, &none).is_none());
+        // 35차 Q4: 이름을 바꾼 tscon 복사본 — 원래 이름으로
+        let orig = |p: &str| p.ends_with("svc.exe").then(|| "tscon.exe".to_string());
+        assert_eq!(
+            rdp_signal(&start(r"C:\Users\u\svc.exe"), 3389, &orig)
+                .unwrap()
+                .0,
+            "rdp_hijack"
+        );
         let conn = |dir, lport, raddr: &str| {
             ev(graph::EventKind::Connect {
                 proc: ProcRef::new(800, None),
@@ -413,23 +434,35 @@ mod tests {
         };
         // 바꾼 포트도 따른다
         assert_eq!(
-            rdp_signal(&conn(Direction::In, 13389, "198.51.100.4"), 13389)
+            rdp_signal(&conn(Direction::In, 13389, "198.51.100.4"), 13389, &none)
                 .unwrap()
                 .0,
             "rdp_inbound"
         );
         assert!(
-            rdp_signal(&conn(Direction::In, 3389, "198.51.100.4"), 13389).is_none(),
+            rdp_signal(&conn(Direction::In, 3389, "198.51.100.4"), 13389, &none).is_none(),
             "다른 포트"
         );
         assert!(
-            rdp_signal(&conn(Direction::Out, 3389, "198.51.100.4"), 3389).is_none(),
+            rdp_signal(&conn(Direction::Out, 3389, "198.51.100.4"), 3389, &none).is_none(),
             "나가는 연결(이 PC 가 남에게 접속)"
         );
         assert!(
-            rdp_signal(&conn(Direction::In, 3389, "127.0.0.1"), 3389).is_none(),
+            rdp_signal(&conn(Direction::In, 3389, "127.0.0.1"), 3389, &none).is_none(),
             "루프백"
         );
+    }
+
+    #[test]
+    fn inbound_hourly_tally() {
+        let mut t = InboundTally::default();
+        assert!(inbound_tally(&mut t, 7200, "a"), "그 시간 첫 연결은 기록");
+        for i in 0..150 {
+            assert!(!inbound_tally(&mut t, 7210 + i, &format!("b{}", i % 40)));
+        }
+        assert!(t.flushed.is_none());
+        assert!(inbound_tally(&mut t, 10_800, "z"), "다음 시간 첫 연결");
+        assert_eq!(t.flushed, Some((151, 41, 7200)));
     }
 
     #[test]
@@ -463,4 +496,38 @@ mod tests {
         assert_eq!(ev[0].3["started_ts"], serde_json::json!(100));
         assert!(ev[0].2.contains("약 5분"), "{}", ev[0].2);
     }
+}
+
+/// 들어오는 RDP 연결 1시간 묶음
+#[derive(Debug, Default)]
+pub struct InboundTally {
+    /// 지금 시간 칸의 시작(엔진 벽시각, 시 단위)
+    pub hour: i64,
+    pub count: u64,
+    pub addrs: std::collections::BTreeSet<String>,
+    /// 지난 칸을 닫으며 남길 요약 (건수, 주소 수, 칸 시작) — 첫 연결 뒤 더 온 것이 있을 때만
+    pub flushed: Option<(u64, usize, i64)>,
+}
+
+/// 연결 하나를 센다. 이 시간 칸의 첫 연결이면 true(개별 기록). 칸이 바뀌면 지난 칸 요약을 flushed 에
+pub fn inbound_tally(t: &mut InboundTally, now: i64, addr: &str) -> bool {
+    let hour = now - now.rem_euclid(3600);
+    if hour != t.hour {
+        if t.count > 1 {
+            t.flushed = Some((t.count, t.addrs.len(), t.hour));
+        }
+        t.hour = hour;
+        t.count = 0;
+        t.addrs.clear();
+    }
+    t.count += 1;
+    if t.addrs.len() < 4096 {
+        t.addrs.insert(addr.to_string());
+    }
+    t.count == 1
+}
+
+fn hm(unix: i64) -> String {
+    let m = unix.rem_euclid(86_400) / 60;
+    format!("UTC {:02}:{:02}", m / 60, m % 60)
 }

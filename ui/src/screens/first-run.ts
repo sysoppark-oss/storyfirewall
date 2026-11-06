@@ -62,7 +62,7 @@ export const LEDGER_SCOPE =
 
 /// 33차 Q1: 대리 실행(시각으로 이음) 안내 — 무엇을 근거로 이었고 무엇을 놓치는지
 export const LEDGER_PROXY_NOTE =
-  "이 프로그램이 예약 작업·WMI·서비스 도구를 실행한 뒤 2분 안에 그 시스템 기능이 띄운 프로그램(최대 3개)이 만든 파일입니다. 부모-자식 관계가 아니라 시각으로 이은 것이라 다른 프로그램의 것이 섞일 수 있습니다. 도구 없이 직접 맡긴 일과 나중 시각으로 걸어 둔 예약 작업은 잡지 못합니다.";
+  "이 프로그램이 관찰 중일 때 등록된 예약 작업·서비스, 또는 예약 작업·WMI·서비스 도구를 실행한 뒤 2분 안에 그 시스템 기능이 띄운 프로그램이 만든 파일입니다. 등록한 쪽을 Windows 가 알려 주지 않아 부모-자식 관계가 아니라 시각으로 이었습니다 — 그때 관찰 중인 프로그램이 여럿이면 모두에 함께 적고, 관찰이 끝난 뒤(재부팅 뒤 포함, 30일 안) 그 작업·서비스가 실행돼도 적습니다. 다른 프로그램의 것이 섞일 수 있습니다."
 
 /// 변경 장부 한 줄 요약(사실의 개수만)
 export function ledgerSummary(run: { procs: string[]; files: string[]; autoruns: unknown[]; remotes: unknown[]; truncated?: boolean; facts_complete?: boolean }): string {

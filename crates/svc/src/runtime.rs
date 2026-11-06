@@ -285,6 +285,12 @@ impl Runtime {
                     agent_cache: None,
                 };
                 crate::first_run::ensure_table(&world.graph);
+                // 35차 Q2: 보관했던 장부 이름 되살리기(기한 지난 것은 버림)
+                if let Some(js) = world.graph.get_meta("ledger_names").ok().flatten() {
+                    if let Ok(rows) = serde_json::from_str::<Vec<(String, Vec<(u32, i64)>, i64)>>(&js) {
+                        graph::ledger::import_names(rows, unix_to_filetime(world.engine_wall()));
+                    }
+                }
                 // 재시작 대조: 누락 재등록·고아 제거·미확인 롤백
                 let _ = world.engine.reconcile();
                 run_loop(&mut world, rx, clock.as_ref());
@@ -370,6 +376,12 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
             }
             Command::DefenderEvents(evs) => defender_events(world, evs),
             Command::Tick => {
+                // 35차 Q2: 변경 장부가 이은 예약 작업·서비스 이름(30일)을 그래프 DB 에 보관 — 서비스·PC 재시작 뒤에도 잇게
+                if let Some(rows) = graph::ledger::take_dirty_names() {
+                    if let Ok(js) = serde_json::to_string(&rows) {
+                        let _ = world.graph.set_meta("ledger_names", &js);
+                    }
+                }
                 let _ = world.engine.tick();
                 crate::first_run::sweep(world);
                 crate::remote_watch::sample(world);

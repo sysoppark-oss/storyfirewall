@@ -28,6 +28,10 @@ pub trait Host: Send {
     fn rdp_port(&self) -> u16 {
         3389
     }
+    /// 35차 Q4: 실행 파일의 버전 리소스 원래 이름(OriginalFileName, 소문자). 모르면 None
+    fn original_name(&self, _path: &str) -> Option<String> {
+        None
+    }
 }
 
 /// 아무것도 하지 않는 호스트 (Linux 테스트·개발 기본값)

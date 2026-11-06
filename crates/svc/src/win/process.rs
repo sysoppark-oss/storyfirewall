@@ -109,4 +109,24 @@ impl crate::host::Host for WinHost {
     fn rdp_port(&self) -> u16 {
         super::wts::rdp_port()
     }
+    fn original_name(&self, path: &str) -> Option<String> {
+        // Windows 폴더 밖의 실행 파일만(이름 바꾼 복사본은 보통 사용자 폴더에 있다) — 모든 시스템 프로세스마다 파일을 읽지 않게
+        let l = path.to_ascii_lowercase();
+        if l.contains(":\\windows\\") {
+            return None;
+        }
+        // 같은 경로를 다시 읽지 않게 캐시(크기 상한). 바꿔치기된 같은 경로는 다음 재시작까지 옛 이름 — 섀도·tscon 대조에만 쓰는 값이라 감수
+        static CACHE: std::sync::Mutex<Option<std::collections::HashMap<String, Option<String>>>> = std::sync::Mutex::new(None);
+        let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        let m = g.get_or_insert_with(std::collections::HashMap::new);
+        if let Some(v) = m.get(&l) {
+            return v.clone();
+        }
+        if m.len() > 4096 {
+            m.clear();
+        }
+        let v = collector::cmdline::original_file_name(path).map(|n| collector::cmdline::norm_original(&n));
+        m.insert(l, v.clone());
+        v
+    }
 }
