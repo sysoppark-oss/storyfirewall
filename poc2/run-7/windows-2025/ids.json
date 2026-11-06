@@ -1,0 +1,38 @@
+{
+  "74285": {
+    "name": "poc",
+    "action": "block",
+    "direction": "out",
+    "app_path": "C:\\Windows\\System32\\curl.exe",
+    "remote_v4": [],
+    "remote_v6": [],
+    "remote_ports": [],
+    "local_ports": [],
+    "protocols": [],
+    "weight": null
+  },
+  "74288": {
+    "name": "poc",
+    "action": "block",
+    "direction": "out",
+    "app_path": "C:\\Windows\\System32\\curl.exe",
+    "remote_v4": [],
+    "remote_v6": [],
+    "remote_ports": [],
+    "local_ports": [],
+    "protocols": [],
+    "weight": null
+  },
+  "74287": {
+    "name": "poc",
+    "action": "block",
+    "direction": "out",
+    "app_path": "C:\\Windows\\System32\\curl.exe",
+    "remote_v4": [],
+    "remote_v6": [],
+    "remote_ports": [],
+    "local_ports": [],
+    "protocols": [],
+    "weight": null
+  }
+}
