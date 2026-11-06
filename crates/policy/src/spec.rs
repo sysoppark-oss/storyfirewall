@@ -95,6 +95,8 @@ pub enum IpFamily {
 ///   (37차 의뢰서 Q1 작성 중 발견, Microsoft Learn "Filter Weight Assignment" 로 범위 확인).
 /// - 번호 없는 허용(process_not 예외): 0xF000_0000_0000_0000 — 같은 정책의 차단(구간 14)보다 위.
 /// - ACL 번호 n: `ACL_WEIGHT_TOP − n<<40` — 늘 구간 14 아래(ACL 허용은 보안 차단을 뚫지 못한다).
+///   37차 Q1① 뒤로 ACL 은 따로 ACL Sublayer 에 들어간다(wfp::ACL_SUBLAYER_KEY) — 구간 비교는 같은 Sublayer 안에서만 뜻이 있고,
+///   Sublayer 사이에서는 차단이 이긴다. 그래도 구간은 그대로 둔다(옛 필터·가짜 백엔드와의 호환).
 pub const BLOCK_RANGE_ID: u8 = 14;
 pub const PERMIT_DEFAULT_WEIGHT: u64 = 0xF000_0000_0000_0000;
 pub const ACL_WEIGHT_TOP: u64 = 0x8000_0000_0000_0000;

@@ -22,6 +22,17 @@ pub const PROVIDER_KEY: GUID = GUID::from_u128(0x5f1a2b3c_4d5e_4f60_8172_839405a
 pub const SUBLAYER_KEY: GUID = GUID::from_u128(0x5f1a2b3c_4d5e_4f60_8172_839405a6b7c9);
 /// Sublayer weight: Defender(0x2000~0x7FFF 추정)보다 높게. 차단은 어느 Sublayer 든 이기므로 값 자체는 결정적이지 않다.
 pub const SUBLAYER_WEIGHT: u16 = 0x8000;
+/// ACL 표 전용 Sublayer (37차 Q1①). WFP 는 모든 Sublayer 를 판정하고 차단(hard block)이 이긴다(Filter Arbitration).
+/// 그래서 Sublayer 를 나누면 ① 다른 정책의 process_not 예외 허용이 ACL 차단을 뚫지 못하고 ② ACL 허용도 보안 차단을 뚫지 못한다.
+/// ACL 안의 번호 순서(허용·차단)는 이 Sublayer 안의 weight 로 그대로 정해진다.
+pub const ACL_SUBLAYER_KEY: GUID = GUID::from_u128(0x5f1a2b3c_4d5e_4f60_8172_839405a6b7ca);
+pub const ACL_SUBLAYER_WEIGHT: u16 = 0x7fff;
+
+/// ACL 표에서 온 명세인가 — ACL 번호 weight(ACL_WEIGHT_TOP 이하)를 가진 것
+pub fn is_acl(spec: &BlockSpec) -> bool {
+    spec.weight
+        .is_some_and(|w| w <= crate::spec::ACL_WEIGHT_TOP)
+}
 /// 우리가 쓰는 계층. 열거·구독 템플릿은 layerKey 가 필수(run-1: 비우면 FWP_E_LAYER_NOT_FOUND)라 계층마다 돈다.
 /// 우리 필터가 들어갈 수 있는 계층 전부 — 열거·정리·대조가 이 목록을 돈다(빠지면 고아·재등록 반복)
 pub const LAYERS: [GUID; 6] = [
@@ -162,17 +173,30 @@ impl Engine {
         if rc != 0 && rc != FWP_E_ALREADY_EXISTS as u32 {
             return Err(PolicyError::Wfp(rc, "FwpmProviderAdd0"));
         }
-        let sname = wide("StoryFirewall block sublayer");
-        let mut s: FWPM_SUBLAYER0 = unsafe { std::mem::zeroed() };
-        s.subLayerKey = SUBLAYER_KEY;
-        s.displayData.name = sname.as_ptr() as *mut u16;
-        s.flags = FWPM_SUBLAYER_FLAG_PERSISTENT;
-        let mut pk = PROVIDER_KEY;
-        s.providerKey = &mut pk;
-        s.weight = SUBLAYER_WEIGHT;
-        let rc = unsafe { FwpmSubLayerAdd0(self.h, &s, std::ptr::null_mut()) };
-        if rc != 0 && rc != FWP_E_ALREADY_EXISTS as u32 {
-            return Err(PolicyError::Wfp(rc, "FwpmSubLayerAdd0"));
+        for (key, name, weight) in [
+            (
+                SUBLAYER_KEY,
+                "StoryFirewall block sublayer",
+                SUBLAYER_WEIGHT,
+            ),
+            (
+                ACL_SUBLAYER_KEY,
+                "StoryFirewall ACL sublayer",
+                ACL_SUBLAYER_WEIGHT,
+            ),
+        ] {
+            let sname = wide(name);
+            let mut s: FWPM_SUBLAYER0 = unsafe { std::mem::zeroed() };
+            s.subLayerKey = key;
+            s.displayData.name = sname.as_ptr() as *mut u16;
+            s.flags = FWPM_SUBLAYER_FLAG_PERSISTENT;
+            let mut pk = PROVIDER_KEY;
+            s.providerKey = &mut pk;
+            s.weight = weight;
+            let rc = unsafe { FwpmSubLayerAdd0(self.h, &s, std::ptr::null_mut()) };
+            if rc != 0 && rc != FWP_E_ALREADY_EXISTS as u32 {
+                return Err(PolicyError::Wfp(rc, "FwpmSubLayerAdd0"));
+            }
         }
         Ok(())
     }
@@ -334,7 +358,11 @@ impl Engine {
         let mut pk = PROVIDER_KEY;
         f.providerKey = &mut pk;
         f.layerKey = layer;
-        f.subLayerKey = SUBLAYER_KEY;
+        f.subLayerKey = if is_acl(spec) {
+            ACL_SUBLAYER_KEY
+        } else {
+            SUBLAYER_KEY
+        };
         // permit 은 같은 Sublayer 의 block 보다 높은 weight 가 필요하다 (6차 검증 Q2). block 은 BFE 자동.
         let mut weight_box: Box<u64> = Box::new(0);
         match (spec.action, spec.weight) {
@@ -708,9 +736,11 @@ impl Engine {
         if !ids.is_empty() {
             self.delete(&ids)?;
         }
-        let rc = unsafe { FwpmSubLayerDeleteByKey0(self.h, &SUBLAYER_KEY) };
-        if rc != 0 && rc != FWP_E_SUBLAYER_NOT_FOUND as u32 {
-            return Err(PolicyError::Wfp(rc, "FwpmSubLayerDeleteByKey0"));
+        for key in [SUBLAYER_KEY, ACL_SUBLAYER_KEY] {
+            let rc = unsafe { FwpmSubLayerDeleteByKey0(self.h, &key) };
+            if rc != 0 && rc != FWP_E_SUBLAYER_NOT_FOUND as u32 {
+                return Err(PolicyError::Wfp(rc, "FwpmSubLayerDeleteByKey0"));
+            }
         }
         let rc = unsafe { FwpmProviderDeleteByKey0(self.h, &PROVIDER_KEY) };
         if rc != 0 && rc != FWP_E_PROVIDER_NOT_FOUND as u32 {

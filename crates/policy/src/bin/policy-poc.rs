@@ -282,6 +282,31 @@ fn main() {
             check(!reach(), "unnumbered security block beats ACL allow #1");
             eng.delete(&ids.iter().map(|x| x.0).collect::<Vec<_>>())
                 .unwrap_or_else(|e| fail(&e));
+            // ③'' 37차 Q1①: 다른 정책의 process_not 예외(1.1.1.1 은 막되 curl 은 빼고)가 ACL 차단을 뚫지 못한다(ACL Sublayer 분리)
+            let mut sec_all = base.clone();
+            sec_all.app_path = None;
+            sec_all.weight = None;
+            let mut except_curl = base.clone();
+            except_curl.action = policy::spec::Action::Permit;
+            except_curl.weight = None;
+            let ids = eng
+                .apply(&[sec_all.clone(), except_curl.clone()])
+                .unwrap_or_else(|e| fail(&e));
+            check(
+                reach(),
+                "process_not exception lets curl through the security block",
+            );
+            let mut acl_block = base.clone();
+            acl_block.weight = Some(w(1));
+            let ids2 = eng.apply(&[acl_block]).unwrap_or_else(|e| fail(&e));
+            check(!reach(), "process_not exception does not open ACL block #1");
+            eng.delete(
+                &ids.iter()
+                    .chain(ids2.iter())
+                    .map(|x| x.0)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap_or_else(|e| fail(&e));
             // ④ ICMPv4 필터(1.1.1.1 만, 앱 조건 없음)
             let mut ic = base.clone();
             ic.app_path = None;

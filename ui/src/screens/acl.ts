@@ -212,7 +212,7 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
     clear(foot);
     const title = el("div", "acl-title", el("h2", undefined, "보안 정책 (ACL)"), el("span", "badge count", String(rules.length)));
     head.append(title, button("+ 규칙 추가", () => openDialog(-1)));
-    head.append(el("p", "muted small acl-note", "위 규칙부터 판정합니다. 표 전체가 한 번에 적용되고 한 번에 되돌려집니다. ‘허용’은 Story Firewall 차단에 대한 예외이며 Windows 방화벽이 막은 것을 열지는 않습니다."));
+    head.append(el("p", "muted small acl-note", "위 규칙부터 판정합니다. 표 전체가 한 번에 적용되고 한 번에 되돌려집니다. ‘허용’은 이 표에서 그 아래 차단에 대한 예외입니다. 끊기 같은 보안 차단이나 Windows 방화벽이 막은 것은 열지 않습니다."));
     if (foreign) head.append(el("p", "warn acl-foreign", "지금 걸린 ACL 은 표로 보여 줄 수 없는 꼴(아래 ‘고급’에서 직접 쓴 것)이라 이 표에 나오지 않습니다. 이 표를 적용하면 그 ACL 을 통째로 바꿉니다. 원문은 ‘고급’에서 보세요."));
     if (!rules.length) {
       body.append(
