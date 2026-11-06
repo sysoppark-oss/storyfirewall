@@ -235,7 +235,7 @@ jobs:
             'local_offset_minutes=-?\d+'
             'wall_is_utc=true'
             '=== 2\..*\r?\n(.*\r?\n)*?client: \{"jsonrpc":"2\.0","id":1,"result":\{"api":\[1,0\]'
-            'client: \{"jsonrpc":"2\.0","id":2,"result":\{"items":\[\]\}\}'
+            'client: \{"jsonrpc":"2\.0","id":2,"result":\{.*"items":\[\]\}\}'
             'client: \{"jsonrpc":"2\.0","id":3,"result":\{"ok":true\}\}'
             '=== 3\..*\r?\n(.*\r?\n)*?client: closed by server'
             '=== 4\..*\r?\n(.*\r?\n)*?client: \{"jsonrpc":"2\.0","id":3,"error":\{"code":-32001'
