@@ -54,7 +54,7 @@ export function settings(): HTMLElement {
   frMode.disabled = true;
   frMin.disabled = true;
   voice.disabled = true;
-  frModeTip.textContent = "지금 설정을 불러오는 중…";
+  frModeTip.textContent = "설정을 불러오는 중…";
   // 관찰실 차단 정책(우산)의 지금 상태 — 막기 모드일 때만 한 줄
   const frUmb = el("p", "muted");
   const refreshUmbrella = async () => {
@@ -78,6 +78,7 @@ export function settings(): HTMLElement {
     void refreshUmbrella();
   }, "btn primary");
   save.disabled = true;
+  save.title = "설정을 불러온 뒤 바꿀 수 있습니다";
   // D006-5: 끝점·다시 연결은 고급 접힘 안으로
   const adv = el("details", "advanced", el("summary", undefined, "고급"), el("label", undefined, "서비스 끝점 ", endpoint, " ", reconnect));
   const geoAge = el("p", "muted", "IP 데이터 정보를 불러오는 중…");
@@ -115,7 +116,7 @@ export function settings(): HTMLElement {
     if (r.ok && typeof r.result["voice"] === "string") voice.value = r.result["voice"];
     if (!r.ok) {
       // 설정을 못 읽었으면 잠근 채로 두고 까닭을 보인다(기본값으로 저장하지 않게)
-      frModeTip.textContent = "지금 설정을 불러오지 못했습니다. 화면을 다시 열어 주세요.";
+      frModeTip.textContent = "설정을 불러오지 못했습니다. 화면을 다시 열어 주세요.";
       frModeTip.className = "warn";
     }
     if (r.ok) {
@@ -123,6 +124,7 @@ export function settings(): HTMLElement {
       frMin.disabled = false;
       voice.disabled = false;
       save.disabled = false;
+      save.title = "";
       const fr = firstRunSetting(r.result);
       frMode.value = fr.mode;
       frModeTip.textContent = firstRunSentence(fr.mode);

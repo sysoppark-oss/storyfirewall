@@ -240,3 +240,6 @@ table.grid.empty thead { display: none; }
 .install-detail { margin-top: 8px; } .install-detail > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .install-sec { margin-top: 10px; } .install-sec h4 { margin: 0 0 4px; font-size: 13px; } .install-sec p { margin: 2px 0; }
 .install-list { margin: 0; padding-left: 18px; } .install-list li { overflow-wrap: anywhere; }
+
+/* 32차 검수 1·2: 잠긴 단추·선택 상자가 눌리는 것처럼 보이지 않게 */
+.btn:disabled, button:disabled, select:disabled, input:disabled { opacity: .45; cursor: not-allowed; }
