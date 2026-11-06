@@ -83,7 +83,7 @@ describe("D014 이름 모르는 프로세스·오늘 범위·기록 없는 구�
     const today = new Date();
     const at = (h: number, m: number) => { const d = new Date(today); d.setHours(h, m, 0, 0); return ft(d); };
     const t = gapStartText(at(12, 36), at(13, 21), at(13, 1));
-    expect(t).toBe("기록 없는 구간(오후 12:36~1:21)에 시작(오후 1:01) — 서비스가 멈췄거나 PC 가 절전 중이던 때");
+    expect(t).toBe("기록 없는 구간(오후 12:36 ~ 오후 1:21)에 시작(오후 1:01) — 서비스가 멈췄거나 PC 가 절전 중이던 때");
     expect(gapStartText(at(12, 36), at(13, 21))).not.toContain("시작(");
   });
 });

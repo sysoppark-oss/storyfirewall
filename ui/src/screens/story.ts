@@ -129,14 +129,11 @@ export function isWindowsSigned(ev: { root_image?: string; root_signature?: { si
   const p = (ev.root_image ?? "").toLowerCase().replace(/\//g, "\\");
   return /^[a-z]:\\windows\\/.test(p) && (ev.root_signature?.sig_status ?? "") === "valid";
 }
-/// D014-1: "기록 없는 구간(오후 12:36~1:21)에 시작(오후 1:01) — …". 같은 날이면 끝 시각의 "오후"를 반복하지 않는다
-export function gapStartText(fromFt: number, toFt: number, startFt?: number): string {
-  const a = fmtShort(filetimeToUnix(fromFt));
-  let b = fmtShort(filetimeToUnix(toFt));
-  const ap = /^(오전|오후) /.exec(a)?.[1];
-  if (ap && b.startsWith(ap + " ")) b = b.slice(ap.length + 1);
-  const st = startFt ? `(${fmtShort(filetimeToUnix(startFt))})` : "";
-  return `기록 없는 구간(${a}~${b})에 시작${st} — 서비스가 멈췄거나 PC 가 절전 중이던 때`;
+/// D014-1·33차 검수 1: "기록 없는 구간(오후 12:36 ~ 오후 1:21)에 시작(오후 1:01) — …". 구간은 다른 화면과 같은 fmtRange 형식(명세 2-3, D042)
+export function gapStartText(fromFt: number, toFt: number, startFt?: number, now: Date = new Date()): string {
+  const range = fmtRange(filetimeToUnix(fromFt), filetimeToUnix(toFt), now);
+  const st = startFt ? `(${fmtShort(filetimeToUnix(startFt), now)})` : "";
+  return `기록 없는 구간(${range})에 시작${st} — 서비스가 멈췄거나 PC 가 절전 중이던 때`;
 }
 /// "시작 4월 14일 오후 2:38" — 연도는 올해가 아닐 때만(D004-1)
 export function sinceText(unixSec: number, now: Date = new Date()): string {

@@ -54,7 +54,8 @@ export function settings(): HTMLElement {
   frMode.disabled = true;
   frMin.disabled = true;
   voice.disabled = true;
-  frModeTip.textContent = "설정을 불러오는 중…";
+  // 33차 검수 3: 잠긴 칸들(화법·첫 실행 관찰·관찰 시간) 위에 한 번만
+  const loadNote = el("p", "muted", "설정을 불러오는 중…");
   // 관찰실 차단 정책(우산)의 지금 상태 — 막기 모드일 때만 한 줄
   const frUmb = el("p", "muted");
   const refreshUmbrella = async () => {
@@ -96,6 +97,7 @@ export function settings(): HTMLElement {
   root.append(
     el("div", "form",
       el("label", undefined, "화면 테마 ", theme),
+      loadNote,
       el("label", undefined, "이야기 화법 ", voice),
       el("p", "muted", "Claude 서술·로컬 언어 모델은 아직 없습니다. 켜는 옵션이 생기면 무엇이 전송되는지 먼저 보여 줍니다."),
       el("label", undefined, "첫 실행 관찰 ", frMode),
@@ -116,14 +118,15 @@ export function settings(): HTMLElement {
     if (r.ok && typeof r.result["voice"] === "string") voice.value = r.result["voice"];
     if (!r.ok) {
       // 설정을 못 읽었으면 잠근 채로 두고 까닭을 보인다(기본값으로 저장하지 않게)
-      frModeTip.textContent = "설정을 불러오지 못했습니다. 화면을 다시 열어 주세요.";
-      frModeTip.className = "warn";
+      loadNote.textContent = "설정을 불러오지 못했습니다. 화면을 다시 열어 주세요.";
+      loadNote.className = "warn";
     }
     if (r.ok) {
       frMode.disabled = false;
       frMin.disabled = false;
       voice.disabled = false;
       save.disabled = false;
+      loadNote.hidden = true;
       save.title = "";
       const fr = firstRunSetting(r.result);
       frMode.value = fr.mode;
