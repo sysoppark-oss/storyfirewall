@@ -470,6 +470,8 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
         const first = members.reduce((a, m) => Math.min(a, m.last_ts || a), Infinity);
         if (Number.isFinite(first) && lastTs) card.append(el("div", "since", `같은 모양 ${members.length}번 · ${fmtRange(filetimeToUnix(first), filetimeToUnix(lastTs))}`));
       }
+      // 검수(2026-11-07 3판): "어디에 접속했는지"를 카드 머리에서 — 자세히를 열지 않아도
+      if (ev.egress) card.append(el("div", "since egress", ext("span", `접속: ${ev.egress}${ev.egress_where?.country ? ` (${ev.egress_where.country}${ev.egress_where.org ? ` · ${ev.egress_where.org}` : ""})` : ""}`)));
       // 실시간 1: 지금 상태(시각은 오른쪽 위 하나만)
       if (ev.root_live) {
         const line = el("div", ev.root_live.running ? "since live on" : "since live", el("span", "dot"), " ", liveText(ev.root_live));
@@ -492,7 +494,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       const cutBtn = ev.root_core
         ? button("이 접속지만 차단…", () => void cutDialog(ev.root, card, "이 접속지만 차단"), "btn danger-outline")
         : button("여기서부터 끊기…", () => void cutDialog(ev.root, card), "btn danger-outline");
-      card.append(investigateBox(ev.root, !!ev.destroy, (rec) => {
+      card.append(investigateBox(ev.root, ev.destroy?.cmdline ?? null, (rec) => {
         // D1: 빨간 채움 단추는 쓰지 않는다 — 권장이면 테두리를 굵게 하고 "권장" 표시만
         if (rec === "cut") { cutBtn.classList.add("recommended"); cutBtn.prepend("권장 · "); }
         if (rec === "mark_normal" && normalBtn) normalBtn.classList.add("primary");
@@ -524,9 +526,11 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       actions.append(el("span", "spacer"));
       if (normalBtn) actions.append(normalBtn);
       actions.append(cutBtn);
-      card.append(actions, panel);
+      card.append(actions);
+      // D1: 안내 줄은 단추 줄 바로 아래 — 탭 패널이 열려도 떨어지지 않게
       const note = cardNote(!!ev.root_core, ev.feedback_ok === false);
       if (note) card.append(el("p", "muted small core-note", note));
+      card.append(panel);
       return card;
     }
   };
@@ -675,7 +679,7 @@ export function cardNote(core: boolean, noFeedback: boolean): string | null {
   if (noFeedback) parts.push(FEEDBACK_NOT_YET);
   return parts.length ? parts.join(" ") : null;
 }
-export const FEEDBACK_NOT_YET = "이 사건은 아직 '정상'으로 표시할 수 없습니다(프로세스에서 시작한 사건의 예외 단위는 준비 중).";
+export const FEEDBACK_NOT_YET = "이 종류의 사건(프로그램이 실행 중에 시작한 사건)은 아직 '정상'으로 표시하는 기능이 없습니다.";
 /// D043-1: 4칸 막대 바로 아래 한 줄 — 왼쪽 빨간 띠 + [파괴 징후] 글자 칩 + 사실 문장 · 시각
 export function destroyLine(d: { sentence: string; ts: number }): HTMLElement {
   return el("div", "destroy-line", el("span", "chip destroy", "파괴 징후"), " ", el("span", undefined, `${d.sentence} · ${fmtShort(filetimeToUnix(d.ts))}`));
@@ -719,6 +723,13 @@ export function adjustForDestroy(v: Investigation, destroy: boolean): Investigat
   return { ...v, verdict: "risky", recommend: "cut", reason: "복구 수단을 지우는 명령(파괴 징후)이 실행됐고, 알려진 정상 모양으로 확인되지 않았습니다." };
 }
 
+/// 결론 칸 사실: 지금 상태는 카드 머리 줄에 있으니 빼고(검수: 두 번 나옴), 파괴 징후 명령줄은 맨 앞에(직접 근거)
+export function conclusionFacts(v: Investigation, destroyCmd: string | null): Investigation {
+  const facts = v.facts.filter((f) => f.label !== "지금 상태");
+  if (destroyCmd && !facts.some((f) => f.label === "명령줄")) facts.unshift({ label: "명령줄(파괴 징후)", value: destroyCmd, ok: false });
+  return { ...v, facts };
+}
+
 /// 카드 제목 사슬의 자식 부분: 최대 3개 + "외 N"
 export function chainKids(children: string[], total: number): string {
   const shown = children.slice(0, 3);
@@ -740,7 +751,7 @@ export function recommendText(r: Pick<Investigation, "recommend">): string {
 }
 
 /// 카드의 "자동 조사" 칸. 열 때 한 번 조회(서비스는 DB 에 쓰지 않는다)
-function investigateBox(root: number, destroy = false, onRecommend: (r: Investigation["recommend"]) => void = () => {}): HTMLElement {
+function investigateBox(root: number, destroyCmd: string | null = null, onRecommend: (r: Investigation["recommend"]) => void = () => {}): HTMLElement {
   const box = el("details", "investigate");
   const sum = el("summary", undefined, "결론: 자동 조사 중…");
   box.append(sum);
@@ -751,9 +762,12 @@ function investigateBox(root: number, destroy = false, onRecommend: (r: Investig
       box.append(el("p", "muted small", r.error.message));
       return;
     }
-    const v = adjustForDestroy(r.result, destroy);
+    const v = conclusionFacts(adjustForDestroy(r.result, destroyCmd != null), destroyCmd);
     box.classList.add(v.verdict);
     sum.replaceChildren(el("b", undefined, recommendText(v)), " · ", ext("span", v.reason));
+    // 검수: 닫혀 있어도 의심 쪽 사실(✗) 두 개까지는 첫 줄에
+    const bad = v.facts.filter((f) => f.ok === false).slice(0, 2);
+    if (bad.length) sum.append(el("span", "bad-facts", ...bad.flatMap((f) => [" · ✗ ", ext("span", f.value.includes(f.label) ? f.value : `${f.label}: ${f.value}`)])));
     onRecommend(v.recommend);
     box.open = v.verdict !== "unknown";
     const list = el("ul", "facts");
