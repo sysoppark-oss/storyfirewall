@@ -139,6 +139,9 @@ export function dashboard(): HTMLElement {
     if (!cr.ok) return void where.append(el("div", "card", cardFail(cr.error, "연결 기록")));
     const conns = cr.result.items;
     const o = overview(conns, lr.ok ? lr.result.items : [], Date.now() / 1000);
+    // 검수 2: "처음 본 나라·망" 수는 아래 막대의 "오늘 처음" 배지와 같은 기준(bars)으로 센다
+    const newCc = bars(conns, "country", 999).bars.filter((b) => b.isNew).length;
+    const newOrg = bars(conns, "org", 999).bars.filter((b) => b.isNew).length;
     // 위 카드 줄: 오늘 접속 · 주고받은 양 · 밖에서 닿는 포트 (의심 사건 카드 바로 뒤)
     const tile = (title: string, big: string, sub: string, go: () => void) => {
       const t = el("button", "card tile", el("h3", undefined, title), el("div", "big", big), el("div", "muted small", sub));
@@ -147,9 +150,9 @@ export function dashboard(): HTMLElement {
       return t;
     };
     const anchor = status.children[1] ?? null;
-    status.insertBefore(tile("오늘 접속", `${o.remotes}곳`, `프로그램 ${o.programs}개`, () => state.go("connections", {})), anchor);
-    status.insertBefore(tile("주고받은 양", bytes(o.sent + o.recv), `보냄 ${bytes(o.sent)} · 받음 ${bytes(o.recv)}`, () => state.go("connections", {})), anchor);
-    status.insertBefore(tile("밖에서 닿는 포트", String(o.exposed.length), o.exposed.length ? "모든 주소에서 듣는 중" : "없음", () => state.go("connections", {})), anchor);
+    status.insertBefore(tile("오늘 접속한 곳", `${o.remotes}곳`, `프로그램 ${o.programs}개`, () => state.go("connections", {})), anchor);
+    status.insertBefore(tile("주고받은 양", bytes(o.sent + o.recv), o.sent + o.recv ? `보냄 ${bytes(o.sent)} · 받음 ${bytes(o.recv)}` : "양 기록 없음", () => state.go("connections", {})), anchor);
+    status.insertBefore(tile("모든 주소에서 듣는 포트", String(o.exposed.length), o.exposed.length ? "밖에서 닿는지는 방화벽·공유기에 따라 다름" : "없음", () => state.go("connections", {})), anchor);
 
     // 네 질문(2×2)
     const q = (title: string, lead: Node, ...rest: Node[]) => el("section", "card q-card", el("h3", undefined, title), lead, ...rest);
@@ -160,14 +163,14 @@ export function dashboard(): HTMLElement {
     if (!o.exposed.length) ports.append(el("li", "muted", "모든 주소에서 듣는 포트 없음"));
     grid.append(q("밖에서 내 PC로",
       el("p", "q-lead", o.inbound ? `들어온 연결 ${o.inbound}건 (상대 ${o.inboundRemotes}곳)` : "오늘 들어온 연결 기록 없음"),
-      el("div", "muted small", "밖에서 닿을 수 있는 포트"), ports));
+      el("div", "muted small", "모든 주소(0.0.0.0·::)에서 듣는 포트 — 밖에서 실제로 닿는지는 Windows 방화벽·공유기 설정에 따라 다릅니다"), ports));
     // ② 내 PC에서 밖으로
     const news = el("ul", "q-list");
     const fresh = conns.filter((c) => c.new_asn || c.new_cc).slice(0, 4);
     for (const c of fresh) news.append(el("li", undefined, el("span", "badge-new", "오늘 처음"), " ", ext("span", c.where?.org || c.where?.country || "—"), " ", ext("span", fileName(c.image), "muted")));
     if (!fresh.length) news.append(el("li", "muted", "오늘 처음 본 망·나라 없음"));
     grid.append(q("내 PC에서 밖으로",
-      el("p", "q-lead", `처음 본 망 ${o.newOrgs}곳 · 처음 본 나라 ${o.newCountries}곳`),
+      el("p", "q-lead", `처음 본 망 ${newOrg}곳 · 처음 본 나라 ${newCc}곳`),
       el("div", "muted small", "오늘 처음 접속한 곳"), news));
     // ③ 네트워크를 많이 쓴 프로그램
     const tops = el("div", "q-bars");
@@ -181,14 +184,15 @@ export function dashboard(): HTMLElement {
       tops.append(el("div", "bar-row", ext("span", p.name, "bar-name"), el("span", "bar-track", fill), el("span", "bar-val", byBytes ? bytes(p.sent + p.recv) : `${p.remotes}곳`)));
     }
     if (!o.topPrograms.length) tops.append(el("div", "muted small", "오늘 접속 기록 없음"));
-    grid.append(q("네트워크를 많이 쓴 프로그램", el("p", "q-lead", `프로그램 ${o.programs}개 · 상위 ${o.topPrograms.length}개`), el("div", "muted small", byBytes ? "주고받은 양 기준" : "양 기록이 없어 접속한 곳 수 기준"), tops));
+    grid.append(q("네트워크를 많이 쓴 프로그램", el("p", "q-lead", `프로그램 ${o.programs}개 · 상위 ${o.topPrograms.length}개`), el("div", "muted small", byBytes ? "주고받은 양 기준" : "양 기록이 없어 접속한 곳 수 기준 — 프로그램끼리 같은 곳이 겹칠 수 있습니다"), tops));
     // ④ PC 안에서 새로 생긴 것
     const runs = ir.ok ? ir.result.items : [];
     const inst = el("ul", "q-list");
     for (const r of runs.slice(0, 4)) inst.append(el("li", undefined, ext("span", fileName(r.image)), " ", el("span", "muted small", `파일 ${r.files.length}개 · ${fmtShort(filetimeToUnix(r.start_ts))}`)));
     if (!runs.length) inst.append(el("li", "muted", ir.ok ? "오늘 설치·새 프로그램 기록 없음" : "불러오지 못함"));
     const instMore = button("설치 화면에서 자세히", () => state.go("installs", {}), "btn small");
-    grid.append(q("PC 안에서 새로 생긴 것", el("p", "q-lead", `설치·새 프로그램 ${runs.length}건`), inst, el("div", "q-more", instMore)));
+    grid.append(q("PC 안에서 새로 생긴 것", el("p", "q-lead", `설치 기록 ${runs.length}건`),
+      el("div", "muted small", "설치 프로그램으로 묶인 것만 셉니다. 따로 내려받아 실행한 파일은 위 '지금 봐야 할 것'과 이야기에서 봅니다."), inst, el("div", "q-more", instMore)));
     where.append(grid);
 
     // 시간대별 접속(오늘) + 어디와 통신했나
@@ -200,9 +204,9 @@ export function dashboard(): HTMLElement {
       const bar = el("span", `hour-bar${h === nowH ? " now" : ""}${h > nowH ? " future" : ""}`);
       bar.style.height = `${n ? Math.max(4, Math.round((n / maxH) * 100)) : 0}%`;
       bar.title = `${h}시 · 접속 ${n}건`;
-      hb.append(el("div", "hour-col", bar, el("span", "hour-lbl", h % 6 === 0 ? `${h}시` : "")));
+      hb.append(el("div", "hour-col", bar, el("span", "hour-lbl", h % 6 === 0 ? `${h}시` : h === 23 ? "24시" : "")));
     });
-    hours.append(hb, el("p", "muted small", "묶인 접속 기록의 마지막 접속 시각 기준입니다."));
+    hours.append(el("div", "muted small hour-max", `가장 많은 시간 ${maxH}건`), hb, el("p", "muted small", "묶인 접속 기록의 마지막 접속 시각 기준입니다."));
     const whereCard = el("section", "card where-dash", el("h3", undefined, "오늘 어디와 통신했나"));
     const cols = el("div", "where-dash-cols");
     for (const [by, title] of [["country", "나라별 (접속 수)"], ["org", "망(조직)별 (접속 수)"]] as const) {
@@ -224,7 +228,7 @@ export function dashboard(): HTMLElement {
       if (!bs.length) col.append(el("div", "muted small", "공인 주소 접속이 없습니다."));
       cols.append(col);
     }
-    whereCard.append(cols, el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다."),
+    whereCard.append(cols, el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."),
       el("div", "q-more", button("연결 화면에서 자세히", () => state.go("connections", {}), "btn small")));
     where.append(el("div", "dash-row2", hours, whereCard));
   };
@@ -264,7 +268,8 @@ export function dashboard(): HTMLElement {
     // D006-3: 지금 Windows 에 걸려 있는 정책 수(확인 대기 + 적용 중, 일시 중지 제외). 서비스는 상태를 "Applied"·"Confirmed"로 준다 —
     // 전에는 소문자와 비교해 늘 0 이었다
     const applied = pol.ok ? pol.result.items.filter((p) => /^(applied|confirmed)$/i.test(p.state)).length : 0;
-    status.append(card("적용된 정책", pol.ok ? el("div", "big", String(applied)) : cardFail(pol.error, "적용된 정책")));
+    const pend = pol.ok ? pol.result.items.filter((p) => /^applied$/i.test(p.state)).length : 0;
+    status.append(card("적용된 정책", pol.ok ? el("div", undefined, el("div", "big", String(applied)), el("div", "muted small", `확인 대기 ${pend} · 적용 중 ${applied - pend}`)) : cardFail(pol.error, "적용된 정책")));
     // D002: 왼쪽 메뉴 "연결"(네트워크)과 헷갈리지 않게 "보호 서비스"
     // D015-2: 서비스 연결 + 기록 상태를 한 단어로(작동 중 / 기록 멈춤? / 연결 끊김)
     const svcBody = !state.connected
