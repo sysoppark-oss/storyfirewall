@@ -97,3 +97,44 @@ mod tests {
         );
     }
 }
+
+/// 30차 Q3-b: 한 파일의 모든 하드링크 이름(Win32 경로). `path` 는 그중 하나(Win32).
+/// FindFirstFileNameW 는 볼륨 루트 기준 경로(`\Users\…`)를 주므로 `path` 의 드라이브(`X:`)를 앞에 붙인다.
+/// 실패하면(권한·이미 지워짐) 빈 목록 — 확인하지 못한 것은 사실로 남기지 않는다
+pub fn hardlink_names(path: &str) -> Vec<String> {
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FindClose, FindFirstFileNameW, FindNextFileNameW,
+    };
+    let drive: String = path.chars().take(2).collect();
+    if drive.len() != 2 || !drive.ends_with(':') {
+        return Vec::new();
+    }
+    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut out = Vec::new();
+    let mut buf = vec![0u16; 1024];
+    let mut len = buf.len() as u32;
+    // SAFETY: 입력은 NUL 로 끝나는 UTF-16, 출력 버퍼와 길이를 넘긴다. 핸들은 아래에서 닫는다
+    let h = unsafe { FindFirstFileNameW(wide.as_ptr(), 0, &mut len, buf.as_mut_ptr()) };
+    if h == INVALID_HANDLE_VALUE {
+        return out;
+    }
+    loop {
+        let name = String::from_utf16_lossy(&buf[..buf.iter().position(|c| *c == 0).unwrap_or(0)]);
+        if !name.is_empty() {
+            out.push(format!("{drive}{name}"));
+        }
+        if out.len() >= 64 {
+            break;
+        }
+        len = buf.len() as u32;
+        // SAFETY: 같은 버퍼·길이, 유효한 찾기 핸들
+        let ok = unsafe { FindNextFileNameW(h, &mut len, buf.as_mut_ptr()) };
+        if ok == 0 {
+            break;
+        }
+    }
+    // SAFETY: FindFirstFileNameW 가 준 유효한 핸들
+    unsafe { FindClose(h) };
+    out
+}

@@ -43,6 +43,9 @@ const KF_KEYWORD_CREATE_NEW_FILE: u64 = 0x1000;
 const KF_KEYWORD_CREATE: u64 = 0x80;
 /// Kernel-File Create(열기) 이벤트 id
 const KF_EVENT_CREATE: u16 = 12;
+/// 30차 Q3-b: 하드링크 만들기 — 이벤트 28 SetLinkPath (러너 실측 2026-11-06, poc-hardlink-etw: fsutil·mklink /H 마다 1건,
+/// FilePath = 새 링크 경로(NT), InfoClass = 11 FileLinkInformation, FileKey = 원본 파일). 키워드 0x800 으로 이미 켜져 있다
+const KF_EVENT_SETLINK: u16 = 28;
 /// 같은 (PID, 경로) 열기를 다시 보내지 않는 시간 창 (60초). SQLite 는 같은 파일을 여러 번 연다
 const OPEN_DEDUP_WINDOW: i64 = 60 * 10_000_000;
 /// NameDelete(11) FileKey 를 RenamePath(27) 와 잇는 시간 창 (2초). FileKey 는 재사용되므로 창 밖은 버린다.
@@ -493,7 +496,13 @@ pub fn file_provider(ctx: Arc<Ctx>) -> Provider {
                 | KF_KEYWORD_FILENAME
                 | KF_KEYWORD_CREATE,
         )
-        .add_filter(EventFilter::ByEventIds(vec![11, 27, 30, KF_EVENT_CREATE]))
+        .add_filter(EventFilter::ByEventIds(vec![
+            11,
+            27,
+            30,
+            KF_EVENT_CREATE,
+            KF_EVENT_SETLINK,
+        ]))
         .add_callback(move |record: &EventRecord, locator: &SchemaLocator| {
             let id = record.event_id();
             // 17판 23-2 ②: 열기(12)는 초당 수천 건일 수 있다 — 값싼 경로 거르기(graph::vault::watch_prefilter)를 통과한 것만
@@ -541,6 +550,39 @@ pub fn file_provider(ctx: Arc<Ctx>) -> Provider {
                     EventKind::FileOpen {
                         proc: ProcRef::new(pid, None),
                         path,
+                    },
+                ));
+                return;
+            }
+            // 30차 Q3-b: 금고(브라우저 저장소)·미끼 파일에 하드링크를 만들면 정규화로는 원래 이름이 안 나온다 →
+            // 새 링크의 모든 이름(FindFirstFileNameW)을 보고 금고·미끼 파일이 있으면 그 파일을 "연 것"으로 보낸다
+            // (하드링크를 만들려면 원본을 열어야 한다). 링크 만들기는 드물어 이 조회는 부하가 작다
+            if id == KF_EVENT_SETLINK {
+                ctx.count("file_link");
+                let Ok(schema) = locator.event_schema(record) else {
+                    return;
+                };
+                note_schema(&ctx, "file", record, &schema);
+                let p = Parser::create(record, &schema);
+                let Some(raw) = s(&p, "FilePath").or_else(|| s(&p, "FileName")) else {
+                    missing(&ctx);
+                    return;
+                };
+                let link = ctx.win32_path(&raw);
+                let names = crate::paths::hardlink_names(&link);
+                let Some(target) = names.into_iter().find(|n| {
+                    graph::vault::classify(n).is_some()
+                        || graph::vault::decoy_candidate(n).is_some()
+                }) else {
+                    return;
+                };
+                ctx.count("vault_link");
+                ctx.emit(Event::new(
+                    ctx.ts(record.raw_timestamp()),
+                    "etw:file:link",
+                    EventKind::FileOpen {
+                        proc: ProcRef::new(record.process_id(), None),
+                        path: target,
                     },
                 ));
                 return;
