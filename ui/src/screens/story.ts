@@ -322,6 +322,8 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
   }
   triageSel.addEventListener("change", () => void load());
   const countsLine = el("div", "muted small triage-counts");
+  // 사건 추적 개수(화면이 새 사건을 조사됨으로 올릴 때 서비스를 다시 부르지 않고 이 값을 고쳐 보인다)
+  let counts: TriageCounts | undefined;
   const cards = el("div", "cards-col");
   const today = el("div", "story-today");
   // D014-4: 오늘 한 일 범위(기본 오늘 = 지역 0시 이후)
@@ -360,7 +362,8 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     clear(cards);
     // D013: 오류는 "사건 없음"으로 그리지 않는다
     if (!r.ok) return cards.append(failBox(r.error, () => void load(), "이야기 목록"));
-    countsLine.textContent = triageCountsText(r.result.counts);
+    counts = r.result.counts;
+    countsLine.textContent = triageCountsText(counts);
     // 저장 실패·과부하로 버린 구간만(기록 없는 구간 no_record 는 이 문장이 아니다 — 카드의 ⚠ 줄·진단 화면에서 따로 보인다)
     // L053: 구간마다 카드 한 장씩이면 이야기가 화면 밖으로 밀린다 → 한 줄 요약 + 펼쳐 보기
     const gs = summarizeGaps(r.result.gaps ?? []);
@@ -555,7 +558,12 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
             if (!r.ok) return;
             ev.triage = r.result;
             head.querySelector(".chip.triage")?.replaceWith(triageChip(r.result));
-            countsLine.textContent = "";
+            // 노트북 검수(install-75): 전에는 개수 줄을 비워 첫 화면에서 늘 사라졌고, 조사됨이 된 카드에 "처리 기록" 탭이 없었다
+            if (counts && r.result.state === "investigated") {
+              counts = { ...counts, new: Math.max(0, counts.new - 1), investigated: counts.investigated + 1 };
+              countsLine.textContent = triageCountsText(counts);
+            }
+            if (!actions.querySelector('[data-tab="log"]')) actions.querySelector(".spacer")?.before(tab("처리 기록", "log", () => triageLogPanel(ev.root)));
           });
         }
       }));
