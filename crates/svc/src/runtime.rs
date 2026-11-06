@@ -40,6 +40,9 @@ pub fn engine_busy_ms() -> u64 {
 /// 서버 판(hello 를 엔진 밖에서 답하려고 한 번 정해 둔다)
 pub static SERVER_VERSION: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
 
+/// 실시간 3(사용자 "실시간으로 문제를 찾아야 바로 해결가능함" 2026-11-07): 주기 판정 간격(초). 노트북 실측 증분 판정 평균 360ms·최대 471ms(diag-25)
+pub const JUDGE_EVERY_SECS: u64 = 15;
+
 /// 엔진 스레드에 보내는 명령
 pub enum Command {
     /// 개발 서버(svc-dev) 전용: 수집 상태 한 줄(C1)을 시연값으로 — 실제 서비스는 보내지 않는다(수집기 없음)
@@ -71,7 +74,7 @@ pub enum Command {
     Ingest(Vec<Event>),
     /// 수집 세션이 이미 저장한 배치의 복사본 (A18). 그래프에 다시 넣지 않고 ProcessStart 틈 메우기·종료만 한다
     Batch(Vec<Event>),
-    /// 1분마다 judge
+    /// 주기 판정(JUDGE_EVERY_SECS 마다)
     Judge,
     /// 기준선 학습 (하루 1회 자동 + 명시 호출)
     Learn,
@@ -142,6 +145,8 @@ pub struct World<'a> {
     pub judged: Option<(i64, std::sync::Arc<Vec<judge::Story>>)>,
     /// 마지막 보관 정리 시각(엔진 wall). 0 = 아직(시작 뒤 첫 주기 판정 다음에 돈다)
     pub last_retention_wall: i64,
+    /// 실시간 3: 판정은 15초마다, 설치 목록 미리 계산은 그대로 1분마다(마지막 계산 벽시각)
+    pub last_install_wall: i64,
     /// 진단 "처리 시간"
     pub timings: Timings,
     /// story.events 문장 캐시: (뿌리, 화법, 사건 내용 해시) → (만든 시각 wall, 문장).
@@ -253,6 +258,7 @@ impl Runtime {
                     server_version: ver,
                     settings,
                     last_retention_wall: 0,
+                    last_install_wall: 0,
                     timings: Timings::default(),
                     narr_cache: std::collections::HashMap::new(),
                     judge_gen: 0,
@@ -260,6 +266,8 @@ impl Runtime {
                     judge_cache_gen: 0,
                     judge_inc: {
                         let mut j = judge::Incremental::new();
+                        // 실시간 3: 판정 주기 60초 → 15초. 전체 판정은 지금처럼 30분마다(15초 × 120)
+                        j.full_every = (30 * 60 / JUDGE_EVERY_SECS) as u32;
                         j.enabled =
                             std::env::var("SF_JUDGE_INCREMENTAL").map_or(true, |v| v != "0");
                         j
@@ -470,14 +478,17 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                 judge_and_notify(world);
                 world.timings.record("엔진: 주기 판정", tj.elapsed());
                 // L069(32차 검수 4): 설치 목록 미리 계산 — 조회 때 계산하지 않는다(2초 원칙)
-                let ti = std::time::Instant::now();
-                let now_ft = unix_to_filetime(world.engine_wall());
-                if let Err(e) = world.install_cache.refresh(&world.graph, now_ft, 300) {
-                    eprintln!("installs: refresh failed: {e}");
+                if world.engine_wall() - world.last_install_wall >= 60 {
+                    world.last_install_wall = world.engine_wall();
+                    let ti = std::time::Instant::now();
+                    let now_ft = unix_to_filetime(world.engine_wall());
+                    if let Err(e) = world.install_cache.refresh(&world.graph, now_ft, 300) {
+                        eprintln!("installs: refresh failed: {e}");
+                    }
+                    world
+                        .timings
+                        .record("엔진: 설치 목록 미리 계산", ti.elapsed());
                 }
-                world
-                    .timings
-                    .record("엔진: 설치 목록 미리 계산", ti.elapsed());
                 // 14판 20-5: AI 도구 목록 미리 계산(5분마다, 최근 7일). 조회 때 계산하지 않는다(2초 원칙)
                 if world
                     .agent_cache

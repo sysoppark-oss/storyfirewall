@@ -46,7 +46,7 @@ mod real {
     /// 자기 보호: 이 이미지들은 정책으로 막을 수 없다 (가드)
     const PROTECTED: &[&str] = &["story-firewall-svc.exe", "story-firewall-ui.exe"];
     /// 판정 주기
-    const JUDGE_EVERY: Duration = Duration::from_secs(60);
+    const JUDGE_EVERY: Duration = Duration::from_secs(svc::runtime::JUDGE_EVERY_SECS);
     /// 28차 Gemini Q5: 파이프 동시 연결 상한(UI·승인 도우미·노트북 시험 도구를 합쳐도 넉넉한 수)
     const MAX_PIPE_CONNECTIONS: usize = 16;
 
@@ -345,7 +345,7 @@ mod real {
                 std::thread::sleep(std::time::Duration::from_secs(600));
             });
         }
-        // ⑤ 1분마다 판정
+        // ⑤ 주기 판정(15초, 실시간 3)
         let stop = Arc::new(AtomicBool::new(false));
         {
             let tx = rt.tx.clone();
