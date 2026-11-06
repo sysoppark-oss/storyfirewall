@@ -82,11 +82,12 @@ export function settings(): HTMLElement {
   save.title = "설정을 불러온 뒤 바꿀 수 있습니다";
   // D006-5: 끝점·다시 연결은 고급 접힘 안으로
   const adv = el("details", "advanced", el("summary", undefined, "고급"), el("label", undefined, "서비스 끝점 ", endpoint, " ", reconnect));
-  const trustedBox = el("div", "form");
+  const trustedBox = el("div", "form", el("p", "muted", "불러오는 중…"));
   const drawTrusted = (list: string[]) => {
     clear(trustedBox);
     if (!list.length) {
-      trustedBox.append(el("p", "muted", "없음 — 원격 제어 프로그램이 이 PC 화면을 내보내기 시작하면 모두 큰 경보로 알립니다."));
+      // 사실만: 감지 근거는 송신량이지 화면이 아니다(의도·내용 단정 금지)
+      trustedBox.append(el("p", "muted", "없음 — 원격 제어 프로그램이 외부로 데이터를 계속 보내기 시작하면 모두 큰 경보로 알립니다."));
       return;
     }
     for (const t of list) {
