@@ -1,5 +1,5 @@
 import { mutation, rpc } from "../rpc";
-import { el, button, errorBox, clear } from "../ui";
+import { el, ext, button, errorBox, clear } from "../ui";
 import { state } from "../state";
 import { loadTheme, setTheme, type Theme } from "../theme";
 import { diagnostics } from "./diag";
@@ -82,6 +82,23 @@ export function settings(): HTMLElement {
   save.title = "설정을 불러온 뒤 바꿀 수 있습니다";
   // D006-5: 끝점·다시 연결은 고급 접힘 안으로
   const adv = el("details", "advanced", el("summary", undefined, "고급"), el("label", undefined, "서비스 끝점 ", endpoint, " ", reconnect));
+  const trustedBox = el("div", "form");
+  const drawTrusted = (list: string[]) => {
+    clear(trustedBox);
+    if (!list.length) {
+      trustedBox.append(el("p", "muted", "없음 — 원격 제어 프로그램이 이 PC 화면을 내보내기 시작하면 모두 큰 경보로 알립니다."));
+      return;
+    }
+    for (const t of list) {
+      const note = el("span", "muted small");
+      // 도구 이름은 서비스 목록의 key(소문자·_ 만 — 설정 검증)
+      trustedBox.append(el("p", undefined, ext("span", t), " ", button("표시 지우기", async () => {
+        const r = await mutation("settings.set", { remote_trusted_tools: list.filter((x) => x !== t) });
+        if (r.ok) drawTrusted(list.filter((x) => x !== t));
+        else note.textContent = r.error.message;
+      }), " ", note));
+    }
+  };
   const geoAge = el("p", "muted", "IP 데이터 정보를 불러오는 중…");
   // D007-3: DB 있음/없음에 따라 문장이 모순되지 않게 한 곳에서 정한다
   const geoSrc = el("p", "muted");
@@ -107,6 +124,9 @@ export function settings(): HTMLElement {
       el("p", "muted", FIRST_RUN_MINUTES_SENTENCE),
       el("div", "actions", save)),
     out,
+    // 33차 Gemini Q4: "내가 쓰는 원격 도구"(이 도구의 원격 세션 시작은 작은 알림). 표시는 대시보드 사건 줄에서, 지우기는 여기서
+    el("h2", undefined, "내가 쓰는 원격 도구"),
+    trustedBox,
     el("h2", undefined, "데이터 출처"),
     geoAge,
     geoSrc,
@@ -133,6 +153,8 @@ export function settings(): HTMLElement {
       frModeTip.textContent = firstRunSentence(fr.mode);
       frMin.value = String(fr.minutes);
       frUmb.textContent = umbrellaText(fr.mode, r.result["first_run_umbrella"]);
+      const tt = r.result["remote_trusted_tools"];
+      drawTrusted(Array.isArray(tt) ? tt.filter((x): x is string => typeof x === "string") : []);
     }
     // D033-3: 보관 기간은 진단 카드에만(여기 줄은 중복이라 뺐다)
     clear(out);

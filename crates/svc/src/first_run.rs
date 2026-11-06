@@ -180,6 +180,8 @@ pub struct Target {
     pub content_ts: i64,
     /// 파일 내용 해시(수집기가 계산했으면)
     pub sha256: Option<String>,
+    /// 33차 Gemini Q5: 전에 관찰한 경로의 재실행인데 대기 시간 안에 이번 해시를 얻지 못함(큰 파일·잠긴 파일 등) — 다시 관찰한다
+    pub hash_unverified: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -273,6 +275,7 @@ fn assess_file(
     let sha256 = file
         .attr("sha256")
         .and_then(|v| v.as_str().map(|s| s.to_string()));
+    let mut hash_unverified = false;
     if earlier > 0 && !watched_other_content(g, &file.key, sha256.as_deref()) {
         // 31차 Gemini Q1: 쓰기·이름 바꾸기 선 없이 내용을 바꾼 경우(블록 복제·매핑된 섹션 쓰기)는 해시로만 안다.
         // 전에 관찰한 경로인데 이번 실행 뒤의 해시가 아직 안 왔으면(노드의 해시는 지난번 것일 수 있다) "전에 실행됨"으로 버리지 않고
@@ -281,10 +284,15 @@ fn assess_file(
             .attr("sha256_seen_ts")
             .and_then(|v| v.as_i64())
             .is_some_and(|t| t >= exec_ts);
-        if !hash_fresh && !expired && was_watched(g, &file.key) {
+        let watched_before = !hash_fresh && was_watched(g, &file.key);
+        if watched_before && !expired {
             return Assess::Pending;
         }
-        return Assess::Skip("전에 실행된 적 있음");
+        // 33차 Gemini Q5: 대기 시간이 지나도 이번 해시가 없으면 "모르는 내용" — 면제가 아니라 다시 관찰(내용 판 = 이번 실행 시각)
+        if !watched_before {
+            return Assess::Skip("전에 실행된 적 있음");
+        }
+        hash_unverified = true;
     }
     let host = file
         .attr("host_url")
@@ -308,8 +316,10 @@ fn assess_file(
         installer: graph::install::is_installer_image(&file.key),
         sig,
         session: p.attr("session").and_then(|v| v.as_u64()),
-        content_ts,
-        sha256,
+        // 해시를 못 얻은 재실행은 이번 실행을 새 내용 판으로 친다(관찰 기록을 바꿔 쓰게). 지난번 해시는 넘기지 않는다
+        content_ts: if hash_unverified { exec_ts } else { content_ts },
+        sha256: if hash_unverified { None } else { sha256 },
+        hash_unverified,
     }))
 }
 
@@ -659,14 +669,16 @@ fn start_watch(world: &mut crate::runtime::World, t: &Target, s: Settings) {
     // 대기(서명·출신 기다림) 사이에 이미 띄운 자손도 넣는다
     let until_ft = crate::runtime::unix_to_filetime(until);
     if t.pid != 0 {
-        graph::ledger::watch(t.pid, until_ft);
+        graph::ledger::watch(t.pid, t.create_ft, until_ft);
     }
     if let Ok(desc) = graph::views::descendants(&world.graph, t.proc_node, 200) {
         for d in desc {
             if let Ok(n) = world.graph.node(d) {
                 let ended = n.attr("ended").and_then(|v| v.as_bool()) == Some(true);
+                // 프로세스 키 "pid@생성 시각" 의 생성 시각(33차 Q2: pid + 생성 시각으로 구분)
+                let ct = n.key.rsplit_once('@').and_then(|(_, t)| t.parse::<i64>().ok()).unwrap_or(0);
                 if let (false, Some(p)) = (ended, n.attr("pid").and_then(|v| v.as_u64())) {
-                    graph::ledger::watch(p as u32, until_ft);
+                    graph::ledger::watch(p as u32, ct, until_ft);
                 }
             }
         }
@@ -678,6 +690,9 @@ fn start_watch(world: &mut crate::runtime::World, t: &Target, s: Settings) {
     );
     if let Some(h) = &t.host {
         detail.push_str(&format!(" (받은 곳 {h})"));
+    }
+    if t.hash_unverified {
+        detail.push_str(" — 전에 관찰한 파일인데 이번 실행의 해시를 확인하지 못해 다시 관찰합니다");
     }
     if let Some(w) = &why_not {
         detail.push_str(&format!(" — {w}"));

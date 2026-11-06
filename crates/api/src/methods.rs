@@ -539,6 +539,20 @@ pub fn validate_params(
                     "first_run_minutes 는 5|10|30",
                 )?;
             }
+            // 33차 Gemini Q4: 사용자가 "내가 쓰는 원격 도구"로 표시한 도구(graph::remote::TOOLS 의 key). 이 도구의 세션 시작만 알림을 낮춘다
+            if let Some(v) = p.get("remote_trusted_tools") {
+                let ok = v.as_array().is_some_and(|a| {
+                    a.len() <= 16
+                        && a.iter().all(|x| {
+                            x.as_str().is_some_and(|s| {
+                                !s.is_empty()
+                                    && s.len() <= 40
+                                    && s.bytes().all(|c| c.is_ascii_lowercase() || c == b'_')
+                            })
+                        })
+                });
+                check(ok, "remote_trusted_tools 는 도구 이름(소문자·_) 16개까지의 배열")?;
+            }
         }
     }
     Ok(p)

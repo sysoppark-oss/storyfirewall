@@ -188,7 +188,9 @@ pub fn process_provider(ctx: Arc<Ctx>) -> Provider {
                         ctx.emit(ev);
                     }
                     // 17판 23-2 ③ 변경 장부: 관찰 대상의 자손은 같은 기한을 물려받는다
-                    if graph::ledger::on_spawn(ppid, pid, ts) {
+                    // 33차 Q2: pid 가 다시 쓰였으면 옛 항목을 먼저 지운다(끝 이벤트를 놓쳤을 때)
+                    graph::ledger::on_start(pid, create_time.unwrap_or(0));
+                    if graph::ledger::on_spawn(ppid, pid, create_time.unwrap_or(0), ts) {
                         ctx.count("ledger_spawn");
                     }
                     // A30: 로그온 세션 (Kernel-Process ProcessStart 의 SessionID). 노드 키와 같은 생성 시각으로 보낸다
@@ -632,16 +634,32 @@ pub fn file_provider(ctx: Arc<Ctx>) -> Provider {
             let pid = record.process_id();
             // 17판 23-2 ③ 변경 장부: 관찰 대상과 그 자손이 만든·이름 바꾼 파일은 실행 여부·위치와 상관없이 바로 기록한다
             // (설치 프로그램은 Program Files 에 쓴다). 실행 파일 확장자 제한도 없다 — 수집 키워드가 만들기·이름 바꾸기뿐이라 양은 작다
-            if kind != "namedelete" && graph::ledger::is_watched(pid, ts) && !path.ends_with(":Zone.Identifier") {
-                ctx.count("ledger_file");
-                ctx.emit(Event::new(
-                    ts,
-                    if kind == "rename" { "etw:file:ledger:rename" } else { "etw:file:ledger" },
-                    EventKind::FileWrite {
-                        proc: ProcRef::new(pid, None),
-                        path: path.clone(),
-                    },
-                ));
+            // 33차 Q3: 한 폴더에 쏟아내면 20개 뒤로는 "폴더\*" 묶음 줄(개수는 출처에)
+            if kind != "namedelete" && !path.ends_with(":Zone.Identifier") {
+                let (write_path, source) = match graph::ledger::record_file(pid, &path, ts) {
+                    graph::ledger::Write::Skip => (None, String::new()),
+                    graph::ledger::Write::Each => (
+                        Some(path.clone()),
+                        if kind == "rename" { "etw:file:ledger:rename".to_string() } else { "etw:file:ledger".to_string() },
+                    ),
+                    graph::ledger::Write::Summary { folder_glob, count } => {
+                        ctx.count("ledger_bulk");
+                        (Some(folder_glob), format!("etw:file:ledger:bulk:{count}"))
+                    }
+                };
+                if let Some(wp) = write_path {
+                    ctx.count("ledger_file");
+                    let mut ev = Event::new(
+                        ts,
+                        "etw:file:ledger",
+                        EventKind::FileWrite {
+                            proc: ProcRef::new(pid, None),
+                            path: wp,
+                        },
+                    );
+                    ev.source = source;
+                    ctx.emit(ev);
+                }
             }
             // 시스템·Program Files 는 제외 (명세 4판 2-2)
             let lower = path.to_ascii_lowercase();

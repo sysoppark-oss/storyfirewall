@@ -98,12 +98,13 @@ pub fn sample(world: &mut World) -> bool {
             } => {
                 let mut target =
                     target_of(world.remote.nodes.get(&pid).copied(), pid, tool, None);
-                // 32차 Gemini Q2: 처음(최근 30일에 이 도구의 세션이 없었음)은 크게(3), 반복은 작게(2). 끄지는 않는다
-                let first = !seen_recently(world, tool, now);
+                // 32차 Gemini Q2 → 33차 Q4: 사용자가 "내가 쓰는 원격 도구"로 표시한 도구만 작게(2), 나머지는 크게(3). 끄지는 않는다
+                let first = !trusted(world, tool);
                 target["first_time"] = serde_json::json!(first);
+                target["trusted"] = serde_json::json!(!first);
                 let mut text = remote::start_text(remote::display_of(tool), sent_window);
-                if first {
-                    text.push_str(" 최근 30일 동안 이 프로그램의 원격 세션은 처음입니다.");
+                if !first {
+                    text.push_str(" (내가 쓰는 원격 도구로 표시한 프로그램입니다)");
                 }
                 let _ = world.engine.record_event_ref(
                     "remote_session_start",
@@ -174,17 +175,12 @@ fn target_of(
     v
 }
 
-/// 최근 30일에 같은 도구의 세션 시작 사건이 있었나
-fn seen_recently(world: &World, tool: &str, now: i64) -> bool {
-    let needle = format!("\"tool\":\"{tool}\"");
+/// 사용자가 "내가 쓰는 원격 도구"로 표시했나(설정 remote_trusted_tools, 관리자 승인으로만 바뀐다).
+/// 33차 Gemini Q4: "최근 30일 기록이 있으면 낮춤"은 사기범이 짧게 한 번 접속해 기록을 만들면 뚫린다 — 사람의 확인만 쓴다
+fn trusted(world: &World, tool: &str) -> bool {
     world
-        .engine
-        .list_events(now - 30 * 86_400, 500)
-        .map(|evs| {
-            evs.iter().any(|e| {
-                e.kind == "remote_session_start"
-                    && e.ref_json.as_deref().is_some_and(|r| r.contains(&needle))
-            })
-        })
-        .unwrap_or(false)
+        .settings
+        .get("remote_trusted_tools")
+        .and_then(|v| v.as_array())
+        .is_some_and(|a| a.iter().any(|x| x.as_str() == Some(tool)))
 }

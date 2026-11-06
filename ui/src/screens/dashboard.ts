@@ -1,4 +1,4 @@
-import { rpc } from "../rpc";
+import { rpc, mutation } from "../rpc";
 import { el, ext, fmtTs, fmtShort, fmtRange, filetimeToUnix, button, clear } from "../ui";
 import { diffShort, distinguishGroups, groupStories } from "./story-group";
 import { listState, loadingBox, failBox, noDataBox, checkedLine, collectionStalled, cardFail } from "../list-state";
@@ -17,7 +17,7 @@ interface ServiceEvent {
   kind: string;
   severity: number;
   detail: string;
-  target?: { type?: string; pid?: number; image?: string; node_id?: number; defender_ts?: number; path?: string; until_ts?: number } | null;
+  target?: { type?: string; pid?: number; image?: string; node_id?: number; defender_ts?: number; path?: string; until_ts?: number; tool?: string; trusted?: boolean } | null;
 }
 const SERVICE_EVENT_TITLE: Record<string, string> = {
   pipe_squat: "서비스 통로 이름을 다른 프로그램이 차지하려 했습니다",
@@ -192,6 +192,12 @@ export function dashboard(): HTMLElement {
           }
           row.append(slot);
         }
+        // 33차 Q4: 원격 세션 시작 — 내가 직접 연 접속이면 그 도구를 "내가 쓰는 원격 도구"로 표시(관리자 승인). 그 뒤 같은 도구는 작은 알림
+        const tool = e.target?.tool;
+        if (e.kind === "remote_session_start" && typeof tool === "string" && !e.target?.trusted) {
+          const note = el("span", "muted small");
+          row.append(" ", button("내가 쓰는 원격 도구로 표시", () => void markTrusted(tool, note)), " ", note);
+        }
         list.append(row);
       }
       body.append(el("h2", undefined, "서비스 보호 사건 (7일)"), list);
@@ -243,4 +249,21 @@ export function dashboard(): HTMLElement {
   window.addEventListener("engine-state", onEngine);
   root.addEventListener("screen-leave", () => window.removeEventListener("engine-state", onEngine));
   return root;
+}
+
+/// 33차 Gemini Q4: 원격 도구를 "내가 쓰는 도구"로 표시 — 설정 remote_trusted_tools 에 더한다(관리자 승인 경로)
+async function markTrusted(tool: string, note: HTMLElement) {
+  note.textContent = "승인 창을 여는 중…";
+  const g = await rpc<Record<string, unknown>>("settings.get", {});
+  if (!g.ok) {
+    note.textContent = "설정을 불러오지 못했습니다";
+    return;
+  }
+  const cur = Array.isArray(g.result["remote_trusted_tools"]) ? (g.result["remote_trusted_tools"] as unknown[]).filter((x): x is string => typeof x === "string") : [];
+  if (cur.includes(tool)) {
+    note.textContent = "이미 표시돼 있습니다";
+    return;
+  }
+  const r = await mutation("settings.set", { remote_trusted_tools: [...cur, tool] });
+  note.textContent = r.ok ? "표시했습니다. 이 도구의 다음 원격 세션은 작은 알림으로 알립니다." : r.error.message;
 }

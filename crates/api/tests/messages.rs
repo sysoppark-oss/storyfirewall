@@ -365,3 +365,20 @@ fn first_run_watch_settings_are_validated() {
     let staged = serde_json::json!({"method": "settings.set", "params": {"request_id": rid, "first_run_watch": "nope"}});
     assert!(validate_params(Method::ChangeStage, &staged).is_err());
 }
+
+/// 33차 Gemini Q4: "내가 쓰는 원격 도구" 목록은 도구 이름(소문자·_) 배열만
+#[test]
+fn remote_trusted_tools_are_validated() {
+    let rid = "0f3c2a1e-9b7d-4c6a-8e5f-123456789abc";
+    let ok = serde_json::json!({"request_id": rid, "remote_trusted_tools": ["teamviewer", "chrome_remote_desktop"]});
+    assert!(validate_params(Method::SettingsSet, &ok).is_ok());
+    assert!(validate_params(Method::SettingsSet, &serde_json::json!({"request_id": rid, "remote_trusted_tools": []})).is_ok());
+    for bad in [
+        serde_json::json!({"request_id": rid, "remote_trusted_tools": "teamviewer"}),
+        serde_json::json!({"request_id": rid, "remote_trusted_tools": ["Team Viewer"]}),
+        serde_json::json!({"request_id": rid, "remote_trusted_tools": [1]}),
+        serde_json::json!({"request_id": rid, "remote_trusted_tools": [""]}),
+    ] {
+        assert!(validate_params(Method::SettingsSet, &bad).is_err(), "{bad}");
+    }
+}
