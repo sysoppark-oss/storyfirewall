@@ -24,6 +24,10 @@ pub trait Host: Send {
     fn rdp_sessions(&self) -> Vec<(u32, String)> {
         Vec::new()
     }
+    /// 34차 Q3: RDP 가 듣는 포트(바꿔 둘 수 있다). 기본 3389
+    fn rdp_port(&self) -> u16 {
+        3389
+    }
 }
 
 /// 아무것도 하지 않는 호스트 (Linux 테스트·개발 기본값)

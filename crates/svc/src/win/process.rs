@@ -106,4 +106,7 @@ impl crate::host::Host for WinHost {
     fn rdp_sessions(&self) -> Vec<(u32, String)> {
         super::wts::rdp_sessions().unwrap_or_default()
     }
+    fn rdp_port(&self) -> u16 {
+        super::wts::rdp_port()
+    }
 }

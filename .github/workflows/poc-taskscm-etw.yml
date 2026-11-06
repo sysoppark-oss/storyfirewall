@@ -1,0 +1,49 @@
+name: PoC task scheduler and SCM ETW (proxy execution triggers)
+
+# 34th review Q1: when a program registers a scheduled task through COM / PowerShell (no schtasks.exe)
+# or creates a service with New-Service (no sc.exe), which ETW events appear, and do they carry the
+# caller process id? Providers: Microsoft-Windows-TaskScheduler, Service Control Manager.
+# Uses only built-in logman + tracerpt on a throw-away runner. Result is printed in the log.
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/poc-taskscm-etw.yml"]
+  workflow_dispatch:
+
+jobs:
+  taskscm:
+    runs-on: windows-2025
+    steps:
+      - name: Capture TaskScheduler and SCM events around COM task and service creation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $d = "C:\tsc-test"
+          New-Item -ItemType Directory -Force $d | Out-Null
+          logman create trace tsc -p "Microsoft-Windows-TaskScheduler" 0xffffffffffffffff 5 -o "$d\tsc.etl" -ets | Out-Null
+          logman update trace tsc -p "Service Control Manager" 0xffffffffffffffff 5 -ets | Out-Null
+          Start-Sleep -Seconds 2
+          "caller pid = $PID"
+          $a = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c echo x > $d\out.txt"
+          Register-ScheduledTask -TaskName "sf-poc-task" -Action $a -Force | Out-Null
+          Start-ScheduledTask -TaskName "sf-poc-task"
+          Start-Sleep -Seconds 3
+          New-Service -Name "sfpocsvc" -BinaryPathName "C:\Windows\System32\cmd.exe /c exit" -StartupType Manual | Out-Null
+          Start-Sleep -Seconds 2
+          logman stop tsc -ets | Out-Null
+          Unregister-ScheduledTask -TaskName "sf-poc-task" -Confirm:$false
+          sc.exe delete sfpocsvc | Out-Null
+          tracerpt "$d\tsc.etl" -o "$d\tsc.xml" -of XML -y | Out-Null
+          [xml]$x = Get-Content "$d\tsc.xml" -Raw
+          "== events (provider / id / header pid / fields) =="
+          foreach ($e in $x.Events.Event) {
+            $prov = [string]$e.System.Provider.Name
+            $id = [string]$e.System.EventID
+            $hp = [string]$e.System.Execution.ProcessID
+            $fields = @($e.EventData.Data | ForEach-Object { "{0}={1}" -f $_.Name, $_.'#text' }) -join " | "
+            if ($fields.Length -gt 400) { $fields = $fields.Substring(0, 400) }
+            "$prov id=$id hdrpid=$hp :: $fields"
+          }
+          "== counts =="
+          $x.Events.Event | Group-Object { "{0} {1}" -f $_.System.Provider.Name, $_.System.EventID } | Sort-Object Name | ForEach-Object { "{0} x{1}" -f $_.Name, $_.Count }

@@ -53,8 +53,8 @@ pub fn proxy_tool(image_base: &str) -> Option<Proxy> {
 /// 일을 맡는 시스템 프로세스(부모 이미지 이름) → 종류
 pub fn proxy_host(image_base: &str) -> Option<Proxy> {
     match image_base {
-        // 작업 스케줄러 서비스는 svchost 안에서 돈다. svchost 는 여럿이라 창 개수·시간 제한이 오탐을 줄인다
-        "svchost.exe" | "taskhostw.exe" | "taskeng.exe" => Some(Proxy::Task),
+        // 작업 스케줄러 서비스(Schedule)를 담은 svchost 는 이름이 아니라 서비스 대조표로 고른다(34차 Q2, `set_schedule_hosts`)
+        "taskhostw.exe" | "taskeng.exe" => Some(Proxy::Task),
         "wmiprvse.exe" => Some(Proxy::Wmi),
         "services.exe" => Some(Proxy::Service),
         _ => None,
@@ -92,6 +92,8 @@ struct State {
     hosts: HashMap<u32, Proxy>,
     /// 열린 대리 창
     arms: Vec<(Proxy, Arm)>,
+    /// 작업 스케줄러 서비스를 담은 svchost pid(서비스 대조표)
+    sched: std::collections::HashSet<u32>,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -164,6 +166,14 @@ pub fn on_start(pid: u32, create_ft: i64, image: &str) {
     });
 }
 
+/// 34차 Gemini Q2: 작업 스케줄러 서비스(Schedule)를 담은 svchost 들. 수집기가 서비스 대조표(SCM, 1초마다)로 알려 준다.
+/// 다른 svchost(업데이트·백신 등)가 띄운 프로세스는 대리 창으로 물려받지 않는다
+pub fn set_schedule_hosts(pids: &[u32]) {
+    with(|s| {
+        s.sched = pids.iter().copied().collect();
+    });
+}
+
 /// 물려받은 방법
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Inherit {
@@ -189,8 +199,10 @@ pub fn on_spawn(ppid: u32, pid: u32, create_ft: i64, image: &str, now_ft: i64) -
             }
             Some((until, root, inf)) => (until, root, inf, Inherit::Child),
             None => {
-                let Some(kind) = s.hosts.get(&ppid).copied() else {
-                    return Inherit::No;
+                let kind = match s.hosts.get(&ppid).copied() {
+                    Some(k) => k,
+                    None if s.sched.contains(&ppid) => Proxy::Task,
+                    None => return Inherit::No,
                 };
                 let Some((_, arm)) = s.arms.iter_mut().find(|(k, _)| *k == kind) else {
                     return Inherit::No;
@@ -430,6 +442,9 @@ mod tests {
     fn proxy_window_infers_scheduler_children() {
         let t = 1_000_000_000i64;
         on_start(5000, 1, r"C:\Windows\System32\svchost.exe");
+        on_start(5003, 1, r"C:\Windows\System32\svchost.exe");
+        // 34차 Q2: 작업 스케줄러를 담은 svchost(5000)만 — 다른 svchost(5003, 업데이트 등)는 아님
+        set_schedule_hosts(&[5000]);
         on_start(5001, 1, r"C:\Windows\System32\wbem\WmiPrvSE.exe");
         watch(6000, 7, t + PROXY_WINDOW_FT * 10);
         // 창이 열리기 전: 작업 스케줄러가 띄운 것은 물려받지 않는다
@@ -460,6 +475,9 @@ mod tests {
             inferred_source((6000, 7)),
             "etw:file:ledger:inferred:6000@7"
         );
+        // 다른 svchost 가 띄운 것은 물려받지 않는다
+        on_start(6210, 4, "upd.exe");
+        assert_eq!(on_spawn(5003, 6210, 4, "upd.exe", t + 15), Inherit::No);
         // 다른 종류(WMI)의 창은 열리지 않았다
         on_start(6300, 5, "x.exe");
         assert_eq!(on_spawn(5001, 6300, 5, "x.exe", t + 30), Inherit::No);

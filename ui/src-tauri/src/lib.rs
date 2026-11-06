@@ -43,7 +43,8 @@ fn remote_session_toast(v: &serde_json::Value) -> Option<(String, bool)> {
         return None;
     }
     let p = v.get("params")?;
-    if p.get("kind").and_then(|k| k.as_str()) != Some("remote_session_start") {
+    // 34차 Q3: RDP 섀도·세션 가로채기도 같은 즉시 알림(새 세션 없이 붙는 원격 조작)
+    if !matches!(p.get("kind").and_then(|k| k.as_str()), Some("remote_session_start" | "rdp_shadow" | "rdp_hijack")) {
         return None;
     }
     // 문장에는 외부에서 온 이름이 섞이지 않는다(도구 표시 이름은 서비스 목록의 상수) — 길이만 자른다

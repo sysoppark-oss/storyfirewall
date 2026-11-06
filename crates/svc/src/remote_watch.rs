@@ -28,6 +28,8 @@ pub struct RemoteWatch {
     pub last_seed_wall: i64,
     /// 32차 Q1: 지난번 본 활성 RDP 세션 → (시작 엔진 벽시각, 접속한 쪽 이름)
     pub rdp: BTreeMap<u32, (i64, String)>,
+    /// 34차 Q3: 들어오는 RDP 연결을 알린 주소 → 엔진 벽시각(하루 한 번)
+    pub inbound_seen: std::collections::HashMap<String, i64>,
 }
 
 /// 수집 배치에서 원격 도구의 시작·끝을 받는다(배치는 이미 그래프에 들어간 뒤 온다)
@@ -51,6 +53,83 @@ pub fn on_batch(world: &mut World, events: &[graph::Event]) {
             }
             _ => {}
         }
+        // 34차 Gemini Q3: RDP 섀도(화면 엿보기)·세션 가로채기(tscon)·들어오는 RDP 연결 — 새 세션이 생기지 않아 WTS 로는 안 보인다
+        if let Some((kind, sev, text, target)) = rdp_signal(ev, world.host.rdp_port()) {
+            if kind == "rdp_inbound" {
+                // 같은 주소는 하루 한 번(인터넷에 열린 RDP 포트는 훑기가 잦다)
+                let key = target
+                    .get("raddr")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let now = world.engine_wall();
+                if world
+                    .remote
+                    .inbound_seen
+                    .get(&key)
+                    .is_some_and(|t| now - t < 86_400)
+                {
+                    continue;
+                }
+                if world.remote.inbound_seen.len() > 4096 {
+                    world.remote.inbound_seen.retain(|_, t| now - *t < 86_400);
+                }
+                world.remote.inbound_seen.insert(key, now);
+            }
+            let _ = world
+                .engine
+                .record_event_ref(kind, sev, text, Some(target.to_string()));
+        }
+    }
+}
+
+/// RDP 관련 수집 이벤트 하나 → 서비스 사건(순수 함수 — 시험 대상). 판정이 아니라 사실 문장
+pub fn rdp_signal(
+    ev: &graph::Event,
+    rdp_port: u16,
+) -> Option<(&'static str, u8, String, serde_json::Value)> {
+    match &ev.kind {
+        graph::EventKind::ProcessStart { pid, image, .. } => {
+            let b = image
+                .rsplit(['\\', '/'])
+                .next()
+                .unwrap_or(image)
+                .to_ascii_lowercase();
+            match b.as_str() {
+                // Elastic 탐지 규칙 "Potential Remote Desktop Shadowing Activity" 의 프로세스 이름
+                "rdpsaproxy.exe" | "rdpsauachelper.exe" => Some((
+                    "rdp_shadow",
+                    3,
+                    "원격 데스크톱 섀도(지금 화면 엿보기·조작) 도우미가 시작됐습니다. 다른 곳에서 이 PC 의 지금 화면에 붙을 때 뜨는 프로그램입니다. 직접 허락한 접속이 아니면 바로 끊으세요.".to_string(),
+                    serde_json::json!({ "tool": "rdp", "pid": pid, "image": image }),
+                )),
+                "tscon.exe" => Some((
+                    "rdp_hijack",
+                    3,
+                    "세션 바꾸기 도구(tscon)가 실행됐습니다. 열려 있는 다른 사용자 세션을 가져올 때 쓰는 도구입니다.".to_string(),
+                    serde_json::json!({ "tool": "rdp", "pid": pid, "image": image }),
+                )),
+                _ => None,
+            }
+        }
+        graph::EventKind::Connect {
+            direction: graph::event::Direction::In,
+            lport,
+            raddr,
+            proc,
+            ..
+        } if *lport == rdp_port => {
+            let lo = raddr.starts_with("127.") || raddr == "::1";
+            (!lo).then(|| {
+                (
+                    "rdp_inbound",
+                    2,
+                    format!("원격 데스크톱(RDP) 포트 {lport} 로 {raddr} 에서 들어온 연결을 받았습니다. 세션이 열리면 따로 경보합니다."),
+                    serde_json::json!({ "tool": "rdp", "raddr": raddr, "lport": lport, "pid": proc.pid }),
+                )
+            })
+        }
+        _ => None,
     }
 }
 
@@ -227,6 +306,25 @@ fn rdp_sample(world: &mut World, now: i64) -> bool {
     any
 }
 
+/// 접속한 쪽 표시(34차 Gemini Q4): 호스트는 "주소\u{1f}이름" 을 준다. 주소를 앞에, 이름은 접속한 쪽이 스스로 정한 값(바꿀 수 있음)으로
+pub fn who_text(raw: &str) -> String {
+    let (ip, name) = raw.split_once('\u{1f}').unwrap_or(("", raw));
+    let mut parts = Vec::new();
+    if !ip.is_empty() {
+        parts.push(format!("접속한 주소 {ip}"));
+    }
+    if !name.is_empty() {
+        parts.push(format!(
+            "접속한 쪽이 스스로 정한 이름(바꿀 수 있음) \"{name}\""
+        ));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", parts.join(", "))
+    }
+}
+
 /// 지난번과 지금의 RDP 세션을 비교한다(순수 함수 — 시험 대상). 접속한 쪽 이름은 접속한 쪽이 정하는 값이라 사실로만 붙인다
 pub fn rdp_diff(
     prev: &BTreeMap<u32, (i64, String)>,
@@ -245,11 +343,7 @@ pub fn rdp_diff(
             }
             None => {
                 next.insert(*sid, (now, name.clone()));
-                let who = if name.is_empty() {
-                    String::new()
-                } else {
-                    format!(" (접속한 쪽 컴퓨터 이름: {name})")
-                };
+                let who = who_text(name);
                 ev.push((
                     "remote_session_start",
                     3u8,
@@ -278,14 +372,87 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rdp_signals() {
+        use graph::event::{Direction, ProcRef, Proto};
+        let ev = |kind| graph::Event {
+            ts: 1,
+            source: "t".into(),
+            kind,
+        };
+        let start = |img: &str| {
+            ev(graph::EventKind::ProcessStart {
+                pid: 9,
+                ppid: 4,
+                image: img.into(),
+                create_time: Some(1),
+            })
+        };
+        assert_eq!(
+            rdp_signal(&start(r"C:\Windows\System32\RdpSaProxy.exe"), 3389)
+                .unwrap()
+                .0,
+            "rdp_shadow"
+        );
+        assert_eq!(
+            rdp_signal(&start(r"C:\Windows\System32\tscon.exe"), 3389)
+                .unwrap()
+                .0,
+            "rdp_hijack"
+        );
+        assert!(rdp_signal(&start(r"C:\Windows\System32\notepad.exe"), 3389).is_none());
+        let conn = |dir, lport, raddr: &str| {
+            ev(graph::EventKind::Connect {
+                proc: ProcRef::new(800, None),
+                proto: Proto::Tcp,
+                direction: dir,
+                laddr: "10.0.0.2".into(),
+                lport,
+                raddr: raddr.into(),
+                rport: 50000,
+            })
+        };
+        // 바꾼 포트도 따른다
+        assert_eq!(
+            rdp_signal(&conn(Direction::In, 13389, "198.51.100.4"), 13389)
+                .unwrap()
+                .0,
+            "rdp_inbound"
+        );
+        assert!(
+            rdp_signal(&conn(Direction::In, 3389, "198.51.100.4"), 13389).is_none(),
+            "다른 포트"
+        );
+        assert!(
+            rdp_signal(&conn(Direction::Out, 3389, "198.51.100.4"), 3389).is_none(),
+            "나가는 연결(이 PC 가 남에게 접속)"
+        );
+        assert!(
+            rdp_signal(&conn(Direction::In, 3389, "127.0.0.1"), 3389).is_none(),
+            "루프백"
+        );
+    }
+
+    #[test]
     fn rdp_sessions_start_and_end() {
         let none = BTreeMap::new();
         let mut cur = BTreeMap::new();
-        cur.insert(2u32, "ATTACKER-PC".to_string());
+        cur.insert(2u32, "203.0.113.7\u{1f}고객센터".to_string());
         let (s1, ev) = rdp_diff(&none, &cur, 100);
         assert_eq!(ev.len(), 1);
         assert_eq!(ev[0].0, "remote_session_start");
-        assert!(ev[0].2.contains("ATTACKER-PC"), "{}", ev[0].2);
+        // 34차 Q4: 주소가 앞, 이름은 바꿀 수 있는 값으로
+        assert!(
+            ev[0].2.contains(
+                "접속한 주소 203.0.113.7, 접속한 쪽이 스스로 정한 이름(바꿀 수 있음) \"고객센터\""
+            ),
+            "{}",
+            ev[0].2
+        );
+        assert_eq!(who_text(""), "");
+        assert_eq!(
+            who_text("\u{1f}PC"),
+            " (접속한 쪽이 스스로 정한 이름(바꿀 수 있음) \"PC\")"
+        );
         // 그대로 이어지면 사건 없음
         let (s2, ev) = rdp_diff(&s1, &cur, 110);
         assert!(ev.is_empty());

@@ -33,9 +33,13 @@ const SERVICE_EVENT_TITLE: Record<string, string> = {
   // 14판 20-4: 원격 제어 사기 경보 — 사실만(상대·의도를 단정하지 않는다)
   remote_session_start: "원격 제어 프로그램이 외부로 데이터를 계속 보내기 시작했습니다",
   remote_session_end: "원격 제어 세션 모양이 끝났습니다",
+  // 34차 Q3: 새 세션 없이 붙는 원격 데스크톱 — 섀도(화면 엿보기)·세션 가로채기·들어오는 RDP 연결
+  rdp_shadow: "원격 데스크톱 섀도(화면 엿보기) 도우미가 시작됐습니다",
+  rdp_hijack: "세션 바꾸기 도구(tscon)가 실행됐습니다",
+  rdp_inbound: "원격 데스크톱 포트로 들어온 연결",
 };
 /// 경고 테두리 없이 보여 줄 사건(막지 않은 사실·끝난 사실)
-const QUIET_KINDS = new Set(["defender_cfa_audited", "first_run_watch", "remote_session_end"]);
+const QUIET_KINDS = new Set(["defender_cfa_audited", "first_run_watch", "remote_session_end", "rdp_inbound"]);
 /// 보여 줄 보호 사건 (정책 변경 기록 등 평범한 사건은 정책 화면 몫)
 const PROTECTION_KINDS = new Set(Object.keys(SERVICE_EVENT_TITLE));
 
