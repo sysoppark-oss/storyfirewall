@@ -25,6 +25,28 @@ pub struct NetIf {
     pub luid: u64,
 }
 
+/// 브라우저 확장 프로그램의 보조 프로그램 등록(네이티브 메시징 호스트) 한 건 — 레지스트리 NativeMessagingHosts 와 그 매니페스트
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct NativeHost {
+    /// "chrome" | "edge" | "brave" | "chromium" | "firefox"
+    pub browser: String,
+    /// 등록 이름(예: com.anthropic.claude_browser_extension) — 외부 문자열, 자료로만
+    pub name: String,
+    /// 등록 위치("HKLM" 또는 "HKU\<SID>")
+    pub scope: String,
+    pub manifest: String,
+    /// 매니페스트의 path(상대 경로면 매니페스트 폴더 기준으로 푼 것)
+    pub path: String,
+}
+
+/// 실행 파일 서명 조회 결과(WinVerifyTrust)
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SigInfo {
+    /// "valid" | "nosignature" | "untrusted:…" | "error:…"
+    pub status: String,
+    pub signer: Option<String>,
+}
+
 pub trait Host: Send {
     /// 네트워크 인터페이스 목록. 지원하지 않는 환경이면 Err
     fn interfaces(&self) -> Result<Vec<NetIf>, String> {
@@ -57,6 +79,18 @@ pub trait Host: Send {
     /// 35차 Q4: 실행 파일의 버전 리소스 원래 이름(OriginalFileName, 소문자). 모르면 None
     fn original_name(&self, _path: &str) -> Option<String> {
         None
+    }
+    /// 자동 조사: (PID, 생성 시각)이 맞는 살아 있는 프로세스의 명령줄. 모르면 None
+    fn cmdline(&self, _pid: u32, _create_ft: i64) -> Option<String> {
+        None
+    }
+    /// 자동 조사: 실행 파일 서명. 모르면 None
+    fn signature(&self, _path: &str) -> Option<SigInfo> {
+        None
+    }
+    /// 자동 조사: 이 PC 에 등록된 브라우저 확장 보조 프로그램(HKLM + 로그온한 사용자들의 HKCU)
+    fn native_hosts(&self) -> Vec<NativeHost> {
+        Vec::new()
     }
 }
 

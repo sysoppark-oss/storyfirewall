@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardNote, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned, liveText } from "./story";
+import { cardNote, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned, liveText, recommendText } from "./story";
 import { hostOf, portOf, REL } from "./mindmap";
 // 그래프 관계 이름의 원본(Rust) — vite ?raw 로 글자 그대로 읽는다
 import graphLib from "../../../crates/graph/src/lib.rs?raw";
@@ -132,4 +132,12 @@ describe("실시간 1: 카드의 지금 상태 줄", () => {
   it("실행 중", () => expect(liveText({ running: true, pid: 16720, ended: false })).toBe("지금도 실행 중 (PID 16720)"));
   it("끝남 기록이 있으면 끝남", () => expect(liveText({ running: false, pid: 5, ended: true })).toBe("지금은 끝남 (PID 5)"));
   it("끝남 기록 없이 안 보이면 단정하지 않는다", () => expect(liveText({ running: false, pid: 5, ended: false })).toBe("지금 상태 확인 못 함 (PID 5)"));
+});
+
+describe("자동 조사: 권장 조치 문장", () => {
+  it("세 가지", () => {
+    expect(recommendText({ recommend: "mark_normal" })).toBe("권장: 알려진 정상 모양 — 끊지 마세요");
+    expect(recommendText({ recommend: "cut" })).toBe("권장: 여기서부터 끊기");
+    expect(recommendText({ recommend: "review" })).toBe("권장: 아래 사실을 보고 정하세요");
+  });
 });

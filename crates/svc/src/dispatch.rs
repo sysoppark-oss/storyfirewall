@@ -825,6 +825,20 @@ fn handle(
                 .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
             j(serde_json::json!({ "edge_id": v.edge_id, "evidence": ev }))
         }
+        Method::StoryInvestigate => {
+            let v: api::methods::InvestigateParams = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            if world.graph.node(v.root).is_err() {
+                return Err(RpcError::with(ErrorCode::InvalidParams, format!("없음: {}", v.root)));
+            }
+            if !caller.scope().process_visible(&world.graph, v.root) {
+                return Err(out_of_scope());
+            }
+            let t = std::time::Instant::now();
+            let r = crate::investigate::investigate(&world.graph, world.host.as_ref(), v.root).map_err(internal)?;
+            world.timings.record("자동 조사", t.elapsed());
+            j(serde_json::to_value(r).unwrap())
+        }
         Method::GraphTimeline => {
             let v: TimeRange = serde_json::from_value(p)
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;

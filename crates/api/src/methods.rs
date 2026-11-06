@@ -26,6 +26,9 @@ pub enum Method {
     ProcessDetail,
     StoryToday,
     StoryExplain,
+    /// 자동 조사(사용자 "지금과 같은 것을 할 수 있는 분석이 프로그램에 필요함" 2026-11-07): 사건 주인공의 실물 확인(PID·생성 시각·경로·명령줄),
+    /// 서명, 브라우저 확장 보조 프로그램 등록 대조 → 판단과 권장 조치. 조회(사용자), DB 에 쓰지 않음
+    StoryInvestigate,
     StoryEvents,
     EventsSubscribe,
     JudgeFeedbackNormal,
@@ -76,6 +79,7 @@ impl Method {
         ("process.detail", Method::ProcessDetail),
         ("story.today", Method::StoryToday),
         ("story.explain", Method::StoryExplain),
+        ("story.investigate", Method::StoryInvestigate),
         ("story.events", Method::StoryEvents),
         ("installs.list", Method::InstallsList),
         ("agents.list", Method::AgentsList),
@@ -295,6 +299,11 @@ impl TimeRange {
     }
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InvestigateParams {
+    /// 이야기 뿌리(프로세스 또는 파일 노드)
+    pub root: i64,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeedbackNormalParams {
     pub request_id: String,
     pub root: i64,
@@ -445,6 +454,10 @@ pub fn validate_params(
         }
         Method::StoryExplain => {
             let _: EdgeRef = serde_json::from_value(p.clone())
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+        }
+        Method::StoryInvestigate => {
+            let _: InvestigateParams = serde_json::from_value(p.clone())
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
         }
         Method::GraphNeighbors | Method::GraphRewind | Method::ProcessDetail => {

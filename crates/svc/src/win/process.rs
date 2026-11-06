@@ -120,6 +120,17 @@ impl crate::host::Host for WinHost {
     fn interfaces(&self) -> Result<Vec<crate::host::NetIf>, String> {
         super::netif::interfaces()
     }
+    fn cmdline(&self, pid: u32, create_ft: i64) -> Option<String> {
+        // 생성 시각 대조는 읽기 함수가 한다(PID 재사용이면 Err)
+        collector::cmdline::read(pid, Some(create_ft)).ok()
+    }
+    fn signature(&self, path: &str) -> Option<crate::host::SigInfo> {
+        let r = collector::signature::verify(path);
+        Some(crate::host::SigInfo { status: r.status, signer: r.signer })
+    }
+    fn native_hosts(&self) -> Vec<crate::host::NativeHost> {
+        super::nmh::native_hosts()
+    }
     fn rdp_sessions(&self) -> Vec<(u32, String)> {
         super::wts::rdp_sessions().unwrap_or_default()
     }

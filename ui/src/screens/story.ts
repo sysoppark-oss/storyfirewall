@@ -524,6 +524,8 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
         } else if (cmd) line.append(cmd);
         card.append(line);
       }
+      // 자동 조사(2026-11-07 사용자): 실물·서명·알려진 정상 모양을 서비스가 확인하고 판단과 권장 조치를 붙인다
+      card.append(investigateBox(ev.root));
       // 단추 위계(D002): 보조 "이건 정상입니다"(왼쪽) · 주 "마인드맵"(채움) · 파괴적 "끊기"(빨간 테두리, 맨 오른쪽)
       const actions = el("div", "actions");
       // 정상 처리는 파일에서 시작한 사건만(서비스 feedback_ok). 프로세스에서 시작한 사건은 단추를 보이지 않는다
@@ -665,6 +667,48 @@ export function liveText(l: { running: boolean; pid: number; ended: boolean }): 
   if (l.running) return `지금도 실행 중 (PID ${l.pid})`;
   if (l.ended) return `지금은 끝남 (PID ${l.pid})`;
   return `지금 상태 확인 못 함 (PID ${l.pid})`;
+}
+
+export interface Investigation {
+  root: number;
+  facts: { label: string; value: string; ok: boolean | null }[];
+  verdict: "known_normal" | "risky" | "unknown";
+  recommend: "mark_normal" | "cut" | "review";
+  reason: string;
+  native_host?: { browser: string; name: string; scope: string; manifest: string; path: string } | null;
+}
+
+/// 권장 조치 문장(사실 판단은 서비스가, 화면은 말로만)
+export function recommendText(r: Pick<Investigation, "recommend">): string {
+  return r.recommend === "mark_normal" ? "권장: 알려진 정상 모양 — 끊지 마세요"
+    : r.recommend === "cut" ? "권장: 여기서부터 끊기"
+    : "권장: 아래 사실을 보고 정하세요";
+}
+
+/// 카드의 "자동 조사" 칸. 열 때 한 번 조회(서비스는 DB 에 쓰지 않는다)
+function investigateBox(root: number): HTMLElement {
+  const box = el("details", "investigate");
+  const sum = el("summary", undefined, "자동 조사 중…");
+  box.append(sum);
+  void (async () => {
+    const r = await rpc<Investigation>("story.investigate", { root });
+    if (!r.ok) {
+      sum.textContent = "자동 조사를 하지 못했습니다";
+      box.append(el("p", "muted small", r.error.message));
+      return;
+    }
+    const v = r.result;
+    box.classList.add(v.verdict);
+    sum.replaceChildren(el("b", undefined, recommendText(v)), " · ", ext("span", v.reason));
+    box.open = v.verdict !== "unknown";
+    const list = el("ul", "facts");
+    for (const f of v.facts) {
+      const mark = f.ok === true ? "✓" : f.ok === false ? "✗" : "·";
+      list.append(el("li", f.ok === true ? "ok" : f.ok === false ? "bad" : undefined, el("span", "mark", mark), " ", el("b", undefined, `${f.label}: `), ext("span", f.value)));
+    }
+    box.append(list);
+  })();
+  return box;
 }
 
 export function execRange(x: { count: number; first_ts: number; last_ts: number }): string {

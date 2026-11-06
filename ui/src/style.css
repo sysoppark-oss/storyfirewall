@@ -450,3 +450,14 @@ details.where-panel { border-radius: 16px; }
 .update-banner { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; border-bottom: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line)); background: color-mix(in srgb, var(--brand) 10%, var(--card)); }
 .update-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #app:has(> .update-banner) { grid-template-rows: auto 1fr auto; }
+
+/* 자동 조사 칸: 판단(권장 조치)을 한 줄로, 사실은 펼쳐서. 정상 확인=청록 테두리, 위험=빨강 테두리 */
+.investigate { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin: 8px 0; font-size: 13px; }
+.investigate summary { cursor: pointer; }
+.investigate.known_normal { border-color: var(--brand); }
+.investigate.risky { border-color: var(--bad); }
+.investigate .facts { list-style: none; margin: 6px 0 0; padding: 0; }
+.investigate .facts li { margin: 2px 0; overflow-wrap: anywhere; }
+.investigate .facts li.ok .mark { color: var(--ok); }
+.investigate .facts li.bad .mark { color: var(--bad); }
+.investigate .facts .mark { display: inline-block; width: 1em; }

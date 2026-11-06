@@ -13,6 +13,8 @@ pub mod authn;
 pub mod data_dir;
 /// ACL 정책 관리: 네트워크 인터페이스 목록
 pub mod netif;
+/// 자동 조사: 브라우저 확장 보조 프로그램 등록(NativeMessagingHosts)
+pub mod nmh;
 pub mod pipe;
 /// A25: 무작위 파이프 이름 공개(HKLM)·조회, 가로채기 점검
 pub mod pipe_name;
