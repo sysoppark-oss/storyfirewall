@@ -18,7 +18,7 @@
 #   cmd.exe is always started with /d (ignores HKCU Command Processor AutoRun).
 # - Output goes to %ProgramFiles%\StoryFirewallDev\logs (admin-written, user-readable).
 # Request format (UTF-8 JSON, one object):  {"job":"b2","seconds":900}   {"job":"pull"}   {"job":"status"}
-#                                           {"job":"install"}   {"job":"uninstall"}   {"job":"selfupdate"}   {"job":"diag"}   {"job":"hostinfo"}
+#                                           {"job":"install"}   {"job":"uninstall"}   {"job":"selfupdate"}   {"job":"diag"}   {"job":"hostinfo"}   {"job":"sandbox","reboot":"true"}
 # selfupdate: pull, then replace bin\job-runner.ps1 with the repo copy (no new trust: b2 already runs repo scripts
 #   as SYSTEM; whoever can write main can already run code here). Takes effect from the next run.
 # install (user decision 2026-11-02): installs the latest dev build from the orphan branch dev-builds (CI-built,
@@ -232,6 +232,24 @@ try {
                     try { $vms = Get-VM -ErrorAction Stop; Log $id ("hyperv_vms " + (($vms | ForEach-Object { $_.Name + ":" + $_.State }) -join ",")) } catch { Log $id "hyperv_vms unavailable" }
                     foreach ($x in @("C:\Program Files\Oracle\VirtualBox\VBoxManage.exe", "C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe", "C:\Program Files\VMware\VMware Workstation\vmrun.exe")) {
                         if (Test-Path $x) { Log $id ("found " + $x) }
+                    }
+                    Log $id "done exit=0"
+                }
+                "sandbox" {
+                    # L072 (VM setup, user approved 2026-11-07 "runner + Sandbox", "reboot now"): enable Windows Sandbox
+                    # (Containers-DisposableClientVM). Reboot only when THIS install reports RestartNeeded and the request
+                    # says reboot=true - there is no standalone reboot job, so a request dropped by any local user cannot
+                    # be used to reboot the PC repeatedly (feature already enabled -> no restart needed -> no reboot).
+                    # Delay 120 s with a visible message so open work can be saved; "shutdown /a" cancels.
+                    $f = "Containers-DisposableClientVM"
+                    $before = (Get-WindowsOptionalFeature -Online -FeatureName $f).State
+                    Log $id ("feature " + $f + " before " + $before)
+                    if ([string]$before -eq "Enabled") { Log $id "already enabled, no reboot"; Log $id "done exit=0"; break }
+                    $res = Enable-WindowsOptionalFeature -Online -FeatureName $f -All -NoRestart
+                    Log $id ("enable restart_needed " + $res.RestartNeeded)
+                    if ($res.RestartNeeded -and ([string]$r.reboot -eq "true")) {
+                        & "$sys\System32\shutdown.exe" /r /t 120 /c "Story Firewall dev: Windows Sandbox installed. Restarting in 2 minutes. Save your work. (shutdown /a to cancel)" /d p:2:4
+                        Log $id ("reboot scheduled in 120s exit=" + $LASTEXITCODE)
                     }
                     Log $id "done exit=0"
                 }
