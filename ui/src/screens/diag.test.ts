@@ -5,10 +5,10 @@ import { durText, timingName } from "./diag";
 
 describe("retentionText", () => {
   it("서버가 돌려주는 정책 필드를 읽는다", () => {
-    expect(retentionText({ raw_days: 7, summary_days: 30, suspicious_days: 30, last: null })).toBe("보관: 자세한 기록 7일 · 연결 요약 30일 · 의심 사건 30일");
+    expect(retentionText({ raw_days: 7, summary_days: 30, suspicious_days: 30, last: null })).toBe("보관: 원시 이벤트 7일 · 연결 요약 30일 · 인시던트 30일");
   });
   it("예전 이름 incident_days 도 읽는다", () => {
-    expect(retentionText({ incident_days: 14 })).toBe("보관: 의심 사건 14일");
+    expect(retentionText({ incident_days: 14 })).toBe("보관: 인시던트 14일");
   });
   it("아는 키가 없으면 빈 문자열", () => {
     expect(retentionText({ voice: "plain" })).toBe("");
@@ -24,7 +24,7 @@ describe("D033-2 걸린 시간", () => {
 
 describe("D040-2 처리 시간 이름", () => {
   it("메서드 이름은 사람 말로, 엔진 일은 그대로", () => {
-    expect(timingName("listeners.list")).toBe("듣는 포트 목록");
+    expect(timingName("listeners.list")).toBe("리스닝 포트 목록");
     expect(timingName("(대기열)")).toBe("차례 기다림(대기열)");
     expect(timingName("엔진: 수집 배치")).toBe("엔진: 수집 배치");
   });

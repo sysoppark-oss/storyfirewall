@@ -371,7 +371,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     paintToday(t, r.ok ? null : r.error, health);
     clear(cards);
     // D013: 오류는 "사건 없음"으로 그리지 않는다
-    if (!r.ok) return cards.append(failBox(r.error, () => void load(), "이야기 목록"));
+    if (!r.ok) return cards.append(failBox(r.error, () => void load(), "인시던트 목록"));
     counts = r.result.counts;
     countsLine.textContent = triageCountsText(counts);
     // 저장 실패·과부하로 버린 구간만(기록 없는 구간 no_record 는 이 문장이 아니다 — 카드의 ⚠ 줄·진단 화면에서 따로 보인다)
@@ -379,7 +379,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     const gs = summarizeGaps(r.result.gaps ?? []);
     if (gs) {
       const det = el("details", "card gap");
-      det.append(el("summary", undefined, `⚠ ${fmtRange(filetimeToUnix(gs.first_ts), filetimeToUnix(gs.last_ts))} 사이 ${gs.count}번, 기록 ${gs.events}건이 저장 과부하로 빠졌습니다. 이 구간의 이야기는 완전하지 않을 수 있습니다.`));
+      det.append(el("summary", undefined, `⚠ ${fmtRange(filetimeToUnix(gs.first_ts), filetimeToUnix(gs.last_ts))} 사이 ${gs.count}번, 기록 ${gs.events}건이 저장 과부하로 빠졌습니다. 이 구간의 인시던트는 완전하지 않을 수 있습니다.`));
       for (const g of gs.list) det.append(el("div", "muted", `${fmtTs(filetimeToUnix(g.from_ts))} ~ ${fmtTs(filetimeToUnix(g.to_ts))} · ${g.events}건`));
       cards.append(det);
     }
@@ -412,7 +412,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
           el("span", "muted", ev.running_since ? sinceText(filetimeToUnix(ev.running_since)).replace("수집 시작 전부터 실행 중 · ", "") : ""));
         const slot = el("div", "stale-card");
         row.dataset["root"] = String(ev.root);
-        row.append(button("이야기 보기", () => {
+        row.append(button("인시던트 보기", () => {
           if (slot.firstChild) return clear(slot);
           slot.append(buildCard(ev));
         }, "btn small"));

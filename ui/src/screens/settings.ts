@@ -7,16 +7,16 @@ import { diagnostics } from "./diag";
 import { FIRST_RUN_CHOICES, FIRST_RUN_MINUTES, FIRST_RUN_MINUTES_SENTENCE, firstRunSentence, firstRunSetting, umbrellaText, type FirstRunMode } from "./first-run";
 import { approvalBox, countdown, type ApplyReply } from "../confirm";
 
-/// 보관 설정 값 → "원시 기록 7일 · 연결 요약 30일". 아는 키가 없으면 빈 문자열
+/// 보관 설정 값 → "원시 이벤트 7일 · 연결 요약 30일". 아는 키가 없으면 빈 문자열
 export function retentionText(v: Record<string, unknown>): string {
   const parts: string[] = [];
   const n = (k: string) => (typeof v[k] === "number" ? (v[k] as number) : null);
-  // D033-2: 개발 말("원시") 대신 사용자 말
-  if (n("raw_days") != null) parts.push(`자세한 기록 ${n("raw_days")}일`);
+  // 40차 용어: 전문 용어로(원시 이벤트·인시던트)
+  if (n("raw_days") != null) parts.push(`원시 이벤트 ${n("raw_days")}일`);
   if (n("summary_days") != null) parts.push(`연결 요약 ${n("summary_days")}일`);
   // 서버 필드는 suspicious_days(graph::retention::RetentionPolicy). 예전 이름 incident_days 도 읽는다
   const sus = n("suspicious_days") ?? n("incident_days");
-  if (sus != null) parts.push(`의심 사건 ${sus}일`);
+  if (sus != null) parts.push(`인시던트 ${sus}일`);
   return parts.length ? `보관: ${parts.join(" · ")}` : "";
 }
 
@@ -28,7 +28,7 @@ export function settings(): HTMLElement {
   root.append(diagnostics());
   const out = el("div", "out");
   const voice = el("select");
-  for (const [v, l] of [["plain", "담백하게"], ["story", "이야기처럼"]] as const) {
+  for (const [v, l] of [["plain", "요약형"], ["story", "서술형"]] as const) {
     const o = el("option", undefined, l);
     o.value = v;
     voice.append(o);
@@ -75,14 +75,14 @@ export function settings(): HTMLElement {
     if (!r.ok) return out.replaceChildren(errorBox(r.error.message));
     out.replaceChildren(el("div", "ok", "저장됨"));
     // 막기를 고르면 관찰실 차단 정책(우산)이 생긴다: 승인 창을 거쳤으면 그 결과, 직접 실행이면 60초 확인
-    if (r.approval) out.append(approvalBox(r.approval, "관찰실 "));
-    else for (const pol of r.result.policies ?? []) out.append(countdown(pol, root, () => void refreshUmbrella(), "관찰실 "));
+    if (r.approval) out.append(approvalBox(r.approval, "샌드박스 "));
+    else for (const pol of r.result.policies ?? []) out.append(countdown(pol, root, () => void refreshUmbrella(), "샌드박스 "));
     void refreshUmbrella();
   }, "btn primary");
   save.disabled = true;
   save.title = "설정을 불러온 뒤 바꿀 수 있습니다";
   // D006-5: 끝점·다시 연결은 고급 접힘 안으로
-  const adv = el("details", "advanced", el("summary", undefined, "고급"), el("label", undefined, "서비스 끝점 ", endpoint, " ", reconnect));
+  const adv = el("details", "advanced", el("summary", undefined, "고급"), el("label", undefined, "서비스 엔드포인트 ", endpoint, " ", reconnect));
   const trustedBox = el("div", "form", el("p", "muted", "불러오는 중…"));
   const drawTrusted = (list: string[]) => {
     clear(trustedBox);
@@ -142,26 +142,26 @@ export function settings(): HTMLElement {
     el("div", "form",
       el("label", undefined, "화면 테마 ", theme),
       el("h3", undefined, "알림"),
-      el("label", undefined, toastBox, " 새 의심 사건을 Windows 알림으로 알리기(기본)"),
+      el("label", undefined, toastBox, " 새 인시던트(높음 이상)를 Windows 알림으로 알리기(기본)"),
       el("p", "muted small", "앱 창을 닫아 두어도(트레이) 사건이 한 장 더 나아갈 때마다 한 번 알립니다. 원격 제어 시작 알림은 이 설정과 상관없이 늘 뜹니다."),
       el("h3", undefined, "업데이트"),
       upLine,
       el("p", "muted small", "GitHub 공개 릴리스에서 새 판 정보(latest.json)만 받아 봅니다. 이 PC 의 기록은 보내지 않습니다. 설치 파일은 서명을 확인한 뒤에만 실행하고, 설치할 때 승인 창(UAC)이 한 번 뜹니다."),
       upBox,
       loadNote,
-      el("label", undefined, "이야기 화법 ", voice),
+      el("label", undefined, "서술 형식 ", voice),
       el("p", "muted", "Claude 서술·로컬 언어 모델은 아직 없습니다. 켜는 옵션이 생기면 무엇이 전송되는지 먼저 보여 줍니다."),
-      el("label", undefined, "첫 실행 관찰 ", frMode),
+      el("label", undefined, "샌드박스 관찰(첫 실행) ", frMode),
       frModeTip,
       frUmb,
-      el("label", undefined, "관찰 시간 ", frMin),
+      el("label", undefined, "관찰 기간 ", frMin),
       el("p", "muted", FIRST_RUN_MINUTES_SENTENCE),
       el("div", "actions", save)),
     out,
-    // 33차 Gemini Q4: "내가 쓰는 원격 도구"(이 도구의 원격 세션 시작은 작은 알림). 표시는 대시보드 사건 줄에서, 지우기는 여기서
-    el("h2", undefined, "내가 쓰는 원격 도구"),
+    // 33차 Gemini Q4: "신뢰하는 원격 제어 도구"(이 도구의 원격 세션 시작은 작은 알림). 표시는 대시보드 사건 줄에서, 지우기는 여기서
+    el("h2", undefined, "신뢰하는 원격 제어 도구"),
     trustedBox,
-    el("h2", undefined, "데이터 출처"),
+    el("h2", undefined, "텔레메트리 소스"),
     geoAge,
     geoSrc,
     el("p", "muted", "국기 그림: flag-icons (MIT, Panayiotis Lipiridis). 국가 이름: i18n-iso-countries (MIT)."),

@@ -72,10 +72,10 @@ export function buildCard(run: InstallRun, summary: string = summaryText(run)): 
   const det = el("details", "install-detail");
   det.append(el("summary", undefined, "자세히"));
   det.append(
-    section("함께 실행된 프로그램", countPaths(childProcs(run)).map(([p, n]) => pathLine(p, n))),
-    ...(run.grouped?.length ? [section("함께 묶은 설치 과정", run.grouped.map((p) => pathLine(p)), GROUPED_NOTE)] : []),
-    section("만든 파일", run.files.map((p) => pathLine(p)), FILES_SCOPE),
-    section("자동 실행", [
+    section("자식 프로세스", countPaths(childProcs(run)).map(([p, n]) => pathLine(p, n))),
+    ...(run.grouped?.length ? [section("설치 세션(묶음)", run.grouped.map((p) => pathLine(p)), GROUPED_NOTE)] : []),
+    section("생성 파일", run.files.map((p) => pathLine(p)), FILES_SCOPE),
+    section("지속성(자동 실행 등록)", [
       ...run.autoruns.map(([loc, target]) => {
         const li = el("li");
         li.append(safePath("span", loc), " → ", safePath("span", target));
@@ -83,8 +83,8 @@ export function buildCard(run: InstallRun, summary: string = summaryText(run)): 
       }),
       ...(run.persistence ?? []).map((p) => safePath("li", p, "mono", 1000)),
     ], AUTORUN_SCOPE),
-    section("접속한 곳", run.remotes.map((r) => ext("li", remoteText(r)))),
-    section("실행한 명령", run.commands.map((c) => safePath("li", c, "mono", 1000))),
+    section("네트워크 연결", run.remotes.map((r) => ext("li", remoteText(r)))),
+    section("명령줄", run.commands.map((c) => safePath("li", c, "mono", 1000))),
   );
   card.append(det);
   return card;
@@ -92,7 +92,7 @@ export function buildCard(run: InstallRun, summary: string = summaryText(run)): 
 
 export function installs(): HTMLElement {
   const root = el("section", "screen");
-  root.append(el("h1", undefined, "설치"));
+  root.append(el("h1", undefined, "설치 이력"));
   const range = el("select");
   for (const d of INSTALL_DAYS) {
     const o = el("option", undefined, `최근 ${daysLabel(d)}`);
@@ -115,8 +115,8 @@ export function installs(): HTMLElement {
     // 범위를 바꾸는 사이 늦게 온 답은 버린다
     if (Number(range.value) !== days) return;
     clear(cards);
-    // D013: 오류는 "설치 없음"으로 그리지 않는다
-    if (!r.ok) return void cards.append(failBox(r.error, () => void load(), "설치 목록"));
+    // D013: 오류는 "설치 이벤트 없음"으로 그리지 않는다
+    if (!r.ok) return void cards.append(failBox(r.error, () => void load(), "설치 이벤트"));
     const health = h.ok ? h.result : null;
     if (!r.result.items.length) {
       if (collectionStalled(health)) return void cards.append(noDataBox());

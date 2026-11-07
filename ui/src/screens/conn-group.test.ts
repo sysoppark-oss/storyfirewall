@@ -20,11 +20,11 @@ describe("A2 연결 묶음", () => {
   it("망(조직) 묶음: 오늘 처음이 위, 그다음 접속 수, 정보 없음·로컬망은 맨 아래", () => {
     const g = groupConns(items, "org");
     expect(g.slice(0, 3).map((x) => x.title)).toEqual(["Example Hosting LLC", "Google LLC", "LG POWERCOMM"]);
-    expect(new Set(g.slice(3).map((x) => x.title))).toEqual(new Set(["로컬망 · 멀티캐스트", "조직 정보 없음"]));
+    expect(new Set(g.slice(3).map((x) => x.title))).toEqual(new Set(["사설망 · 멀티캐스트", "조직 정보 없음"]));
     expect(g[0]!.isNew).toBe(true);
     const google = g.find((x) => x.title === "Google LLC")!;
     expect(google.count).toBe(26);
-    expect(google.sub).toBe("AS15169 · 원격 3곳");
+    expect(google.sub).toBe("AS15169 · 원격지 3곳");
     expect(google.programs).toBe("chrome.exe 외 1");
     expect(google.place).toBe("미국");
     expect(g.slice(-2).every((x) => x.bottom)).toBe(true);
@@ -64,7 +64,7 @@ describe("D009 지도에 없는 주소·지역 코드", () => {
     const b = bars(xs, "country").bars;
     expect(b.map((x) => x.key)).toEqual(["KR"]);
     expect(b[0]!.isNew).toBe(true);
-    expect(offMapLine(xs)).toBe("지도에 없는 주소: 지정 안 됨 2 · 유럽(나라 미상) 3 · 로컬망 5");
+    expect(offMapLine(xs)).toBe("지도에 없는 주소: 지정 안 됨 2 · 유럽(나라 미상) 3 · 사설망 5");
     expect(offMapLine([xs[2]!])).toBe("");
   });
 });

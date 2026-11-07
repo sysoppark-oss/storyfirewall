@@ -24,7 +24,7 @@ interface Conn {
   recv: number;
   proxied_for: number | null;
   where?: Where | null;
-  /// 하루 전까지 30일 안에 없던 ASN·나라(A2 "오늘 처음")
+  /// 하루 전까지 30일 안에 없던 ASN·나라(A2 "최초 관측")
   new_asn?: boolean;
   new_cc?: boolean;
 }
@@ -40,7 +40,7 @@ function loadMode(): GroupMode {
 function saveMode(m: GroupMode) {
   try { localStorage.setItem("sf.conn.group", m); } catch { /* 무시 */ }
 }
-/// 서비스가 붙여 주는 원격 주소의 "어디" (geo 크레이트). 나라는 IP 위치 정보(DB-IP)다 — 서버 위치와 다를 수 있다
+/// 서비스가 붙여 주는 원격 주소의 "원격지" (geo 크레이트). 나라는 IP 위치 정보(DB-IP)다 — 서버 위치와 다를 수 있다
 export interface Where {
   scope: string;
   cc?: string;
@@ -49,8 +49,8 @@ export interface Where {
   org?: string;
 }
 const SCOPE_KO: Record<string, string> = {
-  public: "인터넷", loopback: "이 PC", private: "로컬망", link_local: "로컬망(링크로컬)", multicast: "멀티캐스트",
-  broadcast: "브로드캐스트", cgnat: "통신사 NAT", unspecified: "지정 안 됨", documentation: "문서용 주소",
+  public: "인터넷", loopback: "로컬 호스트", private: "사설망(LAN)", link_local: "링크로컬", multicast: "멀티캐스트",
+  broadcast: "브로드캐스트", cgnat: "CGNAT(통신사 NAT)", unspecified: "지정 안 됨", documentation: "예약 주소(문서용)",
 };
 
 /// 국기를 쓰는 코드 = 번들에 SVG 가 있는 코드 − 지역·미정 코드(D005). 그 밖은 회색 점
@@ -65,7 +65,7 @@ export function placeName(w: Where): string | null {
   if (w.cc && REGION_KO[w.cc]) return REGION_KO[w.cc]!;
   return w.country ?? w.cc ?? null;
 }
-const ZZ_TIP = "위치·소유자가 정해지지 않은 주소 블록";
+const ZZ_TIP = "미할당 주소 블록";
 
 /// '어디' 칸 한 줄(D001): [국기 16px] 국가 · 조직. 고정 너비, 넘치면 말줄임, 전체는 툴팁. 특수 주소는 회색 점 + 종류.
 /// 국기는 public/flags(flag-icons MIT — Windows 는 국기 이모지를 못 그림). 국가 코드는 대문자 두 글자일 때만 경로에 쓴다.
@@ -119,7 +119,7 @@ export function bytes(n: number): string {
 /// 연결 목록(최근 N분, 2초 갱신) + 리스닝 포트. 행을 누르면 프로세스 상세.
 export function connections(): HTMLElement {
   const root = el("section", "screen");
-  root.append(el("h1", undefined, "연결"));
+  root.append(el("h1", undefined, "네트워크 연결"));
   const windowSel = el("select");
   for (const [v, l] of [["300", "최근 5분"], ["3600", "최근 1시간"], ["86400", "오늘"]] as const) {
     const o = el("option", undefined, l);
@@ -132,15 +132,15 @@ export function connections(): HTMLElement {
   const head = el("tr");
   // D001: 시각 · 프로그램 · 방향 · 원격(도메인 우선, 없으면 IP:포트) · 어디 · 프로토콜 · 횟수 · 보냄 · 받음
   for (const [h, cls, tip] of [
-    ["시각", "c-time", "이 범위 안에서 마지막으로 접속한 시각"],
-    ["프로그램", "c-prog", ""],
+    ["시각", "c-time", "이 범위 안의 마지막 연결 시각"],
+    ["프로세스", "c-prog", ""],
     ["방향", "c-dir", ""],
-    ["원격", "c-remote", "도메인을 알면 도메인, 모르면 IP 주소"],
-    ["어디", "c-where", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."],
+    ["원격지", "c-remote", "도메인을 알면 도메인, 모르면 IP 주소"],
+    ["원격지", "c-where", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."],
     ["프로토콜", "c-proto", ""],
-    ["횟수", "c-num", ""],
-    ["보냄", "c-num", ""],
-    ["받음", "c-num", ""],
+    ["연결 수", "c-num", ""],
+    ["송신", "c-num", ""],
+    ["수신", "c-num", ""],
   ] as const) {
     const th = el("th", cls, h);
     if (tip) th.title = tip;
@@ -166,7 +166,7 @@ export function connections(): HTMLElement {
   // A2: 묶음 선택(분절 단추)
   let mode: GroupMode = loadMode();
   const seg = el("span", "seg");
-  const MODES: [GroupMode, string][] = [["org", "망(조직)"], ["program", "프로그램"], ["country", "국가"], ["none", "묶지 않음"]];
+  const MODES: [GroupMode, string][] = [["org", "ASN(망 사업자)"], ["program", "프로세스"], ["country", "국가"], ["none", "묶지 않음"]];
   const segBtns = MODES.map(([m, label]) => {
     const b = button(label, () => { mode = m; saveMode(m); paintSeg(); void tick(); }, "btn small seg-btn");
     b.dataset["mode"] = m;
@@ -176,7 +176,7 @@ export function connections(): HTMLElement {
   seg.append(...segBtns);
   paintSeg();
   const expanded = new Set<string>();
-  // A3: "오늘 어디와 통신했나" 접이식 막대 패널(기본 접힘). 막대를 누르면 표를 거른다(다시 누르면 해제)
+  // A3: "통신 대상 분포 (오늘)" 접이식 막대 패널(기본 접힘). 막대를 누르면 표를 거른다(다시 누르면 해제)
   let filter: { by: "country" | "org"; key: string } | null = null;
   const where3 = el("details", "where-panel");
   const where3Body = el("div", "where-bars");
@@ -187,16 +187,16 @@ export function connections(): HTMLElement {
     if (v === view) b.classList.add("on");
     return b;
   });
-  where3.append(el("summary", undefined, "오늘 어디와 통신했나"), el("div", "where-head", el("span", "seg", ...viewBtns)), where3Body,
+  where3.append(el("summary", undefined, "통신 대상 분포 (오늘)"), el("div", "where-head", el("span", "seg", ...viewBtns)), where3Body,
     el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."));
   root.append(
-    el("div", "toolbar", "묶음 ", seg, " · 범위 ", windowSel, el("span", "muted", " · 지금 열린 연결이 아니라 이 범위 안의 접속 기록(이력)입니다")),
+    el("div", "toolbar", "묶음 ", seg, " · 범위 ", windowSel, el("span", "muted", " · 지금 열린 연결이 아니라 이 범위 안의 연결 기록(이력)입니다")),
     where3,
     note,
     pill,
     table,
-    el("h2", undefined, "듣고 있는 포트"),
-    el("label", "muted", hideEph, " 임시 UDP 포트(49152 이상) 숨기기"),
+    el("h2", undefined, "리스닝 포트"),
+    el("label", "muted", hideEph, " 임시(ephemeral) UDP 포트(49152 이상) 숨기기"),
     lnote,
     ltable,
     detail,
@@ -214,7 +214,7 @@ export function connections(): HTMLElement {
   let againAuto = true;
   let loaded = false;
   // D030-3: 보는 중(표 위 포인터·표 안 포커스·스크롤 내림·상세 패널 열림)에는 자동 갱신으로 행을 끼워 넣지 않는다.
-  // 새 접속은 "새 접속 N건 — 보기" 알약으로 알리고, 누르면 반영 후 맨 위로
+  // 새 접속은 "새 연결 N건 — 보기" 알약으로 알리고, 누르면 반영 후 맨 위로
   let hover = false;
   table.addEventListener("pointerenter", () => { hover = true; });
   table.addEventListener("pointerleave", () => { hover = false; });
@@ -239,7 +239,7 @@ export function connections(): HTMLElement {
       const fresh = pausedNew(shownKeys, r.result.items);
       clear(pill);
       if (fresh > 0) {
-        pill.append(button(`새 접속 ${fresh}건 — 보기`, () => {
+        pill.append(button(`새 연결 ${fresh}건 — 보기`, () => {
           clear(pill);
           (root.closest("main") as HTMLElement | null)?.scrollTo({ top: 0 });
           window.scrollTo({ top: 0 });
@@ -252,14 +252,14 @@ export function connections(): HTMLElement {
     loaded = true;
     clear(note);
     clear(body);
-    if (!r.ok) return note.append(failBox(r.error, () => void tick(), "접속 목록"));
+    if (!r.ok) return note.append(failBox(r.error, () => void tick(), "연결 목록"));
     shownKeys = new Set(r.result.items.map(connKey));
     // D028-4: 비어 있으면 표 머리줄을 숨긴다(문장만)
     table.classList.toggle("empty", !r.result.items.length);
     if (!r.result.items.length) {
-      // D015-4: 0건이고 수집이 멈췄으면 "기록 없음"이 아니라 "수집 안 됨"
+      // D015-4: 0건이고 수집이 멈췄으면 "기록 없음"이 아니라 "텔레메트리 없음"
       const h = await rpc<HealthLike>("collector.health", {});
-      note.append(h.ok && collectionStalled(h.result) ? noDataBox() : el("p", "muted", "이 범위에 접속 기록이 없습니다."));
+      note.append(h.ok && collectionStalled(h.result) ? noDataBox() : el("p", "muted", "이 범위에 연결 기록이 없습니다."));
     }
     paintBars(r.result.items);
     const shown = r.result.items.filter((c) => matchesFilter(c, filter));
@@ -275,7 +275,7 @@ export function connections(): HTMLElement {
       const title = el("td", "c-group");
       title.colSpan = 4;
       const l1 = el("div", "g-l1", el("span", "caret", open1 ? "▾ " : "▸ "), ext("span", g.title, "g-title"));
-      if (g.isNew) l1.append(" ", el("span", "badge-new", "오늘 처음"));
+      if (g.isNew) l1.append(" ", el("span", "badge-new", "최초 관측"));
       title.append(l1, ext("div", `${g.sub} · ${g.programs}`, "muted small g-l2"));
       const local = g.items.every((c) => c.where && c.where.scope !== "public");
       const place = whereCell(g.placeCc ? { scope: "public", cc: g.placeCc, country: g.place } : { scope: local ? "private" : "public", country: g.place });
@@ -296,13 +296,13 @@ export function connections(): HTMLElement {
           filter = sel === cc ? null : { by: "country", key: cc };
           void tick();
         }),
-        el("div", "map-legend muted small", "접속 수 ", el("i", "lg lv0"), " 0 ", el("i", "lg lv1"), " 1 ", el("i", "lg lv2"), " 2–5 ", el("i", "lg lv3"), " 6–20 ", el("i", "lg lv4"), " 21+ · ", el("i", "lg new"), " 오늘 처음"),
+        el("div", "map-legend muted small", "연결 수 ", el("i", "lg lv0"), " 0 ", el("i", "lg lv1"), " 1 ", el("i", "lg lv2"), " 2–5 ", el("i", "lg lv3"), " 6–20 ", el("i", "lg lv4"), " 21+ · ", el("i", "lg new"), " 최초 관측"),
       );
       const off = offMapLine(items);
       if (off) where3Body.append(el("div", "muted small", off));
       return;
     }
-    for (const [by, title] of [["country", "나라별 (접속 수)"], ["org", "망(조직)별 (접속 수)"]] as const) {
+    for (const [by, title] of [["country", "국가별 (연결 수)"], ["org", "ASN(망 사업자)별 (연결 수)"]] as const) {
       const { bars: bs, rest } = bars(items, by);
       const col = el("div", "bar-col", el("h4", undefined, title));
       const max = Math.max(1, ...bs.map((b) => b.value));
@@ -314,7 +314,7 @@ export function connections(): HTMLElement {
         const fill = el("span", "bar-fill");
         fill.style.width = `${Math.round((b.value / max) * 100)}%`;
         row.append(name, el("span", "bar-track", fill), el("span", "bar-val", String(b.value)));
-        if (b.isNew) row.append(el("span", "badge-new", "오늘 처음"));
+        if (b.isNew) row.append(el("span", "badge-new", "최초 관측"));
         row.addEventListener("click", () => { filter = on ? null : { by, key: b.key }; void tick(); });
         col.append(row);
       }
@@ -324,7 +324,7 @@ export function connections(): HTMLElement {
         const off = offMapLine(items, "막대");
         if (off) col.append(el("div", "muted small", off));
       }
-      if (!bs.length) col.append(el("div", "muted small", "공인 주소 접속이 없습니다."));
+      if (!bs.length) col.append(el("div", "muted small", "공인 주소로의 연결이 없습니다."));
       where3Body.append(col);
     }
   };
@@ -348,7 +348,7 @@ export function connections(): HTMLElement {
       remote.title = c.domain ? `${c.domain} (${c.raddr}:${c.rport})` : hostPort;
       tr.append(tdTime, prog, dir, remote, whereCell(c.where), el("td", "c-proto", c.proto.toUpperCase()));
       tr.append(numCell(c.count ? String(c.count) : NONE), numCell(bytes(c.sent)), numCell(bytes(c.recv)));
-      if (c.proxied_for != null) tr.title = "서비스가 다른 프로그램 대신 접속 (기록 대조로 짝지음)";
+      if (c.proxied_for != null) tr.title = "서비스 경유 연결(프록시) — 기록 대조로 귀속";
       tr.addEventListener("click", () => open(c.process_id));
       return tr;
     }
@@ -363,12 +363,12 @@ export function connections(): HTMLElement {
     lloaded = true;
     clear(lnote);
     clear(lbody);
-    if (!r.ok) return lnote.append(failBox(r.error, () => void ltick(), "듣는 포트 목록"));
+    if (!r.ok) return lnote.append(failBox(r.error, () => void ltick(), "리스닝 포트 목록"));
     const items = r.result.items.filter((l) => !(hideEph.checked && l.proto === "udp" && l.lport >= 49152));
     const hidden = r.result.items.length - items.length;
     // D028-4: 빈 표는 머리줄 대신 문장
     ltable.classList.toggle("empty", !items.length);
-    if (!items.length) lnote.append(el("p", "muted", "듣고 있는 포트가 없습니다."));
+    if (!items.length) lnote.append(el("p", "muted", "리스닝 포트가 없습니다."));
     if (hidden) lnote.append(el("p", "muted", `임시 UDP 포트 ${hidden}개를 숨겼습니다.`));
     const sorted = [...items].sort((a, b) => Number(b.any_addr) - Number(a.any_addr) || a.lport - b.lport);
     for (const l of sorted) {
@@ -376,7 +376,7 @@ export function connections(): HTMLElement {
       tr.append(el("td", undefined, l.proto), ext("td", l.laddr), el("td", undefined, String(l.lport)), el("td", undefined, String(l.pid)), listenerName(l.pid, l.image));
       // D028-5·D029-5: 상세 버튼 기준 하나 — 그래프에 프로세스 노드가 있고, 커널 의사 프로세스(PID 4·0)가 아니면
       tr.append(el("td", undefined, hasListenerDetail(l.pid, l.process_id) ? button("상세", () => open(l.process_id), "btn small") : ""));
-      if (l.any_addr) tr.title = "모든 주소에서 듣고 있습니다 (외부에서 닿을 수 있음)";
+      if (l.any_addr) tr.title = "모든 인터페이스 바인딩(0.0.0.0·::) — 외부 노출 가능";
       lbody.append(tr);
     }
   };

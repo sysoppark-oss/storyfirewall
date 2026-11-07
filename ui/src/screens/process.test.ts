@@ -17,7 +17,7 @@ describe("D025 프로그램 상세·진단", () => {
   it("위치 종류", () => {
     expect(placeKind("C:\\Windows\\System32\\svchost.exe")).toBe("Windows 폴더");
     expect(placeKind("C:\\Program Files (x86)\\App\\a.exe")).toBe("Program Files");
-    expect(placeKind("C:\\Users\\pjg\\AppData\\Local\\Temp\\payload.exe")).toBe("누구나 쓸 수 있는 폴더");
+    expect(placeKind("C:\\Users\\pjg\\AppData\\Local\\Temp\\payload.exe")).toBe("사용자 쓰기 가능 경로");
     expect(placeKind("D:\\tools\\x.exe")).toBe("그 밖의 폴더");
   });
   it("구간 원인·길이", () => {

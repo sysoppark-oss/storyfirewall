@@ -66,7 +66,7 @@ export function policy(): HTMLElement {
     clear(out);
     for (const e of v.errors) out.append(el("div", "error", ext("span", e)));
     for (const w of v.warnings) out.append(el("div", "warn", ext("span", w)));
-    if (!v.errors.length && !v.warnings.length) out.append(el("div", "ok", "문제 없음"));
+    if (!v.errors.length && !v.warnings.length) out.append(el("div", "ok", "검증 통과"));
     for (const [name, kind] of v.needs_ack) out.append(el("div", "warn", `확인 필요: `, ext("span", name), ` — ${ACK_TEXT[kind] ?? kind}`));
   };
 
@@ -80,9 +80,9 @@ export function policy(): HTMLElement {
   const askAck = (items: [string, string][]): Promise<boolean> =>
     new Promise((resolve) => {
       const dlg = el("dialog", "ack");
-      dlg.append(el("h3", undefined, "적용 전에 확인해 주세요"));
+      dlg.append(el("h3", undefined, "적용 전 검토"));
       for (const [name, kind] of items) dlg.append(el("p", undefined, ext("b", name), ` — ${ACK_TEXT[kind] ?? kind}`));
-      const yes = button("확인하고 적용", () => { dlg.close(); resolve(true); }, "btn danger");
+      const yes = button("검토 후 적용", () => { dlg.close(); resolve(true); }, "btn danger");
       const no = button("취소", () => { dlg.close(); resolve(false); });
       dlg.append(el("div", "actions", no, yes));
       document.body.append(dlg);
@@ -105,7 +105,7 @@ export function policy(): HTMLElement {
     const a = r.result as ApplyReply;
     showValidation({ errors: [], warnings: a.warnings, needs_ack: [] });
     if (a.address_block_notice) out.append(el("div", "warn", ext("span", a.address_block_notice)));
-    clear(out); // 검수 38-3: 적용하면 지난 검증 결과("문제 없음")를 지운다
+    clear(out); // 검수 38-3: 적용하면 지난 검증 결과("검증 통과")를 지운다
     if (r.approval) {
       clear(pending);
       pending.append(approvalBox(r.approval));
@@ -128,7 +128,7 @@ export function policy(): HTMLElement {
   const refreshList = async () => {
     const r = await rpc<{ items: PolicyRow[]; address_blocks?: number; address_block_items?: AddressBlock[] }>("policy.list", {});
     clear(list);
-    if (!r.ok) return list.append(failBox(r.error, () => void refreshList(), "정책 목록"));
+    if (!r.ok) return list.append(failBox(r.error, () => void refreshList(), "활성 정책"));
     // 지금 걸린 ACL = 적용(확인 대기)·확인됨 상태만. 되돌림·일시 중지·만료는 걸려 있지 않다
     const live = r.result.items.find((x) => x.acl_yaml && (x.state === "Applied" || x.state === "Confirmed"));
     if (!aclLoaded) {
@@ -162,7 +162,7 @@ export function policy(): HTMLElement {
         meta.append(el("span", "muted", " · 직접 작성"));
       }
       const row = el("div", "row policy-row", el("div", "policy-main", el("div", "policy-head", chip, " ", name, " ", ver), meta), el("span", "spacer"));
-      // D007-1: 확인 대기 — 남은 시간(1초 갱신, 주황) + 주 단추 "유지(확인)". 확인은 기존 경로(mutation: 보기 모드면 승인 창)
+      // D007-1: 확인 대기 — 남은 시간(1초 갱신, 주황) + 주 단추 "승인(유지)". 확인은 기존 경로(mutation: 보기 모드면 승인 창)
       if (p.state === "Applied" && p.confirm_deadline && p.id === cardPolicyId) {
         row.append(el("span", "muted", "위 카드에서 유지/되돌리기"));
       } else if (p.state === "Applied" && p.confirm_deadline) {
@@ -175,7 +175,7 @@ export function policy(): HTMLElement {
         const t = window.setInterval(tick, 1000);
         tick();
         root.addEventListener("screen-leave", () => window.clearInterval(t));
-        row.append(left, button("유지(확인)", async () => {
+        row.append(left, button("승인(유지)", async () => {
           const r2 = await mutation("policy.confirm", { policy_id: p.id, version: p.version });
           if (!r2.ok) out.replaceChildren(errorBox(`확인 실패: ${r2.error.message}`));
           void refreshList();
@@ -185,7 +185,7 @@ export function policy(): HTMLElement {
       // 검수 38-4: 위 카드가 확인을 기다리는 동안에는 같은 동작을 줄에 또 두지 않는다
       if (p.state !== "RolledBack" && p.state !== "Expired" && p.id !== cardPolicyId) {
         row.append(
-          button("일시 중지", async () => { await mutation("policy.pause", { policy_id: p.id }); void refreshList(); }, "btn small"),
+          button("일시 정지", async () => { await mutation("policy.pause", { policy_id: p.id }); void refreshList(); }, "btn small"),
           button("되돌리기", async () => { await mutation("policy.rollback", { policy_id: p.id }); void refreshList(); }, "btn small"),
         );
       }
@@ -197,7 +197,7 @@ export function policy(): HTMLElement {
         list.append(crow);
       }
     }
-    // D036: 해제될 주소 차단이 무엇인지 — "주소 차단 (N)" 소단락: 주소 · 만든 곳 · 만료 · 줄마다 해제. 모두 해제는 그 끝(빨간 테두리)
+    // D036: 해제될 주소 차단이 무엇인지 — "주소 차단 필터 (N)" 소단락: 주소 · 만든 곳 · 만료 · 줄마다 해제. 모두 해제는 그 끝(빨간 테두리)
     const nBlocks = r.result.address_blocks;
     const items = r.result.address_block_items ?? [];
     if (items.length) {
@@ -213,7 +213,7 @@ export function policy(): HTMLElement {
     }
     // 파괴적 동작: 소단락 끝 오른쪽, 빨간 테두리(승인 창 경유는 그대로, 승인 창에도 주소 목록). D032-3: 지울 것이 있을 때만(예전 서비스면 수를 몰라 보인다)
     if (showReleaseAll(nBlocks)) {
-      const rel = button(nBlocks ? `주소 차단 ${nBlocks}건 모두 해제` : "주소 차단 모두 해제", async () => { await mutation("policy.release_address_blocks", { policy_id: 0 }); void refreshList(); }, "btn small danger-outline");
+      const rel = button(nBlocks ? `주소 차단 ${nBlocks}건 모두 해제` : "주소 차단 필터 모두 해제", async () => { await mutation("policy.release_address_blocks", { policy_id: 0 }); void refreshList(); }, "btn small danger-outline");
       list.append(el("div", "actions", el("span", "spacer"), rel));
     }
   };
@@ -221,10 +221,10 @@ export function policy(): HTMLElement {
   // 고급 — YAML 직접 편집(기본 닫힘)
   const adv = el("details", "advanced");
   adv.append(
-    el("summary", undefined, "고급 — YAML 직접 편집"),
-    el("div", "editor", ta, el("div", "actions", button("검증", () => void validate()), button("적용", () => void apply(), "btn primary"))),
+    el("summary", undefined, "고급 — 정책 DSL(YAML) 편집"),
+    el("div", "editor", ta, el("div", "actions", button("구문 검증", () => void validate()), button("적용", () => void apply(), "btn primary"))),
   );
-  root.append(acl.root, out, pending, el("h2", undefined, "정책 기록"), list, adv);
+  root.append(acl.root, out, pending, el("h2", undefined, "정책 변경 이력"), list, adv);
   void refreshList();
   state.onNotify(root, (n) => {
     const k = String(n.params["kind"] ?? "");
@@ -233,7 +233,7 @@ export function policy(): HTMLElement {
   return root;
 }
 
-/// D032-3: "주소 차단 모두 해제"는 지울 것이 있을 때만. 수를 모르면(예전 서비스) 보인다
+/// D032-3: "주소 차단 필터 모두 해제"는 지울 것이 있을 때만. 수를 모르면(예전 서비스) 보인다
 export function showReleaseAll(n: number | undefined): boolean {
   return n == null || n > 0;
 }

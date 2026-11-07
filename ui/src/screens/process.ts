@@ -1,3 +1,4 @@
+import { ACT } from "../terms";
 import { rpc } from "../rpc";
 import { el, ext, clear, button, fmtShortSec, fmtHms, filetimeToUnix } from "../ui";
 import { fileName } from "../sanitize";
@@ -46,7 +47,7 @@ export function isPackagePath(path?: string | null): boolean {
 export function sigText(s: Detail["signature"], path?: string | null): { text: string; ok: boolean; unknown?: boolean } {
   const st = s?.sig_status ?? "";
   if (!s || !st) return { text: "확인 전", ok: false };
-  if (st === "valid") return { text: s.signer ?? "유효한 서명", ok: true };
+  if (st === "valid") return { text: s.signer ?? "서명 유효", ok: true };
   if (st === "nosignature" && isPackagePath(path)) return { text: "확인 못 함(패키지 앱 서명 확인 미지원)", ok: false, unknown: true };
   if (st === "nosignature") return { text: "없음", ok: false };
   if (st.startsWith("untrusted:bad_digest")) return { text: "파일 내용과 서명이 맞지 않음", ok: false };
@@ -59,7 +60,7 @@ export function placeKind(path: string): string {
   const p = path.toLowerCase().replace(/\//g, "\\");
   if (/^[a-z]:\\windows\\/.test(p)) return "Windows 폴더";
   if (/^[a-z]:\\program files( \(x86\))?\\/.test(p)) return "Program Files";
-  if (/\\users\\[^\\]+\\(appdata|downloads|desktop|documents)\\/.test(p) || /\\temp\\/.test(p) || /^[a-z]:\\users\\public\\/.test(p)) return "누구나 쓸 수 있는 폴더";
+  if (/\\users\\[^\\]+\\(appdata|downloads|desktop|documents)\\/.test(p) || /\\temp\\/.test(p) || /^[a-z]:\\users\\public\\/.test(p)) return "사용자 쓰기 가능 경로";
   return "그 밖의 폴더";
 }
 
@@ -107,7 +108,7 @@ export function processPanel(nodeId: number): HTMLElement {
   const load = async () => {
     const r = await rpc<Detail>("process.detail", { node_id: nodeId, max_depth: 8 });
     clear(root);
-    if (!r.ok) return root.append(failBox(r.error, () => void load(), "프로그램 정보"));
+    if (!r.ok) return root.append(failBox(r.error, () => void load(), "프로세스 정보"));
     const d = r.result;
     // 1. 머리
     const head = el("div", "pd-head");
@@ -119,8 +120,8 @@ export function processPanel(nodeId: number): HTMLElement {
       acts.append(button("인시던트 보기", () => state.go("story", { root: sr })));
       // D027-3: 판정이 있을 때만 조치 — 이야기 카드와 같은 규칙·같은 대화상자(그 카드로 가서 연다). 승인 창 경유 그대로
       acts.append(d.core
-        ? button("이 접속지만 차단…", () => state.go("story", { root: sr, cut: true }), "btn danger-outline")
-        : button("여기서부터 끊기…", () => state.go("story", { root: sr, cut: true }), "btn danger-outline"));
+        ? button(ACT.cutAddrOnly, () => state.go("story", { root: sr, cut: true }), "btn danger-outline")
+        : button(ACT.cut, () => state.go("story", { root: sr, cut: true }), "btn danger-outline"));
     }
     head.append(title, acts);
     root.append(head);
@@ -132,13 +133,13 @@ export function processPanel(nodeId: number): HTMLElement {
     const sigBox = el("div", "pd-box", el("div", "muted small", "서명"), el("div", sig.ok ? "name-wrap" : sig.unknown ? "muted name-wrap" : "warn name-wrap", ext("span", sig.text)));
     // D028-2: 서명자·발급자·조직명은 낱말 단위로 줄바꿈(숫자 중간에서 끊지 않는다). 경로·주소만 아무 데서나
     if (d.signature?.issuer) sigBox.append(el("div", "muted small", "발급자"), ext("div", d.signature.issuer, "name-wrap"));
-    const orgBox = el("div", "pd-box", el("div", "muted small", "출신 (파일 표시 MOTW)"));
+    const orgBox = el("div", "pd-box", el("div", "muted small", "출처(MOTW)"));
     if (d.origin?.host_url || d.origin?.referrer_url) {
-      orgBox.append(el("div", "warn", "인터넷에서 받은 파일"));
-      if (d.origin.host_url) orgBox.append(el("div", "muted small", "받은 주소"), el("div", undefined, copyable(d.origin.host_url)));
-      if (d.origin.referrer_url) orgBox.append(el("div", "muted small", "보던 페이지"), el("div", undefined, copyable(d.origin.referrer_url)));
+      orgBox.append(el("div", "warn", "인터넷 출처(MOTW Zone 3·4)"));
+      if (d.origin.host_url) orgBox.append(el("div", "muted small", "다운로드 URL"), el("div", undefined, copyable(d.origin.host_url)));
+      if (d.origin.referrer_url) orgBox.append(el("div", "muted small", "참조 URL(Referrer)"), el("div", undefined, copyable(d.origin.referrer_url)));
     } else {
-      orgBox.append(el("div", undefined, "파일 표시 없음(인터넷에서 받았는지 알 수 없음)"));
+      orgBox.append(el("div", undefined, "MOTW 없음(인터넷 출처 여부 불명)"));
     }
     root.append(el("div", "pd-two", sigBox, orgBox));
     // 3. 어디서 왔나: 오래된 쪽 → 자신
@@ -149,20 +150,20 @@ export function processPanel(nodeId: number): HTMLElement {
     const realStart = !!first && first.node.kind === "process" && ROOT_PROCS.has((first.node.label || "").toLowerCase());
     if (!realStart) chain.append(el("span", "chip none", "… 기록 없음(수집 시작 전)"), el("span", "muted", " → "));
     for (const s of steps) {
-      const lb = s.node.label || "알 수 없는 프로그램";
+      const lb = s.node.label || "미확인 프로세스";
       chain.append(ext("span", s.node.kind === "file" ? `파일 ${lb}` : lb, s.node.kind === "process" ? "chip process" : "chip file"));
       chain.append(el("span", "muted", ` → ${REL_KO[s.via?.rel ?? ""] ?? s.via?.rel ?? ""} `));
     }
     chain.append(ext("span", fileName(d.image), "chip process center"));
-    root.append(el("h4", undefined, "어디서 왔나"), chain);
+    root.append(el("h4", undefined, "출처(Provenance)"), chain);
     // 4. 한 일 = 탭
     const tabs: [string, Related[], boolean][] = [
-      ["접속", d.connections, true],
-      ["실행한 프로그램", d.children, false],
-      ["만든 파일", d.files_written, false],
-      ["자동 실행", d.autoruns, false],
+      ["네트워크 연결", d.connections, true],
+      ["자식 프로세스", d.children, false],
+      ["생성 파일", d.files_written, false],
+      ["지속성 등록", d.autoruns, false],
       ["코드 주입", d.injected, false],
-      ["받은 연결", d.inbound ?? [], true],
+      ["인바운드 연결", d.inbound ?? [], true],
     ];
     const bar = el("div", "seg pd-tabs");
     const body = el("div", "pd-tab-body");
@@ -182,7 +183,7 @@ export function processPanel(nodeId: number): HTMLElement {
       const table = el("table", "grid pd-table");
       const draw = () => {
         clear(table);
-        table.append(el("tr", undefined, el("th", undefined, "시각"), el("th", undefined, isNet ? "접속지" : "대상"), ...(isNet ? [el("th", undefined, "어디")] : [])));
+        table.append(el("tr", undefined, el("th", undefined, "시각"), el("th", undefined, isNet ? "원격지" : "대상"), ...(isNet ? [el("th", undefined, "어디")] : [])));
         for (const x of sorted.slice(0, shown)) {
           const tr = el("tr", undefined, el("td", "muted", fmtHms(filetimeToUnix(x.ts))), el("td", undefined, ext("span", x.label || x.key)));
           if (isNet) tr.append(whereCell(x.where ?? null));
@@ -197,7 +198,7 @@ export function processPanel(nodeId: number): HTMLElement {
       body.append(table);
     };
     paint();
-    root.append(el("h4", undefined, "한 일"), bar, body);
+    root.append(el("h4", undefined, "행위"), bar, body);
   };
   void load();
   return root;

@@ -45,8 +45,8 @@ export function realtimeText(r: boolean | null): string {
 /// 구간 원인 → 사람 말(단정하지 않는다)
 export function gapReason(r?: string): string {
   if (r === "no_record") return "알 수 없음 (서비스 정지 또는 절전)";
-  if (r === "store_failed") return "기록 저장 실패";
-  if (r === "channel_full") return "처리 과부하로 일부 버림";
+  if (r === "store_failed") return "이벤트 저장 실패";
+  if (r === "channel_full") return "처리 과부하로 일부 이벤트 폐기";
   return "알 수 없음";
 }
 
@@ -82,27 +82,27 @@ export function diagnostics(): HTMLElement {
       copy.push(`${k}: ${plain}`);
     };
     // 1. 수집
-    body.append(el("h3", undefined, "수집"));
+    body.append(el("h3", undefined, "텔레메트리 수집"));
     if (!h.ok) {
-      body.append(failBox(h.error, () => void load(), "수집 상태"));
+      body.append(failBox(h.error, () => void load(), "텔레메트리 상태"));
     } else {
       const x = h.result;
       const lastSec = x.last_event_ft ? Math.max(0, x.now - filetimeToUnix(x.last_event_ft)) : null;
       const st = collectionStalled(x) ? `기록이 멈췄을 수 있습니다 · 마지막 사건 ${lastSec == null ? "없음" : `${lastSec}초 전`}` : `기록 중 · 마지막 사건 ${lastSec}초 전`;
       row("상태", el("span", collectionStalled(x) ? "warn" : undefined, st), st);
-      row("빠진 기록 (최근 24시간)", `${x.lost_24h}건`, `${x.lost_24h}건`);
+      row("손실 이벤트 (최근 24시간)", `${x.lost_24h}건`, `${x.lost_24h}건`);
       const nr = x.gaps_24h.filter((g) => g.reason === "no_record");
-      row("기록 없는 구간 (최근 24시간)", `${nr.length}곳`, `${nr.length}곳`);
+      row("수집 공백 구간 (최근 24시간)", `${nr.length}곳`, `${nr.length}곳`);
       const clocks = x.clock_changes_24h.map((t) => fmtShort(t)).join(", ");
       row("PC 시계 변경", clocks || "없음", clocks || "없음");
       if (x.gaps_24h.length) {
         const t = el("table", "grid diag-gaps");
-        t.append(el("tr", undefined, el("th", undefined, "구간"), el("th", undefined, "길이"), el("th", undefined, "원인"), el("th", undefined, "그 구간에 시작한 프로그램")));
+        t.append(el("tr", undefined, el("th", undefined, "구간"), el("th", undefined, "길이"), el("th", undefined, "원인"), el("th", undefined, "공백 중 시작된 프로세스")));
         const items = ev.ok ? ev.result.items : [];
         for (const g of x.gaps_24h) {
           const progs = el("td");
           for (const s of items.filter((s) => s.started_in_gap && s.started_in_gap[0] === g.from_ts)) {
-            const a = el("a", undefined, "이야기 보기 ›");
+            const a = el("a", undefined, "인시던트 보기 ›");
             a.href = "#";
             a.addEventListener("click", (e) => { e.preventDefault(); state.go("story", { root: s.root }); });
             progs.append(ext("span", s.title.replace(/^\[[^\]]*\]\s*/, "").split(" — ")[0] ?? s.title), " ", a, " ");
@@ -139,7 +139,7 @@ export function diagnostics(): HTMLElement {
     const geo = built ? `DB-IP Lite · 기준일 ${new Date(built * 1000).toISOString().slice(0, 10)}` : "설치 안 됨";
     row("IP 국가·ASN 데이터", geo, geo);
     const rt = ret.ok ? retentionText(ret.result).replace(/^보관: /, "") : "";
-    if (rt) row("기록 보관", rt, rt);
+    if (rt) row("데이터 보관", rt, rt);
     // 27차: 마지막 보관 정리(서비스가 1시간마다). 결과 숫자만
     const last = ret.ok ? (ret.result.last as { at?: number; ms?: number; ok?: boolean; raw_deleted?: number; edges_compacted?: number; phases?: Record<string, number> } | null | undefined) : null;
     // D033-2: 화면은 사용자 말·초 단위, "진단 정보 복사"에는 원래 값(ms)
@@ -155,7 +155,7 @@ export function diagnostics(): HTMLElement {
     const cl = h.ok ? h.result.cmdline : null;
     if (cl) {
       const t = cmdlineText(cl);
-      row("복구 도구 명령줄 수집", el("span", t.warn ? "warn" : undefined, t.text), JSON.stringify(cl));
+      row("복구 도구(vssadmin 등) 명령줄 수집", el("span", t.warn ? "warn" : undefined, t.text), JSON.stringify(cl));
     }
     // 2-b. Windows 기본 보호(10판 5-9 (3)) — 설정 값만. Defender 는 경쟁이 아니라 이야기의 재료
     const df = h.ok ? h.result.defender : null;
@@ -191,17 +191,17 @@ export function secText(ms: number): string {
 
 /// D040-2: 처리 시간 표의 일 이름(사람 말). 엔진 일("엔진: …")과 모르는 이름은 그대로
 const TIMING_KO: Record<string, string> = {
-  "story.events": "이야기 목록",
-  "story.today": "오늘 한 일",
+  "story.events": "인시던트 목록",
+  "story.today": "활동 타임라인",
   "story.explain": "근거 보기",
   "connections.list": "연결 목록",
-  "listeners.list": "듣는 포트 목록",
-  "collector.health": "수집 상태",
+  "listeners.list": "리스닝 포트 목록",
+  "collector.health": "텔레메트리 상태",
   "policy.list": "정책 목록",
   "service.events": "서비스 사건",
   "events.subscribe": "실시간 알림 연결",
   "connections.subscribe": "실시간 연결 알림",
-  "process.detail": "프로그램 상세",
+  "process.detail": "프로세스 상세",
   "graph.neighbors": "마인드맵",
   "retention.get": "보관 설정",
   "settings.get": "설정",

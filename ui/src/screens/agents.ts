@@ -1,6 +1,6 @@
 // AI 도구 화면 (AI 에이전트 감시, 기획서 14판 20-5): AI 도구 실행 한 번마다 실행한 명령·프로그램·접속한 곳·만든 파일을 카드로.
 // 판정하지 않는다 — 사실의 개수와 목록만. 카드 모양은 설치 화면과 같다(installs.ts buildCard).
-// 화면 검수(2026-11-06): 도구별로 묶고, 한 일이 없는 실행은 개수만, 잘린 숫자는 "이상", 목록 상한 안내, 범위 "최근 24시간".
+// 화면 검수(2026-11-06): 도구별로 묶고, 한 일이 없는 실행은 개수만, 잘린 숫자는 "이상 징후", 목록 상한 안내, 범위 "최근 24시간".
 import { rpc } from "../rpc";
 import { el, ext, clear } from "../ui";
 import { loadingBox, failBox, noDataBox, collectionStalled, type HealthLike } from "../list-state";
@@ -25,7 +25,7 @@ function runCard(a: AgentRun): HTMLElement {
 
 export function agents(): HTMLElement {
   const root = el("section", "screen");
-  root.append(el("h1", undefined, "AI 도구"));
+  root.append(el("h1", undefined, "AI 에이전트"));
   const range = el("select");
   for (const d of AGENT_DAYS) {
     const o = el("option", undefined, agentRangeLabel(d));

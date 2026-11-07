@@ -87,7 +87,7 @@ export async function runScenario(page, outDir, must, opts = {}) {
   await page.fill("textarea.yaml", "- name: dns-test\n  action: block\n  match: { direction: out, remote_port: [53], process: ['C:/a/b.exe'] }\n");
   await page.click(".editor >> text=적용");
   await page.waitForSelector("dialog.ack[open]", { timeout: 10000 });
-  await page.click("dialog.ack >> text=확인하고 적용");
+  await page.click("dialog.ack >> text=검토 후 적용");
   if (viaApproval) {
     await page.waitForSelector(".card.approval", { timeout: 15000 });
     must((await page.textContent(".card.approval")).includes("유지됨"), "policy needs_ack round-trip then approval helper");

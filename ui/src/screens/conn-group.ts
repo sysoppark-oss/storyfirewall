@@ -33,7 +33,7 @@ export interface Group<T> {
 }
 
 const SCOPE_SHORT: Record<string, string> = {
-  loopback: "이 PC", private: "로컬망", link_local: "로컬망", multicast: "멀티캐스트", broadcast: "브로드캐스트",
+  loopback: "로컬 호스트", private: "사설망(LAN)", link_local: "링크로컬", multicast: "멀티캐스트", broadcast: "브로드캐스트",
   cgnat: "통신사 NAT", documentation: "문서용 주소", unspecified: "지정 안 됨",
 };
 const base = (p: string) => p.split(/[\\/]/).pop() ?? p;
@@ -42,10 +42,10 @@ function keyOf(c: ConnLike, mode: GroupMode): { key: string; title: string; bott
   const w = c.where;
   if (mode === "program") return { key: `p:${c.image}`, title: base(c.image), bottom: false };
   if (mode === "country") {
-    if (!w || w.scope !== "public") return { key: "local", title: "로컬망 · 특수 주소", bottom: true };
+    if (!w || w.scope !== "public") return { key: "local", title: "사설망 · 특수 주소", bottom: true };
     return w.cc ? { key: `c:${w.cc}`, title: w.country ?? w.cc, bottom: false } : { key: "c:?", title: "국가 정보 없음", bottom: true };
   }
-  if (!w || w.scope !== "public") return { key: "local", title: "로컬망 · 멀티캐스트", bottom: true };
+  if (!w || w.scope !== "public") return { key: "local", title: "사설망 · 멀티캐스트", bottom: true };
   if (w.asn == null) return { key: "o:?", title: "조직 정보 없음", bottom: true };
   return { key: `o:${w.asn}`, title: w.org ?? `AS${w.asn}`, bottom: false };
 }
@@ -70,12 +70,12 @@ export function groupConns<T extends ConnLike>(items: T[], mode: GroupMode): Gro
   for (const g of m.values()) {
     const remotes = new Set(g.items.map((c) => c.remote_id)).size;
     const asn = g.items[0]?.where?.asn;
-    g.sub = mode === "org" && asn != null && !g.bottom ? `AS${asn} · 원격 ${remotes}곳` : `원격 ${remotes}곳`;
+    g.sub = mode === "org" && asn != null && !g.bottom ? `AS${asn} · 원격지 ${remotes}곳` : `원격지 ${remotes}곳`;
     // D010-3: 공인 주소가 아니면 국가 대신 주소 종류 이름("로컬망 외 1"). 대시(—)는 값 없음에만
     // D020-5: 여러 곳이면 접속이 가장 많은 곳을 앞에(그 나라 국기) + "외 N"
     const placeCount = new Map<string, { n: number; cc: string | null }>();
     for (const c of g.items) {
-      const name = c.where && c.where.scope !== "public" ? SCOPE_SHORT[c.where.scope] ?? "로컬망" : c.where?.country;
+      const name = c.where && c.where.scope !== "public" ? SCOPE_SHORT[c.where.scope] ?? "사설망" : c.where?.country;
       if (!name) continue;
       const cur = placeCount.get(name) ?? { n: 0, cc: c.where && c.where.scope === "public" && c.where.cc && !REGION_CODES.has(c.where.cc) ? c.where.cc : null };
       cur.n += c.count;
@@ -106,10 +106,10 @@ export function offMapLine(items: ConnLike[], label: "지도" | "막대" = "지�
   const m = new Map<string, number>();
   for (const c of items) {
     const w = c.where;
-    const k = !w || w.scope !== "public" ? "로컬망" : w.cc && REGION_CODES.has(w.cc) ? REGION_LABEL[w.cc]! : null;
+    const k = !w || w.scope !== "public" ? "사설망" : w.cc && REGION_CODES.has(w.cc) ? REGION_LABEL[w.cc]! : null;
     if (k) m.set(k, (m.get(k) ?? 0) + c.count);
   }
-  const order = ["지정 안 됨", "유럽(나라 미상)", "아시아·태평양(나라 미상)", "로컬망"];
+  const order = ["지정 안 됨", "유럽(나라 미상)", "아시아·태평양(나라 미상)", "사설망"];
   const parts = order.filter((k) => (m.get(k) ?? 0) > 0).map((k) => `${k} ${m.get(k)}`);
   return parts.length ? `${label}에 없는 주소: ${parts.join(" · ")}` : "";
 }

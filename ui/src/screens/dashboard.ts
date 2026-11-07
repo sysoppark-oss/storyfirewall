@@ -127,7 +127,7 @@ export function healthLine(h: Health, onMore: () => void, gapStart?: { n: number
   const box = el("div", bad ? "health bad" : "health");
   box.append(el("span", "dot"));
   if (gapWarn) {
-    const a = el("a", "lead", `기록 없는 구간에 시작한 프로그램 ${gapStart!.n}개 — 이야기 보기 ›`);
+    const a = el("a", "lead", `기록 없는 구간에 시작한 프로그램 ${gapStart!.n}개 — 인시던트 보기 ›`);
     a.href = "#";
     a.addEventListener("click", (e) => { e.preventDefault(); gapStart!.open(); });
     box.append(a);
@@ -256,7 +256,7 @@ export function dashboard(): HTMLElement {
     if (!runs.length) inst.append(el("li", "muted", ir.ok ? "오늘 설치·새 프로그램 기록 없음" : "불러오지 못함"));
     const instMore = button("설치 화면에서 자세히", () => state.go("installs", {}), "btn small");
     grid.append(q("PC 안에서 새로 생긴 것", "list", el("p", "q-lead", `설치 기록 ${runs.length}건`),
-      el("div", "muted small", "설치 프로그램으로 묶인 것만 셉니다. 따로 내려받아 실행한 파일은 위 '지금 봐야 할 것'과 이야기에서 봅니다."), inst, el("div", "q-more", instMore)));
+      el("div", "muted small", "설치 프로그램으로 묶인 것만 셉니다. 따로 내려받아 실행한 파일은 인시던트에서 봅니다."), inst, el("div", "q-more", instMore)));
     where.append(grid);
 
     // 시간대별 접속(오늘) + 어디와 통신했나 — 2026-11-07: 막대 → 영역 그래프 두 겹(전체 접속·의심 사건)
@@ -420,7 +420,7 @@ export function dashboard(): HTMLElement {
     // D013: 불러오지 못하면 숫자 대신 "—" + 주황 "불러오지 못함"
     // D015-1: 기록이 멈췄으면 0 은 믿을 수 없는 숫자 — 초록 0 대신 회색 "—"
     const susBody = !ev.ok
-      ? cardFail(ev.error, "처리 안 한 의심 사건")
+      ? cardFail(ev.error, "미조치 인시던트")
       : stalledNow && !sus.length
         ? el("div", undefined, el("div", "big muted", "—"), el("div", "warn small", "기록이 없어 셀 수 없음"))
         : el("div", undefined, el("div", "big " + (sus.length ? "bad" : "ok"), String(groups.length)));
@@ -561,9 +561,9 @@ export function dashboard(): HTMLElement {
     } else {
       // D013: 오류 / 수집 안 됨 / 비어 있음을 가른다. "조용합니다"는 응답이 성공했고 수집이 돌 때만
       const st = listState(ev, hr.ok ? hr.result : null);
-      if (st === "error" && !ev.ok) body.append(failBox(ev.error, () => void refresh(), "의심 사건 목록"));
+      if (st === "error" && !ev.ok) body.append(failBox(ev.error, () => void refresh(), "인시던트 목록"));
       else if (st === "nodata") body.append(noDataBox(() => state.go("settings", {})));
-      else body.append(el("p", "muted", "오늘은 조용합니다. 의심스러운 이야기가 없습니다."), checkedLine(hr.ok ? hr.result : null));
+      else body.append(el("p", "muted", "오늘은 조용합니다. 미조치 인시던트가 없습니다."), checkedLine(hr.ok ? hr.result : null));
     }
     clear(foot);
     if (protBox) foot.append(protBox);
