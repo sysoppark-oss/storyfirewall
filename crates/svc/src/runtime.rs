@@ -121,6 +121,8 @@ pub struct World<'a> {
     pub last_learn_wall: i64,
     /// 알림 보낸 사건 (뿌리 → 마지막 장). 장이 올라갈 때만 다시 알린다
     pub notified: HashMap<i64, i64>,
+    /// 파괴 행위 자동 대응을 판정한 사건(뿌리) — 한 사건은 한 번만(개편안 2판 4-2)
+    pub auto_seen: std::collections::HashSet<i64>,
     /// OS 부품: 리스닝 포트, 프로세스 종료 (NoHost 면 사건만 남긴다)
     pub host: Box<dyn Host>,
     /// 승인 대기 중인 맡긴 변경 (A23)
@@ -283,6 +285,7 @@ impl Runtime {
                     // L047(시작 직후 엔진을 7.4초 잡음): 마지막 학습 시각을 DB 에 남겨, 재시작마다 다시 배우지 않는다(하루 1회 그대로)
                     last_learn_wall: last_learn,
                     notified: HashMap::new(),
+                    auto_seen: Default::default(),
                     host,
                     changes: Default::default(),
                     clock_changes: Vec::new(),
@@ -921,6 +924,12 @@ pub fn judge_and_notify(world: &mut World) {
             world.notified.insert(s.root, ch);
             world.notify(api::methods::NOTIFY_EVENT, serde_json::json!({"kind": "story_suspicious", "severity": 2, "root": s.root, "label": s.root_label, "chapter": ch, "score": s.score}));
         }
+    }
+    // 개편안 2판 4-2: 파괴 행위 자동 대응(설정이 켜졌을 때만, 5장 사건만)
+    let t = std::time::Instant::now();
+    let n = crate::auto_respond::run_after_judge(world, &stories);
+    if n > 0 {
+        world.timings.record("엔진: 파괴 행위 자동 대응", t.elapsed());
     }
 }
 

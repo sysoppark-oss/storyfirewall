@@ -71,7 +71,8 @@ export function settings(): HTMLElement {
     out.replaceChildren(ok ? el("div", "ok", `연결됨: 서버 ${state.serverVersion}`) : errorBox(state.lastError));
   });
   const save = button("저장", async () => {
-    const r = await mutation<{ ok: boolean; policies?: ApplyReply[] }>("settings.set", { voice: voice.value, first_run_watch: frMode.value, first_run_minutes: Number(frMin.value) });
+    const allow = adAllow.value.split(",").map((x) => x.trim()).filter(Boolean);
+    const r = await mutation<{ ok: boolean; policies?: ApplyReply[] }>("settings.set", { voice: voice.value, first_run_watch: frMode.value, first_run_minutes: Number(frMin.value), auto_destroy_response: adBox.checked, auto_destroy_allow_signers: allow });
     if (!r.ok) return out.replaceChildren(errorBox(r.error.message));
     out.replaceChildren(el("div", "ok", "저장됨"));
     // 막기를 고르면 관찰실 차단 정책(우산)이 생긴다: 승인 창을 거쳤으면 그 결과, 직접 실행이면 60초 확인
@@ -137,6 +138,14 @@ export function settings(): HTMLElement {
   toastBox.type = "checkbox";
   toastBox.checked = storyToast();
   toastBox.addEventListener("change", () => void setStoryToast(toastBox.checked));
+  // 개편안 2판 4-2: 파괴 행위 자동 대응(VM 검증 전까지 기본 끔). 바꾸기는 settings.set(관리자 승인 경로)
+  const adBox = el("input") as HTMLInputElement;
+  adBox.type = "checkbox";
+  adBox.disabled = true;
+  const adAllow = el("input") as HTMLInputElement;
+  adAllow.placeholder = "예: Acme Software, Veeam";
+  adAllow.disabled = true;
+  adAllow.style.width = "100%";
   const upLine = el("div", "update-line", el("label", undefined, upAuto, " 켤 때 새 판이 있는지 확인(기본)"), " ", upBtn, upNote);
   root.append(
     el("div", "form",
@@ -156,6 +165,10 @@ export function settings(): HTMLElement {
       frUmb,
       el("label", undefined, "관찰 기간 ", frMin),
       el("p", "muted", FIRST_RUN_MINUTES_SENTENCE),
+      el("h3", undefined, "파괴 행위 자동 대응"),
+      el("label", undefined, adBox, " 복구 수단 삭제(T1490) 명령을 서명 없는 프로그램이 실행하면 묻지 않고 끊기"),
+      el("p", "muted small", "조건: 명령이 vssadmin delete shadows · wmic shadowcopy delete · bcdedit recoveryenabled no · wbadmin delete catalog 등이고, 부모 사슬에 Microsoft 서명이나 아래 허용 서명자가 없을 때만. 원인 프로그램·자손 종료 + 경로 차단 + 접속지 24시간 차단. 핵심 프로세스(svchost·explorer)가 부모면 명령을 실행한 프로세스만 종료. 인시던트 카드의 [자동 대응 되돌리기]로 정책을 되돌립니다. 한계: ETW 는 사후 통지라 피해를 줄이는 것이지 막는 것이 아닙니다."),
+      el("label", undefined, "허용 서명자(쉼표로 구분, 앞부분 일치) ", adAllow),
       el("div", "actions", save)),
     out,
     // 33차 Gemini Q4: "신뢰하는 원격 제어 도구"(이 도구의 원격 세션 시작은 작은 알림). 표시는 대시보드 사건 줄에서, 지우기는 여기서
@@ -187,6 +200,11 @@ export function settings(): HTMLElement {
       frModeTip.textContent = firstRunSentence(fr.mode);
       frMin.value = String(fr.minutes);
       frUmb.textContent = umbrellaText(fr.mode, r.result["first_run_umbrella"]);
+      adBox.disabled = false;
+      adAllow.disabled = false;
+      adBox.checked = r.result["auto_destroy_response"] === true;
+      const al = r.result["auto_destroy_allow_signers"];
+      adAllow.value = Array.isArray(al) ? al.filter((x): x is string => typeof x === "string").join(", ") : "";
       const tt = r.result["remote_trusted_tools"];
       drawTrusted(Array.isArray(tt) ? tt.filter((x): x is string => typeof x === "string") : []);
     }

@@ -2123,3 +2123,62 @@ fn story_card_says_whether_root_process_is_running_now() {
     assert!(it["root_chain"]["children"].as_array().is_some(), "{it}");
     rt.shutdown();
 }
+
+/// 개편안 2판 4-2: 파괴 행위 자동 대응 — 설정이 켜져 있고 서명 없는 프로그램 → cmd → vssadmin delete shadows 면
+/// 묻지 않고 끊는다(정책 1건 바로 확정 + 종료), 사건은 조치함(끊음)·메모 auto:<id>:<ver>. 설정이 꺼져 있으면 아무것도 안 한다.
+#[test]
+fn auto_destroy_response_cuts_unsigned_origin_without_asking() {
+    let killed = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (rt, _wall, _) = boot_with(Some(Box::new(RecHost(killed.clone()))));
+    let mut a = Client::connect(&rt, 100, 1);
+    a.hello();
+    let t = svc::runtime::unix_to_filetime(T0) - 600 * 10_000_000;
+    let s = 10_000_000;
+    let mal = r"C:\Users\pjg\AppData\Local\Temp\x.exe";
+    let cmd = r"C:\Windows\System32\cmd.exe";
+    let vss = r"C:\Windows\System32\vssadmin.exe";
+    let ev = |ts: i64, source: &str, kind: EventKind| Event { ts, source: source.into(), kind };
+    let events = vec![
+        ev(t, "snapshot", EventKind::ProcessSnapshot { pid: 1000, ppid: 4, image: r"C:\Windows\explorer.exe".into(), create_time: t, services: vec![] }),
+        ev(t + s, "etw:process", EventKind::ProcessStart { pid: 4000, ppid: 1000, image: mal.into(), create_time: Some(t + s) }),
+        ev(t + s, "signature", EventKind::Signature { path: mal.into(), signer: None, issuer: None, status: "nosignature".into(), catalog: false }),
+        ev(t + 2 * s, "etw:process", EventKind::ProcessStart { pid: 4100, ppid: 4000, image: cmd.into(), create_time: Some(t + 2 * s) }),
+        ev(t + 3 * s, "etw:process", EventKind::ProcessStart { pid: 4200, ppid: 4100, image: vss.into(), create_time: Some(t + 3 * s) }),
+        ev(t + 3 * s, "etw:process", EventKind::ProcessCommand { proc: graph::event::ProcRef::new(4200, Some(t + 3 * s)), cmdline: "vssadmin delete shadows /all /quiet".into(), tool: None }),
+    ];
+    // 1) 설정 꺼짐(기본): 판정은 심각이지만 자동 대응 없음
+    rt.tx.send(Command::Ingest(events.clone())).unwrap();
+    rt.tx.send(Command::Judge).unwrap();
+    let v = a.call("story.events", serde_json::json!({"level_min": "suspicious"}));
+    let it = v["result"]["items"].as_array().unwrap().iter().find(|x| x["title"].as_str().unwrap_or("").contains("x.exe")).unwrap_or_else(|| panic!("{v}")).clone();
+    let root = it["root"].as_i64().unwrap();
+    assert!(killed.lock().unwrap().is_empty());
+    assert_eq!(a.call("policy.list", serde_json::json!({}))["result"]["items"].as_array().unwrap().len(), 0);
+    // 2) 켜면 다음 판정에서 끊는다
+    let v = a.call("settings.set", serde_json::json!({"request_id": UUID, "auto_destroy_response": true}));
+    assert_eq!(v["result"]["ok"], true, "{v}");
+    rt.tx.send(Command::Judge).unwrap();
+    let v = a.call("story.triage_log", serde_json::json!({"root": root}));
+    assert!(v["result"].is_object() || v["result"].is_array(), "{v}");
+    let v = a.call("story.events", serde_json::json!({"level_min": "suspicious", "triage": "all"}));
+    let it = v["result"]["items"].as_array().unwrap().iter().find(|x| x["root"].as_i64() == Some(root)).unwrap_or_else(|| panic!("{v}")).clone();
+    assert_eq!(it["triage"]["state"], "acted", "{it}");
+    assert_eq!(it["triage"]["action"], "cut", "{it}");
+    let note = it["triage"]["note"].as_str().unwrap_or("");
+    assert!(note.starts_with("auto:") && !note.starts_with("auto:0:"), "{it}");
+    // 정책 1건: 끊기 출처, 바로 확정
+    let v = a.call("policy.list", serde_json::json!({}));
+    let pols = v["result"]["items"].as_array().unwrap();
+    assert_eq!(pols.len(), 1, "{v}");
+    assert_eq!(pols[0]["state"], "Confirmed", "{v}");
+    // 종료: x.exe(4000)·cmd(4100)·vssadmin 은 시스템 경로라 제외될 수 있음 — 원인 프로그램은 반드시
+    let k = killed.lock().unwrap().clone();
+    assert!(k.iter().any(|(pid, _)| *pid == 4000), "{k:?}");
+    // 3) 같은 사건은 다시 하지 않는다
+    let n = k.len();
+    rt.tx.send(Command::Judge).unwrap();
+    let v = a.call("policy.list", serde_json::json!({}));
+    assert_eq!(v["result"]["items"].as_array().unwrap().len(), 1, "{v}");
+    assert_eq!(killed.lock().unwrap().len(), n);
+    rt.shutdown();
+}

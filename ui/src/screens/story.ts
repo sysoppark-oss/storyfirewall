@@ -107,6 +107,11 @@ export interface Triage {
 export interface TriageCounts { new: number; investigated: number; acted: number; closed: number }
 export const TRIAGE_STATE_KO: Record<TriageState, string> = TRIAGE_STATE;
 export const TRIAGE_ACTION_KO: Record<TriageAction, string> = TRIAGE_ACTION;
+/// 자동 대응 메모 `auto:<policy_id>:<version>` 풀기(개편안 2판 4-2)
+export function parseAutoNote(note: string | null | undefined): { policyId: number; version: number } | null {
+  const m = /^auto:(\d+):(\d+)$/.exec(note ?? "");
+  return m ? { policyId: Number(m[1]), version: Number(m[2]) } : null;
+}
 /// 상태 칩 글자: "조치함 · 지켜보기"처럼 조치 종류까지
 export function triageText(t: Triage | null | undefined): string {
   const st = t?.state ?? "new";
@@ -656,6 +661,21 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       if (st !== "closed") actions.append(closeBtn);
       if (normalBtn) actions.append(normalBtn);
       actions.append(cutBtn);
+      // 개편안 2판 4-2: 파괴 행위 자동 대응이 끊은 사건(메모 auto:<policy_id>:<version>) → [되돌리기] (정책 되돌리기 + 사건을 다시 염)
+      const auto = parseAutoNote(ev.triage?.note);
+      if (auto) {
+        const undo = button(ACT.undoAuto, async () => {
+          if (!confirm("자동 대응으로 넣은 차단 정책을 되돌리고 사건을 다시 엽니다. 종료된 프로세스는 돌아오지 않습니다.")) return;
+          if (auto.policyId > 0) {
+            const r = await mutation("policy.rollback", { policy_id: auto.policyId, version: auto.version });
+            if (!r.ok) return alert(`실패: ${r.error.message}`);
+          }
+          await triageSet("investigated");
+          undo.remove();
+        }, "btn");
+        undo.title = auto.policyId > 0 ? `자동 대응 정책 ${auto.policyId}:${auto.version} 을 되돌립니다` : "되돌릴 정책이 없습니다(종료만 했음) — 사건만 다시 엽니다";
+        actions.append(undo);
+      }
       card.append(actions);
       // D1: 안내 줄은 단추 줄 바로 아래 — 탭 패널이 열려도 떨어지지 않게
       const note = cardNote(!!ev.root_core, ev.feedback_ok === false, ev.feedback_note);

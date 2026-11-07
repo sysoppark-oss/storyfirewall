@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { triageText, triageCountsText, emptyText, cardNote, feedbackUnitText, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned, liveText, recommendText, chainKids, chainTitle, adjustForDestroy } from "./story";
+import { triageText, triageCountsText, emptyText, cardNote, feedbackUnitText, tableOnly, cmdlineText, FEEDBACK_NOT_YET, bareTitle, groupToday, sinceText, sortToday, subjectName, sinceOf, gapStartText, mergeItems, isWindowsSigned, liveText, recommendText, chainKids, chainTitle, adjustForDestroy, parseAutoNote } from "./story";
 import { hostOf, portOf, REL } from "./mindmap";
 // 그래프 관계 이름의 원본(Rust) — vite ?raw 로 글자 그대로 읽는다
 import graphLib from "../../../crates/graph/src/lib.rs?raw";
@@ -184,5 +184,15 @@ describe("프로세스에서 시작한 사건의 정상 처리 확인 문구", (
     expect(t).toContain("winword.exe → powershell.exe → (curl.exe)");
     expect(t).toContain("다시 의심");
     for (const w of ["추정", "악성", "랜섬"]) expect(t.includes(w)).toBe(false);
+  });
+});
+
+describe("parseAutoNote (개편안 2판 4-2 자동 대응 메모)", () => {
+  it("auto:<policy_id>:<version> 만 푼다", () => {
+    expect(parseAutoNote("auto:12:3")).toEqual({ policyId: 12, version: 3 });
+    expect(parseAutoNote("auto:0:0")).toEqual({ policyId: 0, version: 0 });
+    expect(parseAutoNote("사용자 메모")).toBeNull();
+    expect(parseAutoNote(undefined)).toBeNull();
+    expect(parseAutoNote("auto:x:1")).toBeNull();
   });
 });
