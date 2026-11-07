@@ -18,7 +18,7 @@ use std::cell::RefCell;
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
-use windows_sys::Win32::Graphics::Gdi::{CreateFontW, DeleteObject, IntersectRect, COLOR_WINDOW, HBRUSH, HFONT};
+use windows_sys::Win32::Graphics::Gdi::{CreateFontW, DeleteObject, GetSysColorBrush, IntersectRect, SetBkMode, SetTextColor, COLOR_WINDOW, HBRUSH, HDC, HFONT, TRANSPARENT};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
@@ -34,6 +34,9 @@ pub const ARM_MS: u32 = 1500;
 struct St {
     apply: HWND,
     note: HWND,
+    /// 회색으로 그릴 보조 글(바닥 줄·안내 줄)
+    muted: Vec<HWND>,
+    bold: HFONT,
     armed: bool,
     result: Option<bool>,
 }
@@ -101,6 +104,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             with(|s| {
                 s.armed = true;
                 EnableWindow(s.apply, 1);
+                // 켜지면 안내문을 지운다(가려짐 경고는 다시 눌렀을 때 새로 적힌다)
+                SetWindowTextW(s.note, w("").as_ptr());
             });
             0
         }
@@ -144,7 +149,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             DestroyWindow(hwnd);
             0
         }
+        // 읽기 전용 EDIT·STATIC 은 기본이 회색 바탕 → 창 바탕(흰색)과 같게. 보조 글은 회색 글자
+        WM_CTLCOLORSTATIC | WM_CTLCOLOREDIT => {
+            let hdc = wp as HDC;
+            let child = lp as HWND;
+            SetBkMode(hdc, TRANSPARENT as i32);
+            let muted = with(|s| s.muted.contains(&child)).unwrap_or(false);
+            if muted {
+                SetTextColor(hdc, 0x0080_726B); // #6B7280 (COLORREF 는 BGR)
+            }
+            GetSysColorBrush(COLOR_WINDOW) as LRESULT
+        }
         WM_DESTROY => {
+            with(|s| {
+                if !s.bold.is_null() {
+                    DeleteObject(s.bold as _);
+                }
+            });
             PostQuitMessage(0);
             0
         }
@@ -166,25 +187,60 @@ pub fn create(title: &str, text: &str, apply_label: &str, cancel_label: &str) ->
         wc.lpszClassName = cls.as_ptr();
         // 두 번째 창부터는 이미 등록됨(실패해도 됨)
         RegisterClassExW(&wc);
-        let (ww, wh) = (780, 600);
+        // 2026-11-07 다듬기(사용자 "이 창 좀 잘"): 내용 길이에 맞춰 창 높이를 정하고(빈 공간 없이), 첫 줄은 굵은 머리글,
+        // 본문은 테두리 없는 읽기 전용 상자, "요청한 프로그램" 은 회색 바닥 줄, 안내 줄에는 왜 '적용'이 잠깐 꺼져 있는지 적는다
+        let norm = text.replace("\r\n", "\n");
+        let (head, rest) = match norm.find("\n\n") {
+            Some(i) => (norm[..i].to_string(), norm[i + 2..].to_string()),
+            None => (String::new(), norm.clone()),
+        };
+        // 바닥 줄: 마지막 문단이 "요청한 프로그램:" 이면 본문에서 떼어 낸다
+        let (body_txt, foot) = match rest.rfind("\n\n요청한 프로그램:") {
+            Some(i) => (rest[..i].to_string(), rest[i + 2..].to_string()),
+            None => (rest.clone(), String::new()),
+        };
+        let line_h = 22;
+        let body_lines = body_txt.lines().count().max(1) as i32;
+        let body_h = (body_lines * line_h + 16).clamp(3 * line_h, 14 * line_h);
+        let need_scroll = body_lines * line_h + 16 > body_h;
+        let ww = 720;
+        let pad = 20;
+        let head_h = if head.is_empty() { 0 } else { 30 };
+        let foot_h = if foot.is_empty() { 0 } else { 24 };
+        // 머리글 + 본문 + 바닥 줄 + 안내 줄(40) + 단추 줄(60) + 여백
+        let wh = 36 + pad + head_h + 8 + body_h + 8 + foot_h + 8 + 40 + 60;
         let x = (GetSystemMetrics(SM_CXSCREEN) - ww) / 2;
         let y = (GetSystemMetrics(SM_CYSCREEN) - wh) / 2;
         let hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_DLGMODALFRAME, cls.as_ptr(), w(title).as_ptr(), WS_POPUP | WS_CAPTION | WS_SYSMENU, x, y, ww, wh, std::ptr::null_mut(), std::ptr::null_mut(), hinst, std::ptr::null());
-        // 맑은 고딕 (없으면 시스템이 대체)
+        // 맑은 고딕 (없으면 시스템이 대체). 머리글은 굵게
         let font = CreateFontW(-15, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, w("Malgun Gothic").as_ptr());
-        let child = |class: &str, txt: &str, style: u32, ex: u32, x: i32, y: i32, cw: i32, ch: i32, id: usize| -> HWND {
+        let bold = CreateFontW(-17, 0, 0, 0, 700, 0, 0, 0, 1, 0, 0, 5, 0, w("Malgun Gothic").as_ptr());
+        let child = |class: &str, txt: &str, style: u32, ex: u32, x: i32, y: i32, cw: i32, ch: i32, id: usize, f: HFONT| -> HWND {
             let h = CreateWindowExW(ex, w(class).as_ptr(), w(txt).as_ptr(), WS_CHILD | WS_VISIBLE | style, x, y, cw, ch, hwnd, id as _, hinst, std::ptr::null());
-            SendMessageW(h, WM_SETFONT, font as usize, 1);
+            SendMessageW(h, WM_SETFONT, f as usize, 1);
             h
         };
-        // 편집 상자는 CRLF 만 줄바꿈으로 본다
-        let body = text.replace("\r\n", "\n").replace('\n', "\r\n");
-        let edit_style = WS_VSCROLL | WS_TABSTOP | (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32;
-        child("EDIT", &body, edit_style, WS_EX_CLIENTEDGE, 12, 12, ww - 40, wh - 150, 10);
-        let note = child("STATIC", "", 0, 0, 12, wh - 132, ww - 40, 40, 11);
-        let apply = child("BUTTON", apply_label, WS_TABSTOP | WS_DISABLED | BS_PUSHBUTTON as u32, 0, ww - 270, wh - 84, 116, 34, ID_APPLY);
-        let cancel = child("BUTTON", cancel_label, WS_TABSTOP | BS_DEFPUSHBUTTON as u32, 0, ww - 146, wh - 84, 116, 34, ID_CANCEL);
-        ST.with(|s| *s.borrow_mut() = Some(St { apply, note, armed: false, result: None }));
+        let mut cy = pad;
+        if !head.is_empty() {
+            child("STATIC", &head, 0, 0, pad, cy, ww - 2 * pad - 16, head_h, 12, bold);
+            cy += head_h + 8;
+        }
+        // 편집 상자는 CRLF 만 줄바꿈으로 본다. 테두리 없이(창 배경과 같은 흰색), 넘칠 때만 세로 스크롤
+        let body = body_txt.replace('\n', "\r\n");
+        let edit_style = WS_TABSTOP | (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32 | if need_scroll { WS_VSCROLL } else { 0 };
+        child("EDIT", &body, edit_style, 0, pad, cy, ww - 2 * pad - 16, body_h, 10, font);
+        cy += body_h + 8;
+        let mut muted = Vec::new();
+        if !foot.is_empty() {
+            muted.push(child("STATIC", &foot, 0, 0, pad, cy, ww - 2 * pad - 16, foot_h, 13, font));
+            cy += foot_h + 8;
+        }
+        let note = child("STATIC", "'적용'은 이 창이 앞에 나온 뒤 잠시 후 켜집니다 — 가짜 창으로 덮어 클릭을 가로채는 공격을 막기 위해서입니다.", 0, 0, pad, cy, ww - 2 * pad - 16, 40, 11, font);
+        let by = wh - 36 - 60 + 10;
+        let apply = child("BUTTON", apply_label, WS_TABSTOP | WS_DISABLED | BS_PUSHBUTTON as u32, 0, ww - 16 - 2 * 120 - 8 - pad, by, 120, 36, ID_APPLY, font);
+        let cancel = child("BUTTON", cancel_label, WS_TABSTOP | BS_DEFPUSHBUTTON as u32, 0, ww - 16 - 120 - pad, by, 120, 36, ID_CANCEL, font);
+        muted.push(note);
+        ST.with(|s| *s.borrow_mut() = Some(St { apply, note, muted, bold, armed: false, result: None }));
         ShowWindow(hwnd, SW_SHOW);
         SetForegroundWindow(hwnd);
         SetFocus(cancel);
