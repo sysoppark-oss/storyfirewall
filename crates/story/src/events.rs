@@ -222,7 +222,7 @@ pub fn chapter_name(c: Chapter) -> &'static str {
         Chapter::Execute => "2장 실행",
         Chapter::Persist => "3장 자리잡기",
         Chapter::Egress => "4장 외부 접속",
-        Chapter::Destroy => "5장 파괴 징후",
+        Chapter::Destroy => "5장 파괴 행위",
     }
 }
 pub fn level_name(l: Level) -> &'static str {

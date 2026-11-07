@@ -364,6 +364,15 @@ if (mode === "nonadmin") {
   await page.screenshot({ path: path.join(outDir, "dashboard-narrow-700.png"), fullPage: false });
   const narrow = await page.evaluate(() => ({ hscroll: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1, kpiCols: getComputedStyle(document.querySelector(".kpi-row")).gridTemplateColumns.split(" ").length }));
   must(!narrow.hscroll && narrow.kpiCols === 4, `responsive: narrow(700) dashboard no hscroll, kpi still 4 cols (${JSON.stringify(narrow)})`);
+  // 인시던트·네트워크 화면도 좁은 창(660px, 실기기 확인)에서 가로로 넘치지 않아야 한다
+  await page.setViewportSize({ width: 660, height: 900 });
+  for (const key of ["story", "connections"]) {
+    await page.click(`button.nav-btn[data-key=${key}]`);
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: path.join(outDir, `${key}-narrow-660.png`), fullPage: false });
+    const ov = await page.evaluate(() => { const m = document.querySelector(".main"); return { hscroll: m.scrollWidth > m.clientWidth + 1, over: [...m.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > m.getBoundingClientRect().right + 1).slice(0, 5).map((e) => e.className || e.tagName) }; });
+    must(!ov.hscroll, `responsive: ${key} 660px no horizontal overflow (${JSON.stringify(ov)})`);
+  }
   // 898px(노트북 창 1122px·125%): 큰 화면과 같은 배치여야 한다
   await page.setViewportSize({ width: 898, height: 760 });
   await page.waitForTimeout(300);

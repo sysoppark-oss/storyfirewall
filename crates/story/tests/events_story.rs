@@ -195,7 +195,7 @@ fn payload_story_in_three_voices() {
     assert_eq!(p.level, Level::Suspicious);
     assert!(
         p.title
-            .starts_with("[의심] payload.exe — 4장 외부 접속까지 진행"),
+            .starts_with("[높음] payload.exe — 4장 외부 접속까지 진행"),
         "{}",
         p.title
     );
@@ -633,11 +633,11 @@ fn recovery_inhibit_story_states_command_as_fact() {
     let bl = Baseline::open(&store, T0 + 24 * 3600 * SEC).unwrap();
     let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
     assert_eq!(stories.len(), 1);
-    assert_eq!(stories[0].level, Level::Suspicious);
+    assert_eq!(stories[0].level, Level::Critical);
     for voice in [Voice::Plain, Voice::Expert] {
         let n = story::narrate(&store, &stories, voice).unwrap();
         let n = &n[0];
-        assert!(n.title.contains("5장 파괴 징후"), "{}", n.title);
+        assert!(n.title.contains("5장 파괴 행위"), "{}", n.title);
         assert_eq!(n.reached, vec![2, 5]);
         let ex = n
             .items

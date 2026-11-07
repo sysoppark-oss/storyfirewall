@@ -457,7 +457,7 @@ fn ingest_judge_story_events_and_suspicious_notification() {
     assert!(items[0]["title"]
         .as_str()
         .unwrap()
-        .starts_with("[의심] payload.exe"));
+        .starts_with("[높음] payload.exe"));
     assert!(v["result"]["next"].is_null(), "사건 1건이라 다음 쪽 없음");
     // 실시간 1: 주인공이 지금 실행 중인지. 시험 호스트(NoHost)는 살아 있는 프로세스를 모른다 → 실행 중 아님
     assert_eq!(items[0]["root_live"]["running"], serde_json::json!(false), "{v}");
@@ -1723,7 +1723,7 @@ fn recovery_inhibit_story_and_process_root_feedback_is_refused() {
         .find(|x| x["title"].as_str().unwrap_or("").contains("vssadmin.exe"))
         .unwrap_or_else(|| panic!("{v}"));
     assert!(
-        it["title"].as_str().unwrap().contains("5장 파괴 징후"),
+        it["title"].as_str().unwrap().contains("5장 파괴 행위"),
         "{it}"
     );
     assert_eq!(it["feedback_ok"], serde_json::json!(false));

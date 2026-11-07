@@ -1,4 +1,4 @@
-import { STAGE_NAMES_4, TRIAGE_STATE, TRIAGE_ACTION, ACT, LEVEL, isHigh } from "../terms";
+import { STAGES, STAGE_NAMES_4, TRIAGE_STATE, TRIAGE_ACTION, ACT, LEVEL, isHigh } from "../terms";
 import { mutation, rpc, uuid, type RpcResult, type RpcError } from "../rpc";
 import { approvalBox, countdown, type ApplyReply } from "../confirm";
 import { fileName } from "../sanitize";
@@ -832,7 +832,7 @@ export function feedbackUnitText(unit: string): string {
 export const FEEDBACK_NOT_YET = "이 종류의 사건(프로그램이 실행 중에 시작한 사건)은 아직 '정상'으로 표시하는 기능이 없습니다.";
 /// D043-1: 4칸 막대 바로 아래 한 줄 — 왼쪽 빨간 띠 + [파괴 징후] 글자 칩 + 사실 문장 · 시각
 export function destroyLine(d: { sentence: string; ts: number }): HTMLElement {
-  return el("div", "destroy-line", el("span", "chip destroy", "파괴 징후"), " ", el("span", undefined, `${d.sentence} · ${fmtShort(filetimeToUnix(d.ts))}`));
+  return el("div", "destroy-line", el("span", "chip destroy", STAGES[4].name), " ", el("span", undefined, `${d.sentence} · ${fmtShort(filetimeToUnix(d.ts))}`));
 }
 /// 명령줄 원문 한 줄(외부 문자열 — 텍스트 노드). 80자 넘으면 말줄임, 툴팁에 전체, "복사"
 export function cmdlineText(cmd: string, max = 80): string {
@@ -870,13 +870,13 @@ export interface Investigation {
 /// 파괴 징후(5장)가 있는 사건은 조사로 정상 모양이 확인되지 않은 한 "끊기"를 권한다(검수 2026-11-07: vssadmin 복원 지점 삭제에 "보고 정하세요"가 나옴)
 export function adjustForDestroy(v: Investigation, destroy: boolean): Investigation {
   if (!destroy || v.verdict === "known_normal") return v;
-  return { ...v, verdict: "risky", recommend: "cut", reason: "복구 수단을 지우는 명령(파괴 징후)이 실행됐고, 알려진 정상 모양으로 확인되지 않았습니다." };
+  return { ...v, verdict: "risky", recommend: "cut", reason: "복구 수단을 지우는 명령(파괴 행위)이 실행됐고, 알려진 정상 모양으로 확인되지 않았습니다." };
 }
 
 /// 결론 칸 사실: 지금 상태는 카드 머리 줄에 있으니 빼고(검수: 두 번 나옴), 파괴 징후 명령줄은 맨 앞에(직접 근거)
 export function conclusionFacts(v: Investigation, destroyCmd: string | null): Investigation {
   const facts = v.facts.filter((f) => f.label !== "지금 상태");
-  if (destroyCmd && !facts.some((f) => f.label === "명령줄")) facts.unshift({ label: "명령줄(파괴 징후)", value: destroyCmd, ok: false });
+  if (destroyCmd && !facts.some((f) => f.label === "명령줄")) facts.unshift({ label: "명령줄(파괴 행위)", value: destroyCmd, ok: false });
   return { ...v, facts };
 }
 
