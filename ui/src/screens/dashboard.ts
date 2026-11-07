@@ -10,7 +10,7 @@ import { buildCard } from "./installs";
 import type { InstallRun } from "./installs-text";
 import { LEDGER_SCOPE, LEDGER_PROXY_NOTE, ledgerSummary } from "./first-run";
 import { bars, type ConnLike } from "./conn-group";
-import { icon, sparkline, areaChart, hourlyCounts, donut, chapterReach, type Tone } from "./dash-viz";
+import { icon, sparkline, dualChart, hourlyCounts, donut, chapterReach, type Tone } from "./dash-viz";
 import { STAGES, TRIAGE_STATE, LEVEL, isHigh } from "../terms";
 import { flagPath } from "./connections";
 import { overview, type DashConn, type DashListener } from "./dash-overview";
@@ -150,7 +150,8 @@ export function dashboard(): HTMLElement {
   root.append(strip, status, viz, body, where);
   let ovGen = 0;
   // 영역 그래프의 의심 사건 시각(unix 초) — refresh 가 채우고 drawOverview 가 읽는다
-  let susTs: number[] = [];
+  let critTs: number[] = [];
+  let highTs: number[] = [];
   // 수준별 수(의심·주의)와 4장 도달 수 — refresh 가 채운다(평범은 story.events 기본 수준에 안 들어와 세지 않는다)
   let levelN = { critical: 0, suspicious: 0, watch: 0 };
   let reach = [0, 0, 0, 0];
@@ -226,16 +227,16 @@ export function dashboard(): HTMLElement {
     where.append(grid);
 
     // 시간대별 접속(오늘) + 어디와 통신했나 — 2026-11-07: 막대 → 영역 그래프 두 겹(전체 접속·의심 사건)
-    const hours = el("section", "card hour-card", el("h3", undefined, "접속 · 인시던트 추이 (오늘)"));
+    // 개편안 2판 1-4: 이중 축 — 트래픽(송신·수신, 왼쪽 축) + 인시던트 마커(심각·높음, 오른쪽 축). 한 축에 접속 수와 사건 수를 겹치던 왜곡을 없앤다
+    const hours = el("section", "card hour-card", el("h3", undefined, "트래픽 · 인시던트 추이 (오늘)"));
     const nowH = new Date().getHours();
-    const susHourly = hourlyCounts(susTs, Date.now() / 1000);
+    const nowSec = Date.now() / 1000;
+    const critHourly = hourlyCounts(critTs, nowSec);
+    const highHourly = hourlyCounts(highTs, nowSec);
     const maxH = Math.max(...o.hourly);
-    const legend = el("div", "chart-legend", el("span", "lg conn", "전체 접속"), el("span", "lg sus", "의심 사건"));
-    hours.append(legend, areaChart([
-      { name: "전체 접속", values: o.hourly, cls: "s-conn" },
-      { name: "의심 사건", values: susHourly, cls: "s-sus" },
-    ], nowH));
-    hours.append(el("p", "muted small", maxH ? `가장 많은 시간 ${maxH}건 · 묶인 접속 기록의 마지막 접속 시각 기준` : "오늘 접속 기록이 없습니다."));
+    const legend = el("div", "chart-legend", el("span", "lg recv", "수신"), el("span", "lg sent", "송신"), el("span", "lg crit", LEVEL.critical), el("span", "lg high", LEVEL.suspicious));
+    hours.append(legend, dualChart({ sent: o.hourlySent, recv: o.hourlyRecv, critical: critHourly, high: highHourly }, nowH));
+    hours.append(el("p", "muted small", maxH ? `왼쪽 축 바이트 · 오른쪽 축 인시던트 건수 · 접속 ${maxH}건이 가장 많은 시간 · 마지막 접속 시각 기준` : "오늘 접속 기록이 없습니다."));
     const whereCard = el("section", "card where-dash", el("h3", undefined, "오늘 어디와 통신했나"));
     const cols = el("div", "where-dash-cols");
     for (const [by, title] of [["country", "나라별 (접속 수)"], ["org", "망(조직)별 (접속 수)"]] as const) {
@@ -314,7 +315,10 @@ export function dashboard(): HTMLElement {
     const staleN = all.length - sus.length;
     // D020-2·3: 같은 프로그램·같은 판정은 한 줄로, 최신이 위. 숫자는 묶은 뒤 개수(보조 줄에 사건 수)
     const groups = groupStories(sus);
-    susTs = sus.map((x) => x.last_ts || x.sentences.find((y) => y.ts)?.ts || 0).filter((t) => t > 0).map((t) => filetimeToUnix(t));
+    const tsOf = (xs: StoryEvent[]) => xs.map((x) => x.last_ts || x.sentences.find((y) => y.ts)?.ts || 0).filter((t) => t > 0).map((t) => filetimeToUnix(t));
+    critTs = tsOf(sus.filter((s) => s.level.toLowerCase() === "critical"));
+    highTs = tsOf(sus.filter((s) => s.level.toLowerCase() !== "critical"));
+    const susTs = [...critTs, ...highTs];
     const critN = sus.filter((s) => s.level.toLowerCase() === "critical").length;
     levelN = { critical: critN, suspicious: sus.length - critN, watch: watchFresh.length };
     reach = chapterReach([...sus, ...watchFresh].map((x) => x.reached ?? []));

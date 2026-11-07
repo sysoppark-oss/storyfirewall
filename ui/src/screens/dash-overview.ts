@@ -41,6 +41,9 @@ export interface Overview {
   exposed: DashListener[];
   topPrograms: { name: string; sent: number; recv: number; remotes: number }[];
   hourly: number[];
+  /// 시간대별 송신·수신 바이트(마지막 접속 시각 기준, 개편안 2판 1-4 이중 축 그래프)
+  hourlySent: number[];
+  hourlyRecv: number[];
 }
 
 /// 오늘 연결 기록 → 대시보드 숫자. 시간대 막대는 "마지막 접속 시각" 기준(묶인 기록이라 처음~마지막 사이 분포는 모른다)
@@ -52,6 +55,8 @@ export function overview(conns: DashConn[], listeners: DashListener[], nowSec: n
   const newCc = new Set<string>();
   let sent = 0, recv = 0, inbound = 0;
   const hourly = new Array<number>(24).fill(0);
+  const hourlySent = new Array<number>(24).fill(0);
+  const hourlyRecv = new Array<number>(24).fill(0);
   const dayStart = (() => { const d = new Date(nowSec * 1000); d.setHours(0, 0, 0, 0); return d.getTime() / 1000; })();
   for (const c of conns) {
     remotes.add(c.remote_id);
@@ -67,7 +72,12 @@ export function overview(conns: DashConn[], listeners: DashListener[], nowSec: n
     if (c.new_asn && c.where?.org) newOrgs.add(c.where.org);
     if (c.new_cc && c.where?.cc) newCc.add(c.where.cc);
     const t = c.last_ft > 0 ? c.last_ft / 10_000_000 - 11_644_473_600 : 0;
-    if (t >= dayStart && t <= nowSec + 60) hourly[new Date(t * 1000).getHours()]! += c.count;
+    if (t >= dayStart && t <= nowSec + 60) {
+      const hh = new Date(t * 1000).getHours();
+      hourly[hh]! += c.count;
+      hourlySent[hh]! += c.sent;
+      hourlyRecv[hh]! += c.recv;
+    }
   }
   const topPrograms = [...progs.values()]
     .map((p) => ({ name: p.name, sent: p.sent, recv: p.recv, remotes: p.remotes.size }))
@@ -91,5 +101,7 @@ export function overview(conns: DashConn[], listeners: DashListener[], nowSec: n
     exposed,
     topPrograms,
     hourly,
+    hourlySent,
+    hourlyRecv,
   };
 }

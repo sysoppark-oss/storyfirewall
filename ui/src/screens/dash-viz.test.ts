@@ -22,3 +22,14 @@ describe("축 눈금 숫자", () => {
     expect(axisNum(20)).toBe("20");
   });
 });
+
+import { bytesAxis } from "./dash-viz";
+describe("바이트 축 눈금", () => {
+  it("단위를 붙여 짧게", () => {
+    expect(bytesAxis(0)).toBe("0B");
+    expect(bytesAxis(1536)).toBe("2KB");
+    expect(bytesAxis(1.5 * 1024 * 1024)).toBe("1.5MB");
+    expect(bytesAxis(142 * 1024 * 1024)).toBe("142MB");
+    expect(bytesAxis(1.2 * 1024 ** 3)).toBe("1.2GB");
+  });
+});

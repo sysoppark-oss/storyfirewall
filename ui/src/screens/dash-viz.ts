@@ -190,3 +190,92 @@ export function chapterReach(reached: number[][]): number[] {
   for (const r of reached) for (const ch of r) if (ch >= 1 && ch <= 4) out[ch - 1]! += 1;
   return out;
 }
+
+/// 개편안 2판 1-4: 이중 축 그래프 — 왼쪽 트래픽(송신·수신 바이트, 반투명 면적), 오른쪽 인시던트 건수(세로 마커: 심각 빨강·높음 주황)
+export interface DualInput {
+  sent: number[];
+  recv: number[];
+  critical: number[];
+  high: number[];
+}
+export function bytesAxis(v: number): string {
+  if (v >= 1024 ** 3) return `${(v / 1024 ** 3).toFixed(1)}GB`;
+  if (v >= 1024 ** 2) return `${(v / 1024 ** 2).toFixed(v >= 10 * 1024 ** 2 ? 0 : 1)}MB`;
+  if (v >= 1024) return `${Math.round(v / 1024)}KB`;
+  return `${Math.round(v)}B`;
+}
+export function dualChart(d: DualInput, nowHour: number, w = 720, h = 170): SVGElement {
+  const L = 44, R = 30, T = 10, B = 22;
+  const s = document.createElementNS(NS, "svg");
+  s.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  s.setAttribute("class", "area-chart dual-chart");
+  s.setAttribute("role", "img");
+  s.setAttribute("aria-label", "트래픽(송신·수신)과 인시던트 24시간 추이");
+  const maxB = Math.max(1, ...d.sent, ...d.recv);
+  const maxI = Math.max(1, ...d.critical.map((c, i) => c + (d.high[i] ?? 0)));
+  const x = (i: number) => L + (i / 23) * (w - L - R);
+  const yB = (v: number) => T + (h - T - B) * (1 - v / maxB);
+  const yI = (v: number) => T + (h - T - B) * (1 - v / maxI);
+  const text = (tx: number, ty: number, anchor: string, label: string, cls = "ax") => {
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", tx.toFixed(1)); t.setAttribute("y", ty.toFixed(1));
+    t.setAttribute("class", cls); t.setAttribute("text-anchor", anchor);
+    t.textContent = label;
+    return t;
+  };
+  for (const f of [0, 0.5, 1]) {
+    const g = document.createElementNS(NS, "line");
+    g.setAttribute("x1", String(L)); g.setAttribute("x2", String(w - R));
+    g.setAttribute("y1", yB(maxB * f).toFixed(1)); g.setAttribute("y2", yB(maxB * f).toFixed(1));
+    g.setAttribute("class", "grid");
+    s.append(g, text(L - 4, yB(maxB * f) + 3, "end", bytesAxis(maxB * f)));
+    // 오른쪽 축: 인시던트 건수(정수만)
+    const iv = Math.round(maxI * f);
+    if (f === 0 || iv > 0) s.append(text(w - R + 4, yI(iv) + 3, "start", String(iv), "ax ax-right"));
+  }
+  for (let hh = 0; hh <= 23; hh += 6) s.append(text(x(hh), h - 6, "middle", `${hh}시`));
+  const last = Math.max(0, Math.min(23, nowHour));
+  for (const [vals, cls] of [[d.recv, "s-recv"], [d.sent, "s-sent"]] as const) {
+    const pts = vals.slice(0, last + 1).map((v, i) => `${x(i).toFixed(1)} ${yB(v).toFixed(1)}`);
+    if (pts.length < 2) continue;
+    const area = document.createElementNS(NS, "path");
+    area.setAttribute("d", `M${pts[0]} L${pts.join(" L")} L${x(last).toFixed(1)} ${yB(0).toFixed(1)} L${x(0).toFixed(1)} ${yB(0).toFixed(1)} Z`);
+    area.setAttribute("class", `area ${cls}`);
+    const line = document.createElementNS(NS, "path");
+    line.setAttribute("d", `M${pts[0]} L${pts.join(" L")}`);
+    line.setAttribute("class", `line ${cls}`);
+    s.append(area, line);
+  }
+  // 인시던트 마커: 높음 위에 심각을 쌓은 가는 기둥
+  const bw = Math.max(3, (w - L - R) / 23 * 0.28);
+  for (let i = 0; i <= last; i++) {
+    const hi = d.high[i] ?? 0, cr = d.critical[i] ?? 0;
+    if (!hi && !cr) continue;
+    const mk = (from: number, to: number, cls: string) => {
+      const r = document.createElementNS(NS, "rect");
+      r.setAttribute("x", (x(i) - bw / 2).toFixed(1)); r.setAttribute("y", yI(to).toFixed(1));
+      r.setAttribute("width", bw.toFixed(1)); r.setAttribute("height", Math.max(1, yI(from) - yI(to)).toFixed(1));
+      r.setAttribute("rx", "1.5"); r.setAttribute("class", `mark ${cls}`);
+      s.append(r);
+    };
+    if (hi) mk(0, hi, "m-high");
+    if (cr) mk(hi, hi + cr, "m-crit");
+  }
+  const now = document.createElementNS(NS, "line");
+  now.setAttribute("x1", x(last).toFixed(1)); now.setAttribute("x2", x(last).toFixed(1));
+  now.setAttribute("y1", String(T)); now.setAttribute("y2", String(h - B));
+  now.setAttribute("class", "now");
+  s.append(now);
+  for (let i = 0; i <= last; i++) {
+    const r = document.createElementNS(NS, "rect");
+    const half = (w - L - R) / 23 / 2;
+    r.setAttribute("x", (x(i) - half).toFixed(1)); r.setAttribute("y", String(T));
+    r.setAttribute("width", (half * 2).toFixed(1)); r.setAttribute("height", String(h - T - B));
+    r.setAttribute("fill", "transparent");
+    const title = document.createElementNS(NS, "title");
+    title.textContent = `${i}시 · 송신 ${bytesAxis(d.sent[i] ?? 0)} · 수신 ${bytesAxis(d.recv[i] ?? 0)} · 심각 ${d.critical[i] ?? 0} · 높음 ${d.high[i] ?? 0}`;
+    r.append(title);
+    s.append(r);
+  }
+  return s;
+}
