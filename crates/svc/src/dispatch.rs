@@ -1542,7 +1542,7 @@ fn handle(
                 .traffic_hourly(since_unix)
                 .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
             j(serde_json::json!({
-                "items": rows.into_iter().map(|(h, s, r, c)| serde_json::json!({ "hour": h, "sent": s, "recv": r, "conns": c })).collect::<Vec<_>>()
+                "items": rows.into_iter().map(|(h, s, r, c, b, l)| serde_json::json!({ "hour": h, "sent": s, "recv": r, "conns": c, "blocked": b, "blocked_lost": l })).collect::<Vec<_>>()
             }))
         }
         Method::ListenersList => {

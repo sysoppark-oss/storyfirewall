@@ -85,11 +85,61 @@ enum SubKind {
     Filter,
     SubLayer,
     Provider,
+    /// 차단 사건(CLASSIFY_DROP) 구독 — 개편안 2판 1-2②
+    NetEvent,
 }
 
 pub struct Engine {
     h: HANDLE,
     subs: Vec<(SubKind, HANDLE)>,
+    /// 차단 사건 콜백에 넘긴 싱크(Box 를 raw 로 들고 있다가 Drop 에서 되찾아 해제)
+    drop_sink: Option<*mut DropSink>,
+}
+
+/// 차단 사건 콜백이 호출하는 싱크. BFE 스레드에서 불리므로 가볍게(채널에 밀기만) 끝내야 한다
+pub type DropSink = Box<dyn Fn(DropEvent) + Send + Sync>;
+
+/// FWPM_NET_EVENT2 → DropEvent (CLASSIFY_DROP 만, 루프백 제외). 그 밖은 None
+unsafe fn drop_event_from(e: &FWPM_NET_EVENT2) -> Option<DropEvent> {
+    if e.r#type != FWPM_NET_EVENT_TYPE_CLASSIFY_DROP {
+        return None;
+    }
+    let d = &*e.Anonymous.classifyDrop;
+    if d.isLoopback != 0 {
+        return None;
+    }
+    let h = &e.header;
+    let ts = ((h.timeStamp.dwHighDateTime as i64) << 32) | h.timeStamp.dwLowDateTime as i64;
+    let remote_v4 = if h.flags & FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET != 0 && h.ipVersion == FWP_IP_VERSION_V4 {
+        Some(std::net::Ipv4Addr::from(h.Anonymous2.remoteAddrV4))
+    } else {
+        None
+    };
+    let app_id = if h.flags & FWPM_NET_EVENT_FLAG_APP_ID_SET != 0 && h.appId.size >= 2 && !h.appId.data.is_null() {
+        let u16s = std::slice::from_raw_parts(h.appId.data as *const u16, (h.appId.size / 2) as usize);
+        String::from_utf16_lossy(u16s).trim_end_matches('\0').to_string()
+    } else {
+        String::new()
+    };
+    Some(DropEvent {
+        ts,
+        filter_id: d.filterId,
+        layer_id: d.layerId,
+        protocol: h.ipProtocol,
+        remote_v4,
+        remote_port: if h.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET != 0 { h.remotePort } else { 0 },
+        app_id,
+    })
+}
+
+unsafe extern "system" fn on_net_event(context: *mut core::ffi::c_void, event: *const FWPM_NET_EVENT2) {
+    if context.is_null() || event.is_null() {
+        return;
+    }
+    let sink = &*(context as *const DropSink);
+    if let Some(ev) = drop_event_from(&*event) {
+        sink(ev);
+    }
 }
 
 /// 삭제 알림 (콜백 → 메인). 콜백은 BFE 스레드에서 오므로 전역 큐에 넣는다.
@@ -157,6 +207,7 @@ impl Engine {
         Ok(Self {
             h,
             subs: Vec::new(),
+            drop_sink: None,
         })
     }
 
@@ -659,6 +710,24 @@ impl Engine {
         )
     }
 
+    /// 차단 사건 구독(개편안 2판 1-2②, 42차 Q1): BFE 가 CLASSIFY_DROP 마다 `sink` 를 부른다(BFE 스레드).
+    /// 감사 정책은 필요 없다 — FWPM_ENGINE_COLLECT_NET_EVENTS(기본 1)만 켜져 있으면 된다. 엔진이 살아 있는 동안 유효
+    pub fn subscribe_drops(&mut self, sink: DropSink) -> Result<()> {
+        self.enable_net_events()?;
+        let mut sub: FWPM_NET_EVENT_SUBSCRIPTION0 = unsafe { std::mem::zeroed() };
+        sub.enumTemplate = std::ptr::null_mut(); // 전부(종류는 콜백에서 거른다)
+        let ctx = Box::into_raw(Box::new(sink));
+        let mut eh: HANDLE = std::ptr::null_mut();
+        let rc = unsafe { FwpmNetEventSubscribe1(self.h, &sub, Some(on_net_event), ctx as *const _, &mut eh) };
+        if rc != 0 {
+            unsafe { drop(Box::from_raw(ctx)) };
+            return Err(PolicyError::Wfp(rc, "FwpmNetEventSubscribe1"));
+        }
+        self.subs.push((SubKind::NetEvent, eh));
+        self.drop_sink = Some(ctx);
+        Ok(())
+    }
+
     /// since(FILETIME) 이후의 CLASSIFY_DROP 이벤트, 최대 200건 (5차 검증 Q5)
     pub fn drops_since(&self, since: i64) -> Result<Vec<DropEvent>> {
         let mut tmpl: FWPM_NET_EVENT_ENUM_TEMPLATE0 = unsafe { std::mem::zeroed() };
@@ -758,10 +827,15 @@ impl Drop for Engine {
                     SubKind::Filter => FwpmFilterUnsubscribeChanges0(self.h, s),
                     SubKind::SubLayer => FwpmSubLayerUnsubscribeChanges0(self.h, s),
                     SubKind::Provider => FwpmProviderUnsubscribeChanges0(self.h, s),
+                    SubKind::NetEvent => FwpmNetEventUnsubscribe0(self.h, s),
                 }
             };
         }
         unsafe { FwpmEngineClose0(self.h) };
+        // 구독을 끊은 뒤에야 싱크를 해제한다(콜백이 더 오지 않음)
+        if let Some(p) = self.drop_sink.take() {
+            unsafe { drop(Box::from_raw(p)) };
+        }
     }
 }
 

@@ -87,6 +87,9 @@ impl Store {
         conn.execute_batch(crate::views::GAP_DDL)?;
         // A20 이행: origins.sha256 / sha256_ts
         let _ = conn.execute("ALTER TABLE origins ADD COLUMN sha256 TEXT", []);
+        // 개편안 2판 1-2②: 시간대별 차단 통신 수(우리 필터가 막은 것)와 집계 채널이 넘쳐 못 센 수
+        let _ = conn.execute("ALTER TABLE traffic_hourly ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0", []);
+        let _ = conn.execute("ALTER TABLE traffic_hourly ADD COLUMN blocked_lost INTEGER NOT NULL DEFAULT 0", []);
         let _ = conn.execute("ALTER TABLE origins ADD COLUMN sha256_ts INTEGER", []);
         conn.execute(
             "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?1)",
@@ -367,10 +370,19 @@ impl Store {
         )?;
         Ok(())
     }
-    /// `since_unix` 이후 시간대별 요약(hour 오름차순). 조회 경로는 이 작은 표만 읽는다
-    pub fn traffic_hourly(&self, since_unix: i64) -> Result<Vec<(i64, i64, i64, i64)>> {
-        let mut st = self.conn.prepare("SELECT hour, sent, recv, conns FROM traffic_hourly WHERE hour >= ?1 ORDER BY hour")?;
-        let rows = st.query_map(params![since_unix - since_unix.rem_euclid(3600)], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+    /// 차단 통신 수 더하기(hour 는 unix 초 시 단위, 집계 스레드가 10초마다 부른다)
+    pub fn add_blocked_hour(&self, hour_unix: i64, blocked: u64, lost: u64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO traffic_hourly(hour, blocked, blocked_lost) VALUES (?1, ?2, ?3)
+             ON CONFLICT(hour) DO UPDATE SET blocked = blocked + excluded.blocked, blocked_lost = blocked_lost + excluded.blocked_lost",
+            params![hour_unix - hour_unix.rem_euclid(3600), blocked as i64, lost as i64],
+        )?;
+        Ok(())
+    }
+    /// `since_unix` 이후 시간대별 요약(hour 오름차순): (hour, sent, recv, conns, blocked, blocked_lost). 조회 경로는 이 작은 표만 읽는다
+    pub fn traffic_hourly(&self, since_unix: i64) -> Result<Vec<(i64, i64, i64, i64, i64, i64)>> {
+        let mut st = self.conn.prepare("SELECT hour, sent, recv, conns, blocked, blocked_lost FROM traffic_hourly WHERE hour >= ?1 ORDER BY hour")?;
+        let rows = st.query_map(params![since_unix - since_unix.rem_euclid(3600)], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?;
         rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
     }
     /// 보관 정리: 오래된 시간대 요약 삭제

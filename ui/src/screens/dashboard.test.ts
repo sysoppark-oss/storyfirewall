@@ -34,3 +34,13 @@ describe("hourlyFromSummary", () => {
     expect(r.sent.reduce((a, b) => a + b, 0)).toBe(10);
   });
 });
+
+describe("hourlyFromSummary — 차단 통신", () => {
+  it("시간대별 차단 수를 모으고 유실은 합산한다", () => {
+    const now = new Date(2026, 10, 7, 12, 30).getTime() / 1000;
+    const h9 = new Date(2026, 10, 7, 9).getTime() / 1000;
+    const h11 = new Date(2026, 10, 7, 11).getTime() / 1000;
+    const r = hourlyFromSummary([{ hour: h9, sent: 0, recv: 0, conns: 0, blocked: 3, blocked_lost: 1 }, { hour: h11, sent: 0, recv: 0, conns: 0, blocked: 2, blocked_lost: 4 }], now);
+    expect(r.blocked[9]).toBe(3); expect(r.blocked[11]).toBe(2); expect(r.lost).toBe(5);
+  });
+});

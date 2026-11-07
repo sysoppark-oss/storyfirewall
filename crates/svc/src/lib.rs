@@ -11,6 +11,7 @@
 //! OS 를 만지는 부분은 트레이트 뒤에: `Transport`(줄 읽기·쓰기·클라이언트 PID), `Authn`(서명·관리자 검사),
 //! 수집기는 `Event` 채널. Linux 에서는 가짜로 통합 테스트.
 
+pub mod blocked;
 pub mod change;
 pub mod cut;
 /// 10판 5-9 (3): 제어된 폴더 액세스(CFA)·Defender 실시간 보호 설정 값(진단)

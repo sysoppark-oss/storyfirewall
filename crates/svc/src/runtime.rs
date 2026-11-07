@@ -173,6 +173,8 @@ pub struct World<'a> {
     pub agent_cache: Option<(i64, Vec<graph::agent::AgentRun>)>,
     /// 37차 Q2: 지난번 본 (별칭, LUID) 짝. 바뀌면 인터페이스 조건 규칙을 지금 LUID 로 다시 건다. None = 아직 못 봄
     pub if_seen: Option<Vec<(String, u64)>>,
+    /// 개편안 2판 1-2②: 우리 WFP 필터 id 집합 — 차단 집계 스레드와 공유, 주기 판정마다 갱신
+    pub our_filters: crate::blocked::OurFilters,
     /// 갈래 C: 증분 주기 판정기(메모리 뷰·사슬 캐시). 결과는 전체 판정과 같다(judge 시험).
     /// 30번에 한 번·보관 정리 뒤·기준선 학습 뒤·"정상" 피드백 뒤·오류 뒤에는 전체를 다시 읽는다.
     /// SF_JUDGE_INCREMENTAL=0 이면 매번 전체(현장에서 되돌리기용)
@@ -182,6 +184,8 @@ pub struct World<'a> {
 pub struct Runtime {
     pub tx: Sender<Command>,
     handle: Option<JoinHandle<()>>,
+    /// 차단 집계 스레드가 참조하는 우리 필터 집합(엔진 스레드가 채움)
+    pub our_filters: crate::blocked::OurFilters,
 }
 
 pub use crate::host::{Host, NoHost};
@@ -213,6 +217,8 @@ impl Runtime {
         server_version: &str,
         host: Option<Box<dyn Host>>,
     ) -> Runtime {
+        let our_filters: crate::blocked::OurFilters = Default::default();
+        let our_filters_thread = our_filters.clone();
         let host: Box<dyn Host> = host.unwrap_or_else(|| Box::new(NoHost));
         let (tx, rx) = mpsc::channel::<Command>();
         let ver = server_version.to_string();
@@ -294,6 +300,7 @@ impl Runtime {
                     remote: Default::default(),
                     agent_cache: None,
                     if_seen: None,
+                    our_filters: our_filters_thread.clone(),
                 };
                 crate::first_run::ensure_table(&world.graph);
                 crate::triage::ensure_table(&world.graph);
@@ -313,6 +320,7 @@ impl Runtime {
         Runtime {
             tx,
             handle: Some(handle),
+            our_filters,
         }
     }
 
@@ -478,6 +486,7 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                 let tj = std::time::Instant::now();
                 judge_and_notify(world);
                 world.timings.record("엔진: 주기 판정", tj.elapsed());
+                refresh_our_filters(world);
                 // L069(32차 검수 4): 설치 목록 미리 계산 — 조회 때 계산하지 않는다(2초 원칙)
                 if world.engine_wall() - world.last_install_wall >= 60 {
                     world.last_install_wall = world.engine_wall();
@@ -748,6 +757,18 @@ fn process_start(
 /// ② 이미 알린 뒤에는 장이 올라갈 때만
 pub fn should_notify(prev: Option<i64>, level: judge::Level, chapter: i64) -> bool {
     matches!(level, judge::Level::Suspicious | judge::Level::Critical) && chapter > prev.unwrap_or(0)
+}
+
+/// 우리 WFP 필터 id 집합을 차단 집계 스레드와 맞춘다(엔진 장부 기준, 주기 판정마다)
+fn refresh_our_filters(world: &mut World) {
+    if let Ok(rows) = world.engine.store.all_filters() {
+        let set: std::collections::HashSet<u64> = rows.iter().map(|r| r.filter_id).collect();
+        if let Ok(mut g) = world.our_filters.write() {
+            if *g != set {
+                *g = set;
+            }
+        }
+    }
 }
 
 /// 보관 정리 주기(초)

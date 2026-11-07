@@ -301,6 +301,36 @@ const SVC_VERSION: &str = match option_env!("SF_VERSION") {
                 None
             }
         };
+        // 개편안 2판 1-2②: 차단 통신 집계 — WFP CLASSIFY_DROP 구독(감사 정책 불필요) → 채널 → 집계 스레드 → traffic_hourly.blocked
+        {
+            let (sink, rx, lost) = svc::blocked::channel();
+            let ours = rt.our_filters.clone();
+            let db = dir.join("graph.db").to_string_lossy().into_owned();
+            let log2 = log.clone();
+            std::thread::spawn(move || svc::blocked::run(rx, lost, ours, db, move |s| log2.w(s)));
+            let log3 = log.clone();
+            std::thread::spawn(move || {
+                // 구독용 엔진 세션은 이 스레드가 평생 들고 있는다(끊기면 1분 뒤 다시 연다)
+                loop {
+                    match policy::wfp::Engine::open() {
+                        Ok(mut eng) => {
+                            let s = sink.clone();
+                            match eng.subscribe_drops(Box::new(move |d| s.push(svc::blocked::Drop { ts_ft: d.ts, filter_id: d.filter_id }))) {
+                                Ok(()) => {
+                                    log3.w("blocked: WFP 차단 사건 구독 시작");
+                                    loop {
+                                        std::thread::sleep(Duration::from_secs(3600));
+                                    }
+                                }
+                                Err(e) => log3.w(format!("blocked: subscribe failed {e}")),
+                            }
+                        }
+                        Err(e) => log3.w(format!("blocked: engine open failed {e}")),
+                    }
+                    std::thread::sleep(Duration::from_secs(60));
+                }
+            });
+        }
         // 10판 5-9 (3): Defender 운영 로그의 CFA 차단·감사(1123·1124)를 1분마다 읽어 엔진에 넘긴다(읽기 전용, 외부 전송 없음)
         {
             let tx = rt.tx.clone();

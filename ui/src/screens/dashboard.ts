@@ -190,7 +190,7 @@ export function dashboard(): HTMLElement {
       rpc<{ items: DashListener[] }>("listeners.list", {}),
       rpc<{ items: InstallRun[] }>("installs.list", { days: 1, limit: 30 }),
       // 개편안 2판 1-4: 시간대별 트래픽은 서비스가 쓰기 경로에서 쌓아 둔 요약 표에서(연결 기록을 세지 않는다)
-      rpc<{ items: { hour: number; sent: number; recv: number; conns: number }[] }>("traffic.hourly", { since_secs: 86400 }),
+      rpc<{ items: { hour: number; sent: number; recv: number; conns: number; blocked?: number; blocked_lost?: number }[] }>("traffic.hourly", { since_secs: 86400 }),
     ]);
     if (gen !== ovGen) return;
     clear(where);
@@ -212,10 +212,14 @@ export function dashboard(): HTMLElement {
       t.addEventListener("click", go);
       return t;
     };
-    // KPI ④ 일일 트래픽 · (임시 ②) 오늘 접속한 곳 — ② 자리는 구현 순서 6단계에서 "오늘 차단 통신"으로 바뀐다
+    // KPI ② 오늘 차단 통신(개편안 2판 1-2②, 6단계): 우리 WFP 필터가 막은 연결 수. 집계 채널이 넘쳐 못 센 건 "유실"로 밝힌다(최소 N건)
     const anchor = status.children[1] ?? null;
-    status.insertBefore(tile("오늘 접속한 곳", `${o.remotes}곳`, `프로그램 ${o.programs}개`, () => state.go("connections", {}), "globe", "info", th ? th.conns : o.hourly), anchor);
-    status.append(tile("일일 트래픽", bytes(o.sent + o.recv), o.sent + o.recv ? `송신 ${bytes(o.sent)} · 수신 ${bytes(o.recv)}` : "양 기록 없음", () => state.go("connections", {}), "swap", "neutral"));
+    const blocked = th ? th.blocked.reduce((a, b) => a + b, 0) : 0;
+    const lost = th ? th.lost : 0;
+    const blockedSub = !th ? "서비스 판이 낮아 집계 없음" : lost > 0 ? `최소 ${blocked}건 · 유실 ${lost}건(폭주)` : blocked ? "우리 정책이 막은 연결" : "막은 연결 없음";
+    status.insertBefore(tile("오늘 차단 통신", th ? `${blocked}건` : "—", blockedSub, () => state.go("policy", {}), "shield", blocked ? "bad" : "neutral", th ? th.blocked : undefined), anchor);
+    // KPI ④ 일일 트래픽 — 보조 줄에 접속한 곳·프로그램 수
+    status.append(tile("일일 트래픽", bytes(o.sent + o.recv), o.sent + o.recv ? `송신 ${bytes(o.sent)} · 수신 ${bytes(o.recv)}` : `${o.remotes}곳 · 프로그램 ${o.programs}개`, () => state.go("connections", {}), "swap", "neutral", th ? th.conns : o.hourly));
 
     // 네 질문(2×2)
     // 2026-11-07 다듬기: 네 칸을 KPI 와 같은 머리(아이콘+제목) → 큰 숫자 → 보조 글 → 목록 구조로 통일
@@ -620,8 +624,9 @@ export function groupProtection<T extends { kind: string; ts: number; target?: {
 }
 
 /// traffic.hourly 응답 → 오늘 0~23시 버킷(현지 시각). 어제 시간대는 버린다
-export function hourlyFromSummary(items: { hour: number; sent: number; recv: number; conns: number }[], nowSec: number): { sent: number[]; recv: number[]; conns: number[] } {
-  const sent = new Array<number>(24).fill(0), recv = new Array<number>(24).fill(0), conns = new Array<number>(24).fill(0);
+export function hourlyFromSummary(items: { hour: number; sent: number; recv: number; conns: number; blocked?: number; blocked_lost?: number }[], nowSec: number): { sent: number[]; recv: number[]; conns: number[]; blocked: number[]; lost: number } {
+  const sent = new Array<number>(24).fill(0), recv = new Array<number>(24).fill(0), conns = new Array<number>(24).fill(0), blocked = new Array<number>(24).fill(0);
+  let lost = 0;
   const d = new Date(nowSec * 1000);
   d.setHours(0, 0, 0, 0);
   const dayStart = d.getTime() / 1000;
@@ -631,6 +636,8 @@ export function hourlyFromSummary(items: { hour: number; sent: number; recv: num
     sent[h]! += it.sent;
     recv[h]! += it.recv;
     conns[h]! += it.conns;
+    blocked[h]! += it.blocked ?? 0;
+    lost += it.blocked_lost ?? 0;
   }
-  return { sent, recv, conns };
+  return { sent, recv, conns, blocked, lost };
 }
