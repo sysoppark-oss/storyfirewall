@@ -10,4 +10,4 @@
    Compiling collector v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\collector)
    Compiling api v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\api)
    Compiling svc v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\svc)
-    Finished `release` profile [optimized] target(s) in 38.44s
+    Finished `release` profile [optimized] target(s) in 48.57s
