@@ -13,6 +13,7 @@ const ICONS: Record<string, string> = {
   door: "M5 4h10v16H5zM15 12h4M17 10l2 2-2 2",
   list: "M5 7h14M5 12h14M5 17h9",
   heart: "M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z",
+  eye: "M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
 };
 
 export function icon(name: string): SVGElement {

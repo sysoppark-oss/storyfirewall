@@ -144,6 +144,12 @@ tr.child-row td:first-child { padding-left: 22px; }
 .ev-badge.weak { border-style: dashed; }
 .ev-badge:hover { color: var(--fg); border-color: var(--muted); }
 /* C1 수집 상태 한 줄 */
+/* 개편안 2판 3-2: 대시보드 상단 띠 — 보호 서비스·엔진 뱃지·정책 수 */
+.dash-strip { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; font-size: 12px; }
+.dash-strip .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--fg); white-space: nowrap; }
+.dash-strip .badge .kpi-icon { width: 14px; height: 14px; }
+.dash-strip .badge-ok { border-color: var(--ok); color: var(--ok); } .dash-strip .badge-warn { border-color: var(--warn); color: var(--warn); font-weight: 600; }
+.dash-strip .badge-link { margin-left: auto; color: var(--muted); white-space: nowrap; }
 .health { font-size: 12px; color: var(--muted); margin: 6px 0 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .health > span, .health > a { white-space: nowrap; }
 .health .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); display: inline-block; }
@@ -416,7 +422,9 @@ details.where-panel { border-radius: 16px; }
 
 /* 대시보드 개요(2026-11-06 개편): 카드 줄 6칸 · 네 질문 2×2 · 시간대 막대 + 어디와 통신했나. B안 모서리 16 */
 .screen > .cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 1200px) { .screen > .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* 개편안 2판 1-2: KPI 4칸 */
+.screen > .cards.kpi-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1200px) { .screen > .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } .screen > .cards.kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .screen > .cards .card { min-width: 0; border-radius: 14px; }
 .card.tile { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; cursor: pointer; min-width: 0; }
 .card.tile:hover { border-color: var(--brand); }

@@ -73,6 +73,19 @@ interface Health {
   lost_24h: number;
   gaps_24h: { from_ts: number; to_ts: number; events: number; reason?: string }[];
   clock_changes_24h: number[];
+  timings?: { name: string; last_ms: number }[];
+  wfp_filters?: number;
+  db_bytes?: number | null;
+}
+/// 개편안 2판 3-2 상단 띠 뱃지 문구(순수 함수 — 시험용). 수치가 없으면 그 뱃지는 뺀다
+export function engineBadges(h: Health | null, policies: number, pending: number): string[] {
+  const out: string[] = [];
+  const j = h?.timings?.find((t) => t.name === "엔진: 주기 판정");
+  if (j) out.push(`판정 지연 ${j.last_ms}ms`);
+  if (typeof h?.wfp_filters === "number") out.push(`필터 ${h.wfp_filters}개`);
+  if (typeof h?.db_bytes === "number") out.push(`DB ${bytes(h.db_bytes)}`);
+  out.push(pending ? `정책 ${policies}개 (확인 대기 ${pending})` : `정책 ${policies}개`);
+  return out;
 }
 /// C1 수집 상태 한 줄: 정상은 회색(초록 점만), 이상이면 주황 문장을 앞에. 원인을 단정하지 않는다
 /// 마지막 사건이 얼마 전인지(상태 줄과 보호 서비스 카드가 같은 말을 쓰게 — 검수 B3)
@@ -124,7 +137,9 @@ export function healthLine(h: Health, onMore: () => void, gapStart?: { n: number
 export function dashboard(): HTMLElement {
   const root = el("section", "screen");
   root.append(el("h1", undefined, "대시보드"));
-  const status = el("div", "cards");
+  // 개편안 2판: 상단 띠(보호 서비스·엔진 뱃지·정책 수) → KPI 4 → 그래프
+  const strip = el("div", "dash-strip");
+  const status = el("div", "cards kpi-row");
   // 목록은 새로 고칠 때마다 비운다 (전에는 알림마다 '지금 봐야 할 것' 목록이 아래에 계속 쌓였다)
   const body = el("div", "dash-body");
   // 대시보드 개요(사용자 "대시보드 UI 구성이 너무 약함" 2026-11-06): 네 질문 + 시간대 + 어디와 통신했나.
@@ -132,7 +147,7 @@ export function dashboard(): HTMLElement {
   const where = el("section", "dash-overview");
   // 2026-11-07: 그래프·도넛·4장 띠는 카드 바로 아래(첫 화면에 보이게), 네 질문·어디와 통신했나는 그 아래
   const viz = el("section", "dash-viz");
-  root.append(status, viz, body, where);
+  root.append(strip, status, viz, body, where);
   let ovGen = 0;
   // 영역 그래프의 의심 사건 시각(unix 초) — refresh 가 채우고 drawOverview 가 읽는다
   let susTs: number[] = [];
@@ -164,10 +179,10 @@ export function dashboard(): HTMLElement {
       t.addEventListener("click", go);
       return t;
     };
+    // KPI ④ 일일 트래픽 · (임시 ②) 오늘 접속한 곳 — ② 자리는 구현 순서 6단계에서 "오늘 차단 통신"으로 바뀐다
     const anchor = status.children[1] ?? null;
     status.insertBefore(tile("오늘 접속한 곳", `${o.remotes}곳`, `프로그램 ${o.programs}개`, () => state.go("connections", {}), "globe", "info", o.hourly), anchor);
-    status.insertBefore(tile("주고받은 양", bytes(o.sent + o.recv), o.sent + o.recv ? `보냄 ${bytes(o.sent)} · 받음 ${bytes(o.recv)}` : "양 기록 없음", () => state.go("connections", {}), "swap", "neutral"), anchor);
-    status.insertBefore(tile("모든 주소에서 듣는 포트", String(o.exposed.length), o.exposed.length ? "밖에서 닿는지는 방화벽·공유기에 따라 다름" : "없음", () => state.go("connections", {}), "door", o.exposed.length ? "warn" : "neutral"), anchor);
+    status.append(tile("일일 트래픽", bytes(o.sent + o.recv), o.sent + o.recv ? `송신 ${bytes(o.sent)} · 수신 ${bytes(o.recv)}` : "양 기록 없음", () => state.go("connections", {}), "swap", "neutral"));
 
     // 네 질문(2×2)
     const q = (title: string, lead: Node, ...rest: Node[]) => el("section", "card q-card", el("h3", undefined, title), lead, ...rest);
@@ -321,12 +336,15 @@ export function dashboard(): HTMLElement {
     if (ev.ok && groups.length !== sus.length) susBody.append(el("div", "muted small", `사건 ${sus.length}건`));
     if (staleN) susBody.append(el("div", "muted small", `그 밖에 수집 전부터 실행 중 ${staleN}건`));
     // 사건 추적: story.events 기본(triage=open)이라 조치함·닫힘은 빠진다 — 제목도 그렇게
-    status.append(card("미조치 인시던트", susBody, sus.length ? "card alert alert-bad" : "card", "shield", sus.length ? "bad" : "ok", susSpark));
+    status.append(card("미조치 심각·높음", susBody, sus.length ? "card alert alert-bad" : "card", "shield", sus.length ? "bad" : "ok", susSpark));
     // D006-3: 지금 Windows 에 걸려 있는 정책 수(확인 대기 + 적용 중, 일시 중지 제외). 서비스는 상태를 "Applied"·"Confirmed"로 준다 —
     // 전에는 소문자와 비교해 늘 0 이었다
     const applied = pol.ok ? pol.result.items.filter((p) => /^(applied|confirmed)$/i.test(p.state)).length : 0;
     const pend = pol.ok ? pol.result.items.filter((p) => /^applied$/i.test(p.state)).length : 0;
-    status.append(card("적용된 정책", pol.ok ? el("div", undefined, el("div", "big", String(applied)), el("div", "muted small", `확인 대기 ${pend} · 적용 중 ${applied - pend}`)) : cardFail(pol.error, "적용된 정책"), "card", "list", applied ? "info" : "neutral"));
+    // KPI ③ 샌드박스 관찰 중: 첫 실행 관찰실에서 아직 관찰 끝 시각이 지나지 않은 프로그램 수
+    const nowSec = Date.now() / 1000;
+    const watching = se.ok ? se.result.items.filter((e) => e.kind === "first_run_watch" && typeof e.target?.until_ts === "number" && e.target.until_ts > nowSec).length : 0;
+    status.append(card("샌드박스 관찰 중", se.ok ? el("div", undefined, el("div", "big", String(watching)), el("div", "muted small", watching ? "인터넷에서 받은 프로그램의 첫 실행" : "관찰 중인 프로그램 없음")) : cardFail(se.error, "샌드박스 관찰"), "card", "eye", watching ? "info" : "neutral"));
     // D002: 왼쪽 메뉴 "연결"(네트워크)과 헷갈리지 않게 "보호 서비스"
     // D015-2: 서비스 연결 + 기록 상태를 한 단어로(작동 중 / 기록 멈춤? / 연결 끊김)
     const svcBody = !state.connected
@@ -337,7 +355,18 @@ export function dashboard(): HTMLElement {
           // D046-3: 아래 상태 줄이 "엔진이 묶여 있다"고 말하는 동안 카드도 초록 "작동 중"만 보이지 않게(같은 기준값)
           ? el("div", undefined, el("div", "big-text warn", "작동 중 · 응답 늦음"), el("div", "muted", `서비스 ${state.serverVersion}`))
           : el("div", undefined, el("div", "big-text ok", "작동 중"), el("div", "muted", `서비스 ${state.serverVersion}`));
-    status.append(card("보호 서비스", svcBody, "card", "heart", !state.connected || stalledNow ? "warn" : "ok"));
+    // 상단 띠: 보호 서비스 상태 + 엔진 건강 뱃지 + 정책 수(개편안 2판 3-2). 카드가 아니라 뱃지
+    clear(strip);
+    const svcTone = !state.connected || stalledNow ? "warn" : "ok";
+    const svcWord = !state.connected ? "연결 끊김" : stalledNow ? "기록 멈춤?" : engineStuckText(state.engineBusyMs) ? "작동 중 · 응답 늦음" : "작동 중";
+    const svcBadge = el("span", `badge badge-${svcTone}`, icon("heart"), ` 보호 서비스 ${svcWord}`);
+    svcBadge.title = (svcBody.textContent ?? "").trim();
+    strip.append(svcBadge);
+    for (const t of engineBadges(hr.ok ? hr.result : null, applied, pend)) strip.append(el("span", "badge", t));
+    const more = el("a", "badge-link", "진단 ›");
+    more.href = "#";
+    more.addEventListener("click", (e) => { e.preventDefault(); state.go("settings", {}); });
+    strip.append(more);
     void drawOverview();
     // C1: 카드 아래, 상태 줄과 별개. D014: 기록 없는 구간에 시작한 의심 사건이 있으면 맨 앞 주황 경고
     const inGap = all.filter((s) => s.started_in_gap);
@@ -416,7 +445,7 @@ export function dashboard(): HTMLElement {
         if (many) desc.append(el("span", "desc-many", ` · ${many}`));
         row.append(levelChip(s.level), ext("span", bareTitle(s.title), "title"));
         // D043-1: 5장 파괴 징후는 수준 칩([의심])과 따로 글자 칩 하나(색만으로 구분하지 않게)
-        if (s.destroy) row.append(el("span", "chip destroy", "파괴 징후"));
+        if (s.destroy) row.append(el("span", "chip destroy", STAGES[4].name));
         row.append(desc, el("span", "muted when", ts ? fmtShort(filetimeToUnix(ts)) : ""));
         row.append(button("인시던트 보기", () => state.go("story", { root: s.root })));
         list.append(row);

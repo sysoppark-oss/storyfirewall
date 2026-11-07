@@ -99,6 +99,16 @@ fn needs_ack_err(items: &[(String, dsl::Ack)]) -> RpcError {
     RpcError::new(ErrorCode::NeedsAck).data(serde_json::json!({ "items": items.iter().map(|(n, a)| (n.clone(), ack_name(a))).collect::<Vec<_>>() }))
 }
 
+/// 그래프 DB 파일 크기(바이트, WAL 포함). 메모리 DB·실패는 null
+fn db_bytes(path: &str) -> Option<u64> {
+    if path.is_empty() || path == ":memory:" {
+        return None;
+    }
+    let main = std::fs::metadata(path).ok()?.len();
+    let wal = std::fs::metadata(format!("{path}-wal")).map(|m| m.len()).unwrap_or(0);
+    Some(main + wal)
+}
+
 fn engine_err(e: EngineError) -> RpcError {
     match e {
         EngineError::NeedsAck(items) => needs_ack_err(&items),
@@ -1332,6 +1342,9 @@ fn handle(
                 "clock_changes_24h": clock,
                 // 진단 "처리 시간"(서비스 시작 뒤, 최대가 큰 순 15개) — 느린 곳을 diag 없이 찾는다
                 "timings": world.timings.to_json(15),
+                // 개편안 2판 3-2 엔진 건강 뱃지: 우리 WFP 필터 수(엔진 장부 기준)·그래프 DB 크기(바이트)
+                "wfp_filters": world.engine.store.all_filters().map(|v| v.len()).unwrap_or(0),
+                "db_bytes": db_bytes(&world.graph.path()),
                 // 10판 5-9 (3): Windows 기본 보호 설정 값(레지스트리). Windows 아니면 null
                 "defender": crate::defender::read(),
                 // 29차 미결: 명령줄 수집(커널 세션) 상태. 수집기가 없으면(시험·개발 서버) null
