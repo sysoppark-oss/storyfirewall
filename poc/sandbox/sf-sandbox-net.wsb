@@ -1,0 +1,21 @@
+<Configuration>
+  <!-- Story Firewall dev test sandbox (L073, 2026-11-07). Double-click this file on the laptop to start. -->
+  <!-- Networking ON (NAT to host): for connection / block tests only. Default is sf-sandbox.wsb (offline). -->
+  <Networking>Enable</Networking>
+  <VGpu>Disable</VGpu>
+  <MemoryInMB>2048</MemoryInMB>
+  <ClipboardRedirection>Disable</ClipboardRedirection>
+  <PrinterRedirection>Disable</PrinterRedirection>
+  <AudioInput>Disable</AudioInput>
+  <VideoInput>Disable</VideoInput>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\Program Files\StoryFirewallDev\sandbox</HostFolder>
+      <SandboxFolder>C:\sf</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\sf\sandbox-setup.ps1</Command>
+  </LogonCommand>
+</Configuration>

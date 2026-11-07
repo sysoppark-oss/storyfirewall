@@ -18,7 +18,7 @@
 #   cmd.exe is always started with /d (ignores HKCU Command Processor AutoRun).
 # - Output goes to %ProgramFiles%\StoryFirewallDev\logs (admin-written, user-readable).
 # Request format (UTF-8 JSON, one object):  {"job":"b2","seconds":900}   {"job":"pull"}   {"job":"status"}
-#                                           {"job":"install"}   {"job":"uninstall"}   {"job":"selfupdate"}   {"job":"diag"}   {"job":"hostinfo"}   {"job":"sandbox","reboot":"true"}
+#                                           {"job":"install"}   {"job":"uninstall"}   {"job":"selfupdate"}   {"job":"diag"}   {"job":"hostinfo"}   {"job":"sandbox","reboot":"true"}   {"job":"sysmon"}
 # selfupdate: pull, then replace bin\job-runner.ps1 with the repo copy (no new trust: b2 already runs repo scripts
 #   as SYSTEM; whoever can write main can already run code here). Takes effect from the next run.
 # install (user decision 2026-11-02): installs the latest dev build from the orphan branch dev-builds (CI-built,
@@ -161,6 +161,19 @@ try {
                     $got = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
                     if ($got -ne $want) { Log $id ("rejected: setup sha256 " + $got + " != manifest " + $want); Log $id "done exit=1"; break }
                     Log $id ("dev build commit=" + $built + " pin=" + $pin)
+                    # L073 (Sandbox, 2026-11-07): keep a copy of the VERIFIED setup + pin for Windows Sandbox. The folder is
+                    # recreated with inheritance cut (SYSTEM/Admins full, Users read) and mapped READ-ONLY into the sandbox,
+                    # so nothing inside the sandbox can write back to the host.
+                    $sb = Join-Path $Base "sandbox"
+                    if (-not (Test-Path $sb)) { New-Item -ItemType Directory -Path $sb | Out-Null }
+                    & icacls.exe $sb /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-32-545:(OI)(CI)RX" 2>&1 | Out-Null
+                    Copy-Item $setup (Join-Path $sb "story-firewall-dev-setup.exe") -Force
+                    Set-Content -Path (Join-Path $sb "pin.txt") -Value $pin -Encoding ascii
+                    foreach ($n in @("sandbox-setup.ps1", "sysmon.xml", "sf-sandbox.wsb", "sf-sandbox-net.wsb")) {
+                        $src = Join-Path $repo ("poc\sandbox\" + $n)
+                        if (Test-Path $src) { Copy-Item $src (Join-Path $sb $n) -Force }
+                    }
+                    Log $id ("sandbox staged " + $sb)
                     # L070 (install-95, 2026-11-07): setup aborts (exit 2) when the UI is running, but the service step
                     # below still swapped the service -> new service + old UI = signature_failed. Close the UI first.
                     $ui = @(Get-Process -Name "story-firewall-ui" -ErrorAction SilentlyContinue)
@@ -251,6 +264,35 @@ try {
                         & "$sys\System32\shutdown.exe" /r /t 120 /c "Story Firewall dev: Windows Sandbox installed. Restarting in 2 minutes. Save your work. (shutdown /a to cancel)" /d p:2:4
                         Log $id ("reboot scheduled in 120s exit=" + $LASTEXITCODE)
                     }
+                    Log $id "done exit=0"
+                }
+                "sysmon" {
+                    # L073: fetch Sysmon for the Sandbox / VM only (Sysinternals licence: use, no redistribution - it is
+                    # never shipped in the product). Only Sysmon64.exe is taken from the zip, and it must carry a valid
+                    # Microsoft Authenticode signature before it is placed in the read-only sandbox folder.
+                    $sb = Join-Path $Base "sandbox"
+                    if (-not (Test-Path $sb)) { Log $id "rejected: run install first (sandbox folder missing)"; Log $id "done exit=1"; break }
+                    $dl = Join-Path $env:TEMP ("sfsm-" + [guid]::NewGuid().ToString("N"))
+                    try { New-Item -ItemType Directory -Path $dl -ErrorAction Stop | Out-Null } catch { Log $id "rejected: temp dir exists"; Log $id "done exit=1"; break }
+                    & icacls.exe $dl /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" 2>&1 | Out-Null
+                    $zip = Join-Path $dl "s.zip"
+                    try { Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Sysmon.zip" -OutFile $zip -UseBasicParsing -ErrorAction Stop }
+                    catch { Log $id ("download failed: " + $_.Exception.Message); Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue; Log $id "done exit=1"; break }
+                    Add-Type -AssemblyName System.IO.Compression.FileSystem
+                    $za = [System.IO.Compression.ZipFile]::OpenRead($zip)
+                    $exe = $null
+                    try {
+                        $e = $za.Entries | Where-Object { $_.FullName -ceq "Sysmon64.exe" } | Select-Object -First 1
+                        if ($e) { $exe = Join-Path $dl "Sysmon64.exe"; [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $exe, $false) }
+                    } finally { $za.Dispose() }
+                    if (-not $exe) { Log $id "rejected: Sysmon64.exe not in zip"; Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue; Log $id "done exit=1"; break }
+                    $sig = Get-AuthenticodeSignature $exe
+                    $subj = [string]$sig.SignerCertificate.Subject
+                    Log $id ("sysmon sig " + $sig.Status + " " + $subj)
+                    if ($sig.Status -ne "Valid" -or $subj -notmatch "O=Microsoft Corporation") { Log $id "rejected: signature"; Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue; Log $id "done exit=1"; break }
+                    Copy-Item $exe (Join-Path $sb "Sysmon64.exe") -Force
+                    Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue
+                    Log $id ("sysmon staged sha256=" + (Get-FileHash (Join-Path $sb "Sysmon64.exe") -Algorithm SHA256).Hash.ToLower())
                     Log $id "done exit=0"
                 }
                 "selfupdate" {
