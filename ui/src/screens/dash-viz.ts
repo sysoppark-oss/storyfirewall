@@ -204,7 +204,7 @@ export function bytesAxis(v: number): string {
   if (v >= 1024) return `${Math.round(v / 1024)}KB`;
   return `${Math.round(v)}B`;
 }
-export function dualChart(d: DualInput, nowHour: number, w = 720, h = 170): SVGElement {
+export function dualChart(d: DualInput, nowHour: number, w = 520, h = 160): SVGElement {
   const L = 44, R = 30, T = 10, B = 22;
   const s = document.createElementNS(NS, "svg");
   s.setAttribute("viewBox", `0 0 ${w} ${h}`);

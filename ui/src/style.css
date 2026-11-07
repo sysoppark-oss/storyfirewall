@@ -564,4 +564,5 @@ details.where-panel { border-radius: 16px; }
 .kpi.tone-neutral .kpi-icon { background: color-mix(in srgb, var(--muted) 14%, transparent); }
 .kpi.tone-ok { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
 .kpi.tone-warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); background: color-mix(in srgb, var(--warn) 6%, var(--card)); }
-.hour-card .chart-legend { float: right; margin-top: -26px; }
+/* 제목과 범례: 한 줄 flex, 좁으면 범례가 다음 줄로(실기기 660px 에서 겹침) */
+.hour-card .chart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 14px; margin-bottom: 10px; } .hour-card .chart-head h3 { margin: 0; }

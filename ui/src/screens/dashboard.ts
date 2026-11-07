@@ -228,14 +228,14 @@ export function dashboard(): HTMLElement {
 
     // 시간대별 접속(오늘) + 어디와 통신했나 — 2026-11-07: 막대 → 영역 그래프 두 겹(전체 접속·의심 사건)
     // 개편안 2판 1-4: 이중 축 — 트래픽(송신·수신, 왼쪽 축) + 인시던트 마커(심각·높음, 오른쪽 축). 한 축에 접속 수와 사건 수를 겹치던 왜곡을 없앤다
-    const hours = el("section", "card hour-card", el("h3", undefined, "트래픽 · 인시던트 추이 (오늘)"));
+    const hours = el("section", "card hour-card");
     const nowH = new Date().getHours();
     const nowSec = Date.now() / 1000;
     const critHourly = hourlyCounts(critTs, nowSec);
     const highHourly = hourlyCounts(highTs, nowSec);
     const maxH = Math.max(...o.hourly);
     const legend = el("div", "chart-legend", el("span", "lg recv", "수신"), el("span", "lg sent", "송신"), el("span", "lg crit", LEVEL.critical), el("span", "lg high", LEVEL.suspicious));
-    hours.append(legend, dualChart({ sent: o.hourlySent, recv: o.hourlyRecv, critical: critHourly, high: highHourly }, nowH));
+    hours.append(el("div", "chart-head", el("h3", undefined, "트래픽 · 인시던트 추이 (오늘)"), legend), dualChart({ sent: o.hourlySent, recv: o.hourlyRecv, critical: critHourly, high: highHourly }, nowH));
     hours.append(el("p", "muted small", maxH ? `왼쪽 축 바이트 · 오른쪽 축 인시던트 건수 · 접속 ${maxH}건이 가장 많은 시간 · 마지막 접속 시각 기준` : "오늘 접속 기록이 없습니다."));
     const whereCard = el("section", "card where-dash", el("h3", undefined, "오늘 어디와 통신했나"));
     const cols = el("div", "where-dash-cols");
