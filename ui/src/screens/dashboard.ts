@@ -398,10 +398,14 @@ export function dashboard(): HTMLElement {
     let protBox: HTMLElement | null = null;
     if (prot.length) {
       const list = el("div", "list service-events");
-      for (const e of prot) {
+      // 개편안 2판 3-1: 같은 종류·같은 프로그램의 반복은 한 줄로 접는다(실기기: TeamViewer 시작/끝 47건이 화면을 채움).
+      // 대표는 최신 사건, "N회 · 처음~마지막" 보조 줄. 연출 없이 사실만
+      const groupedProt = groupProtection(prot);
+      for (const { head: e, n, first_ts } of groupedProt) {
         // 감사 모드 기록은 막지 않은 사실이라 경고 테두리 없이
         const row = el("div", QUIET_KINDS.has(e.kind) ? "row" : "row alert");
         row.append(el("span", "title", SERVICE_EVENT_TITLE[e.kind] ?? e.kind));
+        if (n > 1) row.append(el("span", "chip count", `${n}회`), el("span", "muted", ` · ${fmtShort(first_ts)}부터`));
         // Defender 기록은 서비스가 읽은 시각이 아니라 Defender 가 남긴 시각
         const dts = typeof e.target?.defender_ts === "number" && e.target.defender_ts > 0 ? e.target.defender_ts : e.ts;
         const when = el("span", "muted", ` · ${fmtShort(dts)}`);
@@ -523,4 +527,24 @@ async function markTrusted(tool: string, note: HTMLElement) {
   }
   const r = await mutation("settings.set", { remote_trusted_tools: [...cur, tool] });
   note.textContent = r.ok ? "표시했습니다. 이 도구의 다음 원격 세션은 작은 알림으로 알립니다." : r.error.message;
+}
+
+/// 보호 사건 묶기: 같은 종류 + 같은 대상(프로그램 경로·도구)이면 한 묶음. 최신(head)이 대표, n 은 건수, first_ts 는 가장 이른 시각
+export function groupProtection<T extends { kind: string; ts: number; target?: { image?: string; tool?: string; path?: string } | null }>(items: T[]): { head: T; n: number; first_ts: number }[] {
+  const out: { head: T; n: number; first_ts: number }[] = [];
+  const idx = new Map<string, number>();
+  for (const e of items) {
+    const key = `${e.kind}|${(e.target?.tool ?? e.target?.image ?? e.target?.path ?? "").toLowerCase()}`;
+    const i = idx.get(key);
+    if (i === undefined) {
+      idx.set(key, out.length);
+      out.push({ head: e, n: 1, first_ts: e.ts });
+    } else {
+      const g = out[i]!;
+      g.n += 1;
+      if (e.ts < g.first_ts) g.first_ts = e.ts;
+      if (e.ts > g.head.ts) g.head = e;
+    }
+  }
+  return out;
 }

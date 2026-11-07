@@ -9,3 +9,16 @@ describe("engineBadges", () => {
     expect(engineBadges(h, 5, 1)).toEqual(["판정 지연 2ms", "필터 12개", "DB 42.0 MB", "정책 5개 (확인 대기 1)"]);
   });
 });
+
+import { groupProtection } from "./dashboard";
+describe("groupProtection", () => {
+  it("같은 종류·같은 프로그램은 한 묶음, 최신이 대표, 처음 시각 보존", () => {
+    const g = groupProtection([
+      { kind: "remote_start", ts: 300, target: { image: "C:\\TV\\TeamViewer.exe" } },
+      { kind: "remote_end", ts: 250, target: { image: "C:\\TV\\TeamViewer.exe" } },
+      { kind: "remote_start", ts: 100, target: { image: "c:\\tv\\teamviewer.exe" } },
+      { kind: "remote_start", ts: 200, target: { image: "C:\\Other\\x.exe" } },
+    ]);
+    expect(g.map((x) => [x.head.kind, x.n, x.first_ts, x.head.ts])).toEqual([["remote_start", 2, 100, 300], ["remote_end", 1, 250, 250], ["remote_start", 1, 200, 200]]);
+  });
+});
