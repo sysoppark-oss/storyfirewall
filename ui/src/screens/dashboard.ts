@@ -189,21 +189,22 @@ export function dashboard(): HTMLElement {
     status.append(tile("일일 트래픽", bytes(o.sent + o.recv), o.sent + o.recv ? `송신 ${bytes(o.sent)} · 수신 ${bytes(o.recv)}` : "양 기록 없음", () => state.go("connections", {}), "swap", "neutral"));
 
     // 네 질문(2×2)
-    const q = (title: string, lead: Node, ...rest: Node[]) => el("section", "card q-card", el("h3", undefined, title), lead, ...rest);
+    // 2026-11-07 다듬기: 네 칸을 KPI 와 같은 머리(아이콘+제목) → 큰 숫자 → 보조 글 → 목록 구조로 통일
+    const q = (title: string, ic: string, lead: Node, ...rest: Node[]) => el("section", "card q-card", el("div", "kpi-head", icon(ic), el("h3", undefined, title)), lead, ...rest);
     const grid = el("div", "q-grid");
     // ① 밖에서 내 PC로
     const ports = el("ul", "q-list");
-    for (const l of o.exposed.slice(0, 5)) ports.append(el("li", undefined, el("span", "mono", `${l.lport}/${l.proto.toUpperCase()}`), " ", ext("span", l.image ? fileName(l.image) : "(프로그램 확인 못 함)", "muted")));
+    for (const l of o.exposed.slice(0, 5)) ports.append(el("li", "q-row", el("span", "pill mono", `${l.lport}/${l.proto.toUpperCase()}`), ext("span", l.image ? fileName(l.image) : "(프로그램 확인 못 함)", "q-row-main")));
     if (!o.exposed.length) ports.append(el("li", "muted", "모든 주소에서 듣는 포트 없음"));
-    grid.append(q("밖에서 내 PC로",
+    grid.append(q("밖에서 내 PC로", "door",
       el("p", "q-lead", o.inbound ? `들어온 연결 ${o.inbound}건 (상대 ${o.inboundRemotes}곳)` : "오늘 들어온 연결 기록 없음"),
       el("div", "muted small", "모든 주소(0.0.0.0·::)에서 듣는 포트 — 밖에서 실제로 닿는지는 Windows 방화벽·공유기 설정에 따라 다릅니다"), ports));
     // ② 내 PC에서 밖으로
     const news = el("ul", "q-list");
     const fresh = conns.filter((c) => c.new_asn || c.new_cc).slice(0, 4);
-    for (const c of fresh) news.append(el("li", undefined, el("span", "badge-new", "오늘 처음"), " ", ext("span", c.where?.org || c.where?.country || "—"), " ", ext("span", fileName(c.image), "muted")));
+    for (const c of fresh) news.append(el("li", "q-row", el("span", "badge-new", "오늘 처음"), ext("span", c.where?.org || c.where?.country || "—", "q-row-main"), ext("span", fileName(c.image), "muted q-row-side")));
     if (!fresh.length) news.append(el("li", "muted", "오늘 처음 본 망·나라 없음"));
-    grid.append(q("내 PC에서 밖으로",
+    grid.append(q("내 PC에서 밖으로", "globe",
       el("p", "q-lead", `처음 본 망 ${newOrg}곳 · 처음 본 나라 ${newCc}곳`),
       el("div", "muted small", "오늘 처음 접속한 곳"), news));
     // ③ 네트워크를 많이 쓴 프로그램
@@ -215,17 +216,17 @@ export function dashboard(): HTMLElement {
     for (const p of o.topPrograms) {
       const fill = el("span", "bar-fill");
       fill.style.width = `${Math.max(2, Math.round((val(p) / maxB) * 100))}%`;
-      tops.append(el("div", "bar-row", ext("span", p.name, "bar-name"), el("span", "bar-track", fill), el("span", "bar-val", byBytes ? bytes(p.sent + p.recv) : `${p.remotes}곳`)));
+      tops.append(el("div", "bar-row q-bar", ext("span", p.name, "bar-name"), el("span", "bar-track", fill), el("span", "bar-val", byBytes ? bytes(p.sent + p.recv) : `${p.remotes}곳`)));
     }
     if (!o.topPrograms.length) tops.append(el("div", "muted small", "오늘 접속 기록 없음"));
-    grid.append(q("네트워크를 많이 쓴 프로그램", el("p", "q-lead", `프로그램 ${o.programs}개 · 상위 ${o.topPrograms.length}개`), el("div", "muted small", byBytes ? "주고받은 양 기준" : "양 기록이 없어 접속한 곳 수 기준 — 프로그램끼리 같은 곳이 겹칠 수 있습니다"), tops));
+    grid.append(q("네트워크를 많이 쓴 프로그램", "swap", el("p", "q-lead", `프로그램 ${o.programs}개 · 상위 ${o.topPrograms.length}개`), el("div", "muted small", byBytes ? "주고받은 양 기준" : "양 기록이 없어 접속한 곳 수 기준 — 프로그램끼리 같은 곳이 겹칠 수 있습니다"), tops));
     // ④ PC 안에서 새로 생긴 것
     const runs = ir.ok ? ir.result.items : [];
     const inst = el("ul", "q-list");
-    for (const r of runs.slice(0, 4)) inst.append(el("li", undefined, ext("span", fileName(r.image)), " ", el("span", "muted small", `파일 ${r.files.length}개 · ${fmtShort(filetimeToUnix(r.start_ts))}`)));
+    for (const r of runs.slice(0, 4)) inst.append(el("li", "q-row", ext("span", fileName(r.image), "q-row-main"), el("span", "muted small q-row-side", `파일 ${r.files.length}개 · ${fmtShort(filetimeToUnix(r.start_ts))}`)));
     if (!runs.length) inst.append(el("li", "muted", ir.ok ? "오늘 설치·새 프로그램 기록 없음" : "불러오지 못함"));
     const instMore = button("설치 화면에서 자세히", () => state.go("installs", {}), "btn small");
-    grid.append(q("PC 안에서 새로 생긴 것", el("p", "q-lead", `설치 기록 ${runs.length}건`),
+    grid.append(q("PC 안에서 새로 생긴 것", "list", el("p", "q-lead", `설치 기록 ${runs.length}건`),
       el("div", "muted small", "설치 프로그램으로 묶인 것만 셉니다. 따로 내려받아 실행한 파일은 위 '지금 봐야 할 것'과 이야기에서 봅니다."), inst, el("div", "q-more", instMore)));
     where.append(grid);
 
@@ -240,7 +241,7 @@ export function dashboard(): HTMLElement {
     const legend = el("div", "chart-legend", el("span", "lg recv", "수신"), el("span", "lg sent", "송신"), el("span", "lg crit", LEVEL.critical), el("span", "lg high", LEVEL.suspicious));
     hours.append(el("div", "chart-head", el("h3", undefined, "트래픽 · 인시던트 (오늘, 시간대별)"), legend), barChart({ sent: o.hourlySent, recv: o.hourlyRecv, critical: critHourly, high: highHourly }, nowH));
     hours.append(el("p", "muted small", maxH ? `막대 = 시간대별 수신+송신 바이트 · 막대 위 점 = 그 시간의 인시던트 · 접속이 가장 많은 시간 ${maxH}건 · 마지막 접속 시각 기준` : "오늘 접속 기록이 없습니다."));
-    const whereCard = el("section", "card where-dash", el("h3", undefined, "오늘 어디와 통신했나"));
+    const whereCard = el("section", "card where-dash", el("div", "kpi-head", icon("globe"), el("h3", undefined, "오늘 어디와 통신했나")));
     const cols = el("div", "where-dash-cols");
     for (const [by, title] of [["country", "나라별 (접속 수)"], ["org", "망(조직)별 (접속 수)"]] as const) {
       const { bars: bs, rest } = bars(conns, by, 5);

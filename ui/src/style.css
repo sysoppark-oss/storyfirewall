@@ -450,7 +450,18 @@ details.where-panel { border-radius: 16px; }
 .q-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 @media (max-width: 1000px) { .q-grid { grid-template-columns: minmax(0, 1fr); } }
 .q-card { border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.q-card h3 { margin: 0; font-size: 15px; }
+.q-card h3 { margin: 0; font-size: 14px; }
+.q-card .kpi-head { margin-bottom: 2px; } .q-card .kpi-head .kpi-icon { width: 24px; height: 24px; padding: 4px; border-radius: 7px; background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
+/* 목록 줄: [알약/칩] 본문 … 보조 — 한 줄, 넘치면 말줄임. 줄 사이 옅은 선 */
+.q-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 0; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.q-row:first-child { border-top: 0; } .q-row .q-row-main { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-row .q-row-side { flex: none; white-space: nowrap; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--fg) 8%, transparent); font-size: 12px; white-space: nowrap; }
+/* 프로그램 사용량 막대: 이름 | 막대 | 값(한 줄, 오른쪽 정렬) — 전에는 4열 격자에 3칸만 넣어 값이 40px 칸에서 두 줄로 꺾였다 */
+.q-bars { display: flex; flex-direction: column; gap: 2px; }
+.q-bars .bar-row.q-bar { grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr) 76px; cursor: default; }
+.q-bars .bar-val { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+.q-bars .bar-track { height: 6px; }
 .q-lead { margin: 0; font-size: 18px; font-weight: 600; }
 .q-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .q-list li { overflow-wrap: anywhere; }
@@ -468,14 +479,15 @@ details.where-panel { border-radius: 16px; }
 .hour-lbl { position: absolute; bottom: -18px; left: 0; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .hour-card .muted.small { margin-top: 24px; }
 
-.q-grid { align-items: start; }
+.q-grid { align-items: stretch; }
 .dash-overview { padding-bottom: 48px; }
 .screen > .cards .big-text { font-size: 28px; line-height: 1.2; font-weight: 600; }
 .hour-max { margin-bottom: 6px; }
 .health > span:not(.dot):not(.lead) + span::before { content: "·"; margin-right: 10px; color: var(--muted); }
 .health > .lead + span::before { content: "·"; margin-right: 10px; color: var(--muted); }
 .badge-new { white-space: nowrap; }
-.where-dash .bar-row { grid-template-columns: minmax(0, 1.3fr) minmax(40px, 1fr) 28px auto; }
+/* 배지 칸을 고정 폭으로 — 배지 유무에 따라 막대 길이가 들쭉날쭉하던 것 */
+.where-dash .bar-row { grid-template-columns: minmax(0, 1.3fr) minmax(40px, 1fr) 44px 64px; } .where-dash .bar-val { white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; min-width: 36px; }
 
 /* 자동 업데이트 알림 띠(맨 위) */
 .update-banner { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; border-bottom: 1px solid color-mix(in srgb, var(--brand) 45%, var(--line)); background: color-mix(in srgb, var(--brand) 10%, var(--card)); }
