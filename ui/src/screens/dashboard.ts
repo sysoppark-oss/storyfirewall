@@ -11,7 +11,7 @@ import type { InstallRun } from "./installs-text";
 import { LEDGER_SCOPE, LEDGER_PROXY_NOTE, ledgerSummary } from "./first-run";
 import { bars, type ConnLike } from "./conn-group";
 import { icon, sparkline, barChart, hourlyCounts, donut, chapterReach, type Tone } from "./dash-viz";
-import { STAGES, TRIAGE_STATE, LEVEL, isHigh } from "../terms";
+import { STAGES, TRIAGE_STATE, LEVEL, ACT, isHigh } from "../terms";
 import { flagPath } from "./connections";
 import { overview, type DashConn, type DashListener } from "./dash-overview";
 import { bytes } from "./connections";
@@ -45,6 +45,25 @@ const SERVICE_EVENT_TITLE: Record<string, string> = {
   rdp_hijack: "세션 바꾸기 도구(tscon)가 실행됐습니다",
   rdp_inbound: "원격 데스크톱 포트로 들어온 연결",
 };
+/// 방어 피드용 — 보호 사건이 아닌 서비스 사건(정책·시계·절전)의 제목
+const FEED_TITLE: Record<string, string> = {
+  policy_expired: "기한부 정책이 만료됐습니다",
+  policy_expiring: "정책이 곧 만료됩니다",
+  policy_restored: "정책을 다시 적용했습니다",
+  policy_tampered: "정책 필터가 바깥에서 바뀌었습니다",
+  policy_tamper_backoff: "정책 복구를 잠시 멈췄습니다(반복 변조)",
+  policy_auto_rollback: "정책을 자동으로 되돌렸습니다",
+  policy_fill_limit: "접속지 차단 자리가 찼습니다",
+  policy_interface_missing: "정책이 가리키는 네트워크 인터페이스가 없습니다",
+  policy_filters_renumbered: "BFE 가 필터 번호를 다시 매겼습니다",
+  address_block_expired: "접속지 차단이 만료됐습니다",
+  child_block_expired: "자손 차단이 만료됐습니다",
+  orphan_filters_removed: "주인 없는 필터를 정리했습니다",
+  cut_applied: "격리·차단을 적용했습니다",
+  cut_terminate: "프로세스를 끝냈습니다",
+  power_resume: "절전에서 깨어났습니다",
+  time_changed: "PC 시계가 바뀌었습니다",
+};
 /// 경고 테두리 없이 보여 줄 사건(막지 않은 사실·끝난 사실)
 const QUIET_KINDS = new Set(["defender_cfa_audited", "first_run_watch", "remote_session_end", "rdp_inbound"]);
 /// 보여 줄 보호 사건 (정책 변경 기록 등 평범한 사건은 정책 화면 몫)
@@ -64,6 +83,8 @@ interface StoryEvent {
   /// 도달한 장(1~4) — 4장 흐름 띠
   reached?: number[];
   root_image?: string;
+  /// 핵심 프로세스(svchost·explorer 등) — 끝내지 않고 접속지만 차단
+  root_core?: boolean;
   items?: { label: string; value: string }[];
 }
 
@@ -149,11 +170,15 @@ export function dashboard(): HTMLElement {
   const viz = el("section", "dash-viz");
   // 사용자 2026-11-07: 서비스 보호 사건은 대시보드 맨 아래
   const foot = el("section", "dash-foot");
-  root.append(strip, status, viz, body, where, foot);
+  // 개편안 2판 1-3: 심각 인시던트가 있을 때만 KPI 위에 뜨는 블록(없으면 자리를 쓰지 않는다)
+  const critBlock = el("section", "crit-block");
+  root.append(strip, critBlock, status, viz, body, where, foot);
   let ovGen = 0;
   // 영역 그래프의 의심 사건 시각(unix 초) — refresh 가 채우고 drawOverview 가 읽는다
   let critTs: number[] = [];
   let triageCounts: TriageCounts | null = null;
+  /// 방어 피드 재료(refresh 가 채움): 서비스 사건 전부(보호·정책·시계 등), 새것부터
+  let feedItems: ServiceEvent[] = [];
   let highTs: number[] = [];
   // 수준별 수(의심·주의)와 4장 도달 수 — refresh 가 채운다(평범은 story.events 기본 수준에 안 들어와 세지 않는다)
   let levelN = { critical: 0, suspicious: 0, watch: 0 };
@@ -315,7 +340,25 @@ export function dashboard(): HTMLElement {
       if (i < 3) strip.append(el("div", "flow-arrow", "→"));
     });
     flow.append(strip, el("p", "muted small", "MITRE ATT&CK 전술 순서. 인시던트 하나는 도달한 모든 단계에 들어갑니다. 오른쪽으로 갈수록 위험합니다."));
-    viz.append(el("div", "dash-row2", hours, dn), flow);
+    // 개편안 2판 3-1 방어 피드: 서비스 사건을 시간순 한 줄씩(같은 종류·대상 반복은 N회로). 연출 없음
+    const feed = el("section", "card feed-card", el("div", "kpi-head", icon("shield"), el("h3", undefined, "실시간 방어 피드")));
+    const flist = el("div", "feed-list");
+    const fg = groupProtection(feedItems).slice(0, 8);
+    for (const { head: e, n } of fg) {
+      const row = el("div", `feed-row${QUIET_KINDS.has(e.kind) || e.severity < 2 ? "" : " alert"}`);
+      const dts = typeof e.target?.defender_ts === "number" && e.target.defender_ts > 0 ? e.target.defender_ts : e.ts;
+      row.append(el("span", "muted when", fmtShort(dts)));
+      const label = SERVICE_EVENT_TITLE[e.kind] ?? FEED_TITLE[e.kind] ?? e.detail;
+      // 끊기 사건은 대상(뿌리 프로그램)까지 한 줄에
+      row.append(ext("span", e.kind.startsWith("cut_") ? `${label} — ${e.detail}` : label, "feed-text"));
+      if (n > 1) row.append(el("span", "chip count", `${n}회`));
+      row.title = e.detail;
+      flist.append(row);
+    }
+    if (!fg.length) flist.append(el("p", "muted small", "최근 7일 서비스 사건이 없습니다."));
+    feed.append(flist);
+    // 2판 화면 구성: [킬체인 | 도넛] → [트래픽 그래프 | 방어 피드]
+    viz.append(el("div", "dash-row2 row-chain", flow, dn), el("div", "dash-row2", hours, feed));
     where.append(whereCard);
   };
   const refresh = async () => {
@@ -343,6 +386,25 @@ export function dashboard(): HTMLElement {
     const groups = groupStories(sus);
     const tsOf = (xs: StoryEvent[]) => xs.map((x) => x.last_ts || x.sentences.find((y) => y.ts)?.ts || 0).filter((t) => t > 0).map((t) => filetimeToUnix(t));
     triageCounts = ev.ok ? ev.result.counts ?? null : null;
+    feedItems = se.ok ? se.result.items : [];
+    // 심각 블록: 가장 최근 심각 인시던트 하나. 사실 문장(파괴 행위면 그 문장) · 시각 · [격리·차단…] [인시던트 보기]
+    clear(critBlock);
+    const crit = sus.filter((s) => s.level.toLowerCase() === "critical");
+    if (crit.length) {
+      const c = crit[0]!;
+      const ts = c.destroy?.ts ?? c.last_ts ?? c.sentences.find((x) => x.ts)?.ts;
+      const fact = c.destroy?.sentence ?? c.sentences[c.sentences.length - 1]?.text ?? bareTitle(c.title);
+      const card = el("div", "card crit-card");
+      const head = el("div", "crit-head", levelChip("critical"), ext("span", bareTitle(c.title), "crit-title"));
+      if (c.destroy) head.append(el("span", "chip destroy", STAGES[4].name));
+      if (crit.length > 1) head.append(el("span", "muted small", ` 외 ${crit.length - 1}건`));
+      const factLine = el("div", "crit-fact", ext("span", fact), el("span", "muted when", ts ? ` · ${fmtShort(filetimeToUnix(ts))}` : ""));
+      const acts = el("div", "crit-actions",
+        button(c.root_core ? ACT.cutAddrOnly : ACT.cut, () => state.go("story", { root: c.root, cut: true }), "btn danger"),
+        button("인시던트 보기", () => state.go("story", { root: c.root }), "btn"));
+      card.append(head, factLine, acts);
+      critBlock.append(card);
+    }
     critTs = tsOf(sus.filter((s) => s.level.toLowerCase() === "critical"));
     highTs = tsOf(sus.filter((s) => s.level.toLowerCase() !== "critical"));
     const susTs = [...critTs, ...highTs];
