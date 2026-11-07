@@ -22,3 +22,15 @@ describe("groupProtection", () => {
     expect(g.map((x) => [x.head.kind, x.n, x.first_ts, x.head.ts])).toEqual([["remote_start", 2, 100, 300], ["remote_end", 1, 250, 250], ["remote_start", 1, 200, 200]]);
   });
 });
+
+import { hourlyFromSummary } from "./dashboard";
+describe("hourlyFromSummary", () => {
+  it("오늘 시간대만 현지 시각 버킷에 넣고 어제는 버린다", () => {
+    const now = new Date(2026, 10, 7, 12, 30).getTime() / 1000;
+    const h9 = new Date(2026, 10, 7, 9).getTime() / 1000;
+    const yesterday = new Date(2026, 10, 6, 23).getTime() / 1000;
+    const r = hourlyFromSummary([{ hour: h9, sent: 10, recv: 5, conns: 3 }, { hour: yesterday, sent: 99, recv: 99, conns: 99 }], now);
+    expect(r.sent[9]).toBe(10); expect(r.recv[9]).toBe(5); expect(r.conns[9]).toBe(3);
+    expect(r.sent.reduce((a, b) => a + b, 0)).toBe(10);
+  });
+});

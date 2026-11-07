@@ -75,6 +75,15 @@ CREATE TABLE IF NOT EXISTS conn_bytes (
   PRIMARY KEY(pid, proto, raddr, rport)
 );
 
+-- 시간대별 트래픽 요약(개편안 2판 1-4 / 사용자 2026-11-07: 집계는 조회 때가 아니라 쓰기 경로에서).
+-- hour = unix 초를 3600 으로 내린 값. 수집기가 바이트를 더할 때·접속 선을 넣을 때 같이 올린다.
+CREATE TABLE IF NOT EXISTS traffic_hourly (
+  hour  INTEGER PRIMARY KEY,
+  sent  INTEGER NOT NULL DEFAULT 0,
+  recv  INTEGER NOT NULL DEFAULT 0,
+  conns INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS ix_edges_src ON edges(src, ts);
 CREATE INDEX IF NOT EXISTS ix_edges_dst ON edges(dst, ts);
 CREATE INDEX IF NOT EXISTS ix_edges_ts  ON edges(ts);

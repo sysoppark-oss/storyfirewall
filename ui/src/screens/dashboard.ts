@@ -160,10 +160,12 @@ export function dashboard(): HTMLElement {
   let reach = [0, 0, 0, 0];
   const drawOverview = async () => {
     const gen = ++ovGen;
-    const [cr, lr, ir] = await Promise.all([
+    const [cr, lr, ir, tr] = await Promise.all([
       rpc<{ items: (DashConn & ConnLike)[] }>("connections.list", { since_secs: 86400, cursor: { limit: 500 } }),
       rpc<{ items: DashListener[] }>("listeners.list", {}),
       rpc<{ items: InstallRun[] }>("installs.list", { days: 1, limit: 30 }),
+      // 개편안 2판 1-4: 시간대별 트래픽은 서비스가 쓰기 경로에서 쌓아 둔 요약 표에서(연결 기록을 세지 않는다)
+      rpc<{ items: { hour: number; sent: number; recv: number; conns: number }[] }>("traffic.hourly", { since_secs: 86400 }),
     ]);
     if (gen !== ovGen) return;
     clear(where);
@@ -171,6 +173,8 @@ export function dashboard(): HTMLElement {
     if (!cr.ok) return void where.append(el("div", "card", cardFail(cr.error, "연결 기록")));
     const conns = cr.result.items;
     const o = overview(conns, lr.ok ? lr.result.items : [], Date.now() / 1000);
+    // 요약 표가 있으면(새 판) 그것을, 없으면(예전 서비스) 연결 기록의 마지막 접속 시각 기준 집계로
+    const th = tr.ok ? hourlyFromSummary(tr.result.items, Date.now() / 1000) : null;
     // 검수 2: "처음 본 나라·망" 수는 아래 막대의 "오늘 처음" 배지와 같은 기준(bars)으로 센다
     const newCc = bars(conns, "country", 999).bars.filter((b) => b.isNew).length;
     const newOrg = bars(conns, "org", 999).bars.filter((b) => b.isNew).length;
@@ -185,7 +189,7 @@ export function dashboard(): HTMLElement {
     };
     // KPI ④ 일일 트래픽 · (임시 ②) 오늘 접속한 곳 — ② 자리는 구현 순서 6단계에서 "오늘 차단 통신"으로 바뀐다
     const anchor = status.children[1] ?? null;
-    status.insertBefore(tile("오늘 접속한 곳", `${o.remotes}곳`, `프로그램 ${o.programs}개`, () => state.go("connections", {}), "globe", "info", o.hourly), anchor);
+    status.insertBefore(tile("오늘 접속한 곳", `${o.remotes}곳`, `프로그램 ${o.programs}개`, () => state.go("connections", {}), "globe", "info", th ? th.conns : o.hourly), anchor);
     status.append(tile("일일 트래픽", bytes(o.sent + o.recv), o.sent + o.recv ? `송신 ${bytes(o.sent)} · 수신 ${bytes(o.recv)}` : "양 기록 없음", () => state.go("connections", {}), "swap", "neutral"));
 
     // 네 질문(2×2)
@@ -239,8 +243,11 @@ export function dashboard(): HTMLElement {
     const highHourly = hourlyCounts(highTs, nowSec);
     const maxH = Math.max(...o.hourly);
     const legend = el("div", "chart-legend", el("span", "lg recv", "수신"), el("span", "lg sent", "송신"), el("span", "lg crit", LEVEL.critical), el("span", "lg high", LEVEL.suspicious));
-    hours.append(el("div", "chart-head", el("h3", undefined, "트래픽 · 인시던트 (오늘, 시간대별)"), legend), barChart({ sent: o.hourlySent, recv: o.hourlyRecv, critical: critHourly, high: highHourly }, nowH));
-    hours.append(el("p", "muted small", maxH ? `막대 = 시간대별 수신+송신 바이트 · 막대 위 점 = 그 시간의 인시던트 · 접속이 가장 많은 시간 ${maxH}건 · 마지막 접속 시각 기준` : "오늘 접속 기록이 없습니다."));
+    const trafficSent = th ? th.sent : o.hourlySent;
+    const trafficRecv = th ? th.recv : o.hourlyRecv;
+    hours.append(el("div", "chart-head", el("h3", undefined, "트래픽 · 인시던트 (오늘, 시간대별)"), legend), barChart({ sent: trafficSent, recv: trafficRecv, critical: critHourly, high: highHourly }, nowH));
+    const peakConn = th ? Math.max(...th.conns) : maxH;
+    hours.append(el("p", "muted small", peakConn || th ? `막대 = 시간대별 수신+송신 바이트 · 막대 위 점 = 그 시간의 인시던트 · 접속이 가장 많은 시간 ${peakConn}건${th ? "" : " · 마지막 접속 시각 기준"}` : "오늘 접속 기록이 없습니다."));
     const whereCard = el("section", "card where-dash", el("div", "kpi-head", icon("globe"), el("h3", undefined, "오늘 어디와 통신했나")));
     const cols = el("div", "where-dash-cols");
     for (const [by, title] of [["country", "나라별 (접속 수)"], ["org", "망(조직)별 (접속 수)"]] as const) {
@@ -548,4 +555,20 @@ export function groupProtection<T extends { kind: string; ts: number; target?: {
     }
   }
   return out;
+}
+
+/// traffic.hourly 응답 → 오늘 0~23시 버킷(현지 시각). 어제 시간대는 버린다
+export function hourlyFromSummary(items: { hour: number; sent: number; recv: number; conns: number }[], nowSec: number): { sent: number[]; recv: number[]; conns: number[] } {
+  const sent = new Array<number>(24).fill(0), recv = new Array<number>(24).fill(0), conns = new Array<number>(24).fill(0);
+  const d = new Date(nowSec * 1000);
+  d.setHours(0, 0, 0, 0);
+  const dayStart = d.getTime() / 1000;
+  for (const it of items) {
+    if (it.hour < dayStart || it.hour > nowSec) continue;
+    const h = new Date(it.hour * 1000).getHours();
+    sent[h]! += it.sent;
+    recv[h]! += it.recv;
+    conns[h]! += it.conns;
+  }
+  return { sent, recv, conns };
 }

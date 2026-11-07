@@ -607,6 +607,7 @@ impl<'a> Ingester<'a> {
                 let eid = self
                     .store
                     .insert_edge(src, dst, Rel::Connected, ev.ts, Some(raw_id))?;
+                self.store.add_traffic_hour(ev.ts, 0, 0, 1)?;
                 if *direction == Direction::Out && !is_svc {
                     if let Some(d) = &domain {
                         self.touch_domain(ev.ts, p, d);

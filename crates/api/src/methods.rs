@@ -20,6 +20,8 @@ pub enum Method {
     ConnectionsList,
     ConnectionsSubscribe,
     ListenersList,
+    /// 시간대별 트래픽 요약(개편안 2판 1-4): { since_secs } → items[{hour, sent, recv, conns}]
+    TrafficHourly,
     GraphNeighbors,
     GraphRewind,
     GraphTimeline,
@@ -81,6 +83,7 @@ impl Method {
         ("connections.list", Method::ConnectionsList),
         ("connections.subscribe", Method::ConnectionsSubscribe),
         ("listeners.list", Method::ListenersList),
+        ("traffic.hourly", Method::TrafficHourly),
         ("graph.neighbors", Method::GraphNeighbors),
         ("graph.rewind", Method::GraphRewind),
         ("graph.timeline", Method::GraphTimeline),
@@ -601,7 +604,8 @@ pub fn validate_params(
         | Method::JudgeBaselineStatus
         | Method::RetentionGet
         | Method::SettingsGet
-        | Method::CollectorHealth => {}
+        | Method::CollectorHealth
+        | Method::TrafficHourly => {}
         Method::ServiceEvents => {
             let v: ServiceEventsParams = serde_json::from_value(p.clone())
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;

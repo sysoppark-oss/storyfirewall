@@ -1529,6 +1529,22 @@ fn handle(
                 .map_err(|e| RpcError::with(ErrorCode::Internal, e))?;
             j(serde_json::json!({ "items": items }))
         }
+        Method::TrafficHourly => {
+            // 조회 경로는 traffic_hourly 한 표만 읽는다(연결 선을 세지 않는다)
+            let since = p
+                .get("since_secs")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(86_400)
+                .clamp(3_600, 30 * 86_400);
+            let since_unix = world.engine_wall() - since;
+            let rows = world
+                .graph
+                .traffic_hourly(since_unix)
+                .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
+            j(serde_json::json!({
+                "items": rows.into_iter().map(|(h, s, r, c)| serde_json::json!({ "hour": h, "sent": s, "recv": r, "conns": c })).collect::<Vec<_>>()
+            }))
+        }
         Method::ListenersList => {
             let ls = world
                 .host

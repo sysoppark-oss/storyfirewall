@@ -708,9 +708,14 @@ fn flush_bytes(ctx: &Ctx, store: &Store) -> Result<u64> {
     }
     let ts = now_filetime();
     let tx = store.begin_write()?;
+    let (mut s_tot, mut r_tot) = (0u64, 0u64);
     for (k, b) in &taken {
         store.add_conn_bytes(k.pid, k.proto, &k.raddr, k.rport, b.sent, b.recv, ts)?;
+        s_tot += b.sent;
+        r_tot += b.recv;
     }
+    // 시간대별 요약(개편안 2판 1-4): 같은 트랜잭션에서 한 행만 갱신
+    store.add_traffic_hour(ts, s_tot, r_tot, 0)?;
     tx.commit()?;
     Ok(taken.len() as u64)
 }

@@ -353,6 +353,31 @@ impl Store {
         Ok(())
     }
 
+    /// FILETIME → 시간대 버킷(unix 초, 시 단위 내림)
+    pub fn hour_bucket(ts_ft: i64) -> i64 {
+        let unix = ts_ft / 10_000_000 - 11_644_473_600;
+        unix - unix.rem_euclid(3600)
+    }
+    /// 시간대별 트래픽 요약에 바이트 더하기(쓰기 경로, 한 시간에 한 행)
+    pub fn add_traffic_hour(&self, ts_ft: i64, sent: u64, recv: u64, conns: u64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO traffic_hourly(hour, sent, recv, conns) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(hour) DO UPDATE SET sent = sent + excluded.sent, recv = recv + excluded.recv, conns = conns + excluded.conns",
+            params![Self::hour_bucket(ts_ft), sent as i64, recv as i64, conns as i64],
+        )?;
+        Ok(())
+    }
+    /// `since_unix` 이후 시간대별 요약(hour 오름차순). 조회 경로는 이 작은 표만 읽는다
+    pub fn traffic_hourly(&self, since_unix: i64) -> Result<Vec<(i64, i64, i64, i64)>> {
+        let mut st = self.conn.prepare("SELECT hour, sent, recv, conns FROM traffic_hourly WHERE hour >= ?1 ORDER BY hour")?;
+        let rows = st.query_map(params![since_unix - since_unix.rem_euclid(3600)], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+        rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+    }
+    /// 보관 정리: 오래된 시간대 요약 삭제
+    pub fn prune_traffic_hourly(&self, before_unix: i64) -> Result<usize> {
+        Ok(self.conn.execute("DELETE FROM traffic_hourly WHERE hour < ?1", params![before_unix])?)
+    }
+
     pub fn count_nodes(&self) -> Result<i64> {
         Ok(self
             .conn

@@ -1,0 +1,94 @@
+﻿2026-11-07 03:38:54Z request job=diag
+2026-11-07 03:39:06Z diag: file graph.db bytes=679411712
+2026-11-07 03:39:06Z diag: file graph.db-wal bytes=4144752
+2026-11-07 03:39:06Z diag: file engine.db bytes=73728
+2026-11-07 03:39:06Z diag: log 1794019752 pipe: published \\.\pipe\story-firewall-da1816a779c94a6296d77dfff60163ec
+2026-11-07 03:39:06Z diag: log 1794019752 service: running
+2026-11-07 03:39:06Z diag: log 1794021241 pipe: connection 1 closed: closed
+2026-11-07 03:39:06Z diag: log 1794021241 event: Stop
+2026-11-07 03:39:06Z diag: log 1794021242 collector: stopped ingested=8088 dropped=0 lost=Some(0)
+2026-11-07 03:39:06Z diag: log 1794021242 service: stopped
+2026-11-07 03:39:06Z diag: log 1794021248 service: start v0.1.0 dir=C:\ProgramData\StoryFirewall
+2026-11-07 03:39:06Z diag: log 1794021248 judge: self dir=C:\Program Files\Story Firewall
+2026-11-07 03:39:06Z diag: log 1794021248 geo: country=true built=Some(1793501259) errors=[]
+2026-11-07 03:39:06Z diag: log 1794021248 collector: started
+2026-11-07 03:39:06Z diag: log 1794021248 pipe: published \\.\pipe\story-firewall-1e6e7e656a444ce8bd7fa1075d40fd45
+2026-11-07 03:39:06Z diag: log 1794021248 service: running
+2026-11-07 03:39:06Z diag: log 1794021248 event: Stop
+2026-11-07 03:39:06Z diag: log 1794021249 collector: stopped ingested=507 dropped=0 lost=Some(0)
+2026-11-07 03:39:06Z diag: log 1794021249 service: stopped
+2026-11-07 03:39:06Z diag: log 1794021249 service: start v0.1.0 dir=C:\ProgramData\StoryFirewall
+2026-11-07 03:39:06Z diag: log 1794021249 judge: self dir=C:\Program Files\Story Firewall
+2026-11-07 03:39:06Z diag: log 1794021249 geo: country=true built=Some(1793501259) errors=[]
+2026-11-07 03:39:06Z diag: log 1794021249 collector: started
+2026-11-07 03:39:06Z diag: log 1794021249 pipe: published \\.\pipe\story-firewall-4816b9ae5a6847f78f642602c56192e1
+2026-11-07 03:39:06Z diag: log 1794021249 service: running
+2026-11-07 03:39:06Z diag: log 1794022680 pipe: connection 1 closed: closed
+2026-11-07 03:39:06Z diag: log 1794022680 event: Stop
+2026-11-07 03:39:06Z diag: log 1794022681 collector: stopped ingested=6364 dropped=0 lost=Some(0)
+2026-11-07 03:39:06Z diag: log 1794022681 service: stopped
+2026-11-07 03:39:06Z diag: log 1794022687 service: start v0.1.0 dir=C:\ProgramData\StoryFirewall
+2026-11-07 03:39:06Z diag: log 1794022687 judge: self dir=C:\Program Files\Story Firewall
+2026-11-07 03:39:06Z diag: log 1794022687 geo: country=true built=Some(1793501259) errors=[]
+2026-11-07 03:39:06Z diag: log 1794022687 collector: started
+2026-11-07 03:39:07Z diag: log 1794022687 pipe: published \\.\pipe\story-firewall-26750d9f74c34b029d04583136a6dda5
+2026-11-07 03:39:07Z diag: log 1794022687 service: running
+2026-11-07 03:39:07Z diag: log 1794022688 event: Stop
+2026-11-07 03:39:07Z diag: log 1794022689 collector: stopped ingested=560 dropped=0 lost=Some(0)
+2026-11-07 03:39:07Z diag: log 1794022689 service: stopped
+2026-11-07 03:39:07Z diag: log 1794022689 service: start v0.1.0 dir=C:\ProgramData\StoryFirewall
+2026-11-07 03:39:07Z diag: log 1794022689 judge: self dir=C:\Program Files\Story Firewall
+2026-11-07 03:39:07Z diag: log 1794022689 geo: country=true built=Some(1793501259) errors=[]
+2026-11-07 03:39:07Z diag: log 1794022689 collector: started
+2026-11-07 03:39:07Z diag: log 1794022689 pipe: published \\.\pipe\story-firewall-3e2f72330aac48e8b6d0b3d26041ebb6
+2026-11-07 03:39:07Z diag: log 1794022689 service: running
+2026-11-07 03:39:07Z diag: timings wall=1794022721
+2026-11-07 03:39:07Z diag: timing 엔진: 주기 판정?보관 정리 count=2 avg_ms=14417 max_ms=19931 last_ms=8903
+2026-11-07 03:39:07Z diag: timing 엔진: 주기 판정 count=3 avg_ms=7343 max_ms=12668 last_ms=464
+2026-11-07 03:39:07Z diag: timing 엔진: 주기 판정(전체) count=2 avg_ms=7591 max_ms=8552 last_ms=6630
+2026-11-07 03:39:07Z diag: timing 엔진: 주기 판정: 불러오기 count=3 avg_ms=3597 max_ms=6456 last_ms=4
+2026-11-07 03:39:07Z diag: timing 엔진: 보관 정리 count=1 avg_ms=5571 max_ms=5571 last_ms=5571
+2026-11-07 03:39:07Z diag: timing 엔진: 이야기 문장 미리 만들기 count=3 avg_ms=2128 max_ms=4116 last_ms=1
+2026-11-07 03:39:07Z diag: timing 엔진: AI 도구 미리 계산 count=1 avg_ms=1230 max_ms=1230 last_ms=1230
+2026-11-07 03:39:07Z diag: timing 엔진: 주기 판정: 장 기록 count=3 avg_ms=647 max_ms=1025 last_ms=29
+2026-11-07 03:39:07Z diag: timing 엔진: 주기 판정: 후보 찾기 count=3 avg_ms=675 max_ms=942 last_ms=148
+2026-11-07 03:39:07Z diag: timing 엔진: 미끼 등록 count=1 avg_ms=490 max_ms=490 last_ms=490
+2026-11-07 03:39:07Z diag: timing 엔진: 주기 판정(증분) count=1 avg_ms=462 max_ms=462 last_ms=462
+2026-11-07 03:39:07Z diag: timing 엔진: 설치 목록 미리 계산 count=1 avg_ms=451 max_ms=451 last_ms=451
+2026-11-07 03:39:07Z diag: timing 엔진: 주기 판정: 점수 count=3 avg_ms=166 max_ms=178 last_ms=166
+2026-11-07 03:39:07Z diag: timing 엔진: 주기 판정: 사슬 모으기 count=3 avg_ms=118 max_ms=137 last_ms=106
+2026-11-07 03:39:07Z diag: timing 엔진: 수집 배치 count=33 avg_ms=1 max_ms=25 last_ms=0
+2026-11-07 03:39:07Z diag: timing 엔진: Defender 기록 count=1 avg_ms=0 max_ms=0 last_ms=0
+2026-11-07 03:39:07Z diag: policy id=2 name=ACL state=rolled_back v=3 created=1793959791 deadline=None
+2026-11-07 03:39:07Z diag: policy id=1 name=차단-시험-curl-1.1.1.1 state=paused v=1 created=1793949323 deadline=None
+2026-11-07 03:39:07Z diag: history ts=1793965177 policy=2 rollback by pid 18764 C:\Program Files\Story Firewall\story-firewall-ui.exe removed 1
+2026-11-07 03:39:07Z diag: history ts=1793965135 policy=2 apply by pid 18764 C:\Program Files\Story Firewall\story-firewall-ui.exe (승인; 맡김: pid 9732 C:\Program Files\Story Firewall\story-firewall-ui.exe) version 3, filters 1, active true
+2026-11-07 03:39:07Z diag: history ts=1793963268 policy=2 rollback by pid 3016 C:\Program Files\Story Firewall\story-firewall-ui.exe removed 1
+2026-11-07 03:39:07Z diag: history ts=1793963218 policy=2 apply by pid 3016 C:\Program Files\Story Firewall\story-firewall-ui.exe (승인; 맡김: pid 1440 C:\Program Files\Story Firewall\story-firewall-ui.exe) version 2, filters 1, active true
+2026-11-07 03:39:07Z diag: history ts=1793960577 policy=2 rollback by pid 2200 C:\Program Files\Story Firewall\story-firewall-ui.exe (승인; 맡김: pid 17384 C:\Program Files\Story Firewall\story-firewall-ui.exe) removed 0
+2026-11-07 03:39:07Z diag: history ts=1793960563 policy=2 pause by pid 9852 C:\Program Files\Story Firewall\story-firewall-ui.exe (승인; 맡김: pid 17384 C:\Program Files\Story Firewall\story-firewall-ui.exe) 
+2026-11-07 03:39:07Z diag: history ts=1793960379 policy=1 pause by pid 17428 C:\Program Files\Story Firewall\story-firewall-ui.exe (승인; 맡김: pid 17384 C:\Program Files\Story Firewall\story-firewall-ui.exe) 
+2026-11-07 03:39:07Z diag: history ts=1793959997 policy=2 rollback by pid 3804 C:\Program Files\Story Firewall\story-firewall-ui.exe (승인; 맡김: pid 17384 C:\Program Files\Story Firewall\story-firewall-ui.exe) removed 0
+2026-11-07 03:39:07Z diag: history ts=1793959919 policy=2 rollback by pid 19192 C:\Program Files\Story Firewall\story-firewall-ui.exe removed 0
+2026-11-07 03:39:07Z diag: history ts=1793959856 policy=2 rollback by system:confirm-timeout removed 1
+2026-11-07 03:39:07Z diag: history ts=1793959791 policy=2 apply by pid 19192 C:\Program Files\Story Firewall\story-firewall-ui.exe (승인; 맡김: pid 17384 C:\Program Files\Story Firewall\story-firewall-ui.exe) version 1, filters 1, active true
+2026-11-07 03:39:07Z diag: history ts=1793950115 policy=1 rollback by system:confirm-timeout removed 1
+2026-11-07 03:39:07Z diag: history ts=1793949323 policy=1 apply by pid 17676 C:\Program Files\Story Firewall\story-firewall-ui.exe (승인; 맡김: pid 13196 C:\Program Files\Story Firewall\story-firewall-ui.exe) version 1, filters 1, active true
+2026-11-07 03:39:07Z diag: acl policy=2 yaml=- name: "acl.1" /   priority: 1 /   action: block /   match: {"direction":"out","protocol":"icmp","remote_ip":["168.126.63.1"]} / 
+2026-11-07 03:39:07Z diag: open ms=21
+2026-11-07 03:39:07Z diag: count raw_events ms=394 rows=1951086
+2026-11-07 03:39:07Z diag: count nodes ms=44 rows=111378
+2026-11-07 03:39:07Z diag: count edges ms=33 rows=872133
+2026-11-07 03:39:07Z diag: count ingest_gaps ms=0 rows=12
+2026-11-07 03:39:07Z diag: snapshot ts (old, no index) ms=2120 n=181
+2026-11-07 03:39:07Z diag: consistency 24h ms=44 svchost_no_services=7/277 process_no_image_file=0/5742 process_unresolved=0/5742
+2026-11-07 03:39:07Z diag: views::connections 5min ms=7 rows=22
+2026-11-07 03:39:07Z diag: rdp sessions now ms=2 n=0
+2026-11-07 03:39:07Z diag: remote tools (10min) ms=58 teamviewer:1976 sent=1290992 recv=67220983 span_s=156929 sent_per_min=493 | teamviewer:5720 sent=3558599231 recv=4203267250 span_s=157793 sent_per_min=1353139 | teamviewer:16312 sent=1929408975 recv=135209899 span_s=377766 sent_per_min=306445
+2026-11-07 03:39:07Z diag: seen_before remotes (30d) ms=10 remotes=2141
+2026-11-07 03:39:07Z diag: facts::collect_recent 24h ms=92 facts=20000 truncated=true
+2026-11-07 03:39:07Z diag: story::tell_recent 24h (service path) ms=303 sentences=1100 truncated=true
+2026-11-07 03:39:07Z diag: story::tell 24h ms=6923 sentences=8663
+2026-11-07 03:39:08Z diag: judge::run 24h ms=876 stories=44
+2026-11-07 03:39:08Z diag: story::narrate 24h ms=106 narratives=44
+2026-11-07 03:39:08Z done exit=0
