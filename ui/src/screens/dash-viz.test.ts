@@ -12,3 +12,13 @@ describe("대시보드 시각 요소", () => {
     expect(chapterReach([[1, 2, 4], [2], [9]])).toEqual([1, 2, 0, 1]);
   });
 });
+
+import { axisNum } from "./dash-viz";
+describe("축 눈금 숫자", () => {
+  it("만·천 단위로 줄인다", () => {
+    expect(axisNum(124706)).toBe("12만");
+    expect(axisNum(47060)).toBe("4.7만");
+    expect(axisNum(2353)).toBe("2.4천");
+    expect(axisNum(20)).toBe("20");
+  });
+});

@@ -351,6 +351,13 @@ if (mode === "nonadmin") {
   // 디자인 회신용 화면 캡처(Linux CI 와 개발 세션 로컬에서도 같은 것)
   await captureScreens(page, outDir, (m) => { console.log(m); results.push(`INFO ${m}`); });
   // 반응형(2026-11-07): 좁은 창(700px)에서 대시보드 — 메뉴가 위로, KPI 2열, 가로 스크롤 없음
+  // 125% 배율 노트북(1093px): KPI 4열, 그래프+도넛 나란히
+  await page.setViewportSize({ width: 1093, height: 760 });
+  await page.click("button.nav-btn[data-key=dashboard]");
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: path.join(outDir, "dashboard-1093.png"), fullPage: false });
+  const mid = await page.evaluate(() => ({ kpiCols: getComputedStyle(document.querySelector(".kpi-row")).gridTemplateColumns.split(" ").length, row2: getComputedStyle(document.querySelector(".dash-viz .dash-row2")).gridTemplateColumns.split(" ").length }));
+  must(mid.kpiCols === 4 && mid.row2 === 2, `responsive: 1093px kpi 4 cols, graph+donut side by side (${JSON.stringify(mid)})`);
   await page.setViewportSize({ width: 700, height: 900 });
   await page.click("button.nav-btn[data-key=dashboard]");
   await page.waitForTimeout(1500);

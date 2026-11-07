@@ -62,8 +62,15 @@ export interface AreaSeries {
  * 24시간 영역 그래프(겹침). x = 시(0~23), 지금 시각까지 실선·그 뒤는 비움. 툴팁은 title 로.
  * 최댓값 눈금 2개(0·max). 숫자가 전부 0이면 "기록 없음" 문구를 만든 쪽이 붙인다.
  */
+/// 축 눈금 숫자: 만 단위로 줄인다(124706 → "12.5만"). 왼쪽 여백이 잘리지 않게
+export function axisNum(v: number): string {
+  if (v >= 10_000) return `${(v / 10_000).toFixed(v >= 100_000 ? 0 : 1)}만`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}천`;
+  return String(Math.round(v));
+}
+
 export function areaChart(series: AreaSeries[], nowHour: number, w = 720, h = 160): SVGElement {
-  const L = 28, R = 8, T = 10, B = 22;
+  const L = 40, R = 8, T = 10, B = 22;
   const s = document.createElementNS(NS, "svg");
   s.setAttribute("viewBox", `0 0 ${w} ${h}`);
   s.setAttribute("class", "area-chart");
@@ -81,7 +88,7 @@ export function areaChart(series: AreaSeries[], nowHour: number, w = 720, h = 16
     const t = document.createElementNS(NS, "text");
     t.setAttribute("x", String(L - 4)); t.setAttribute("y", (y(v) + 3).toFixed(1));
     t.setAttribute("class", "ax"); t.setAttribute("text-anchor", "end");
-    t.textContent = String(Math.round(v));
+    t.textContent = axisNum(v);
     s.append(t);
   }
   for (let hh = 0; hh <= 23; hh += 6) {
