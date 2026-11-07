@@ -161,12 +161,26 @@ try {
                     $got = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
                     if ($got -ne $want) { Log $id ("rejected: setup sha256 " + $got + " != manifest " + $want); Log $id "done exit=1"; break }
                     Log $id ("dev build commit=" + $built + " pin=" + $pin)
+                    # L070 (install-95, 2026-11-07): setup aborts (exit 2) when the UI is running, but the service step
+                    # below still swapped the service -> new service + old UI = signature_failed. Close the UI first.
+                    $ui = @(Get-Process -Name "story-firewall-ui" -ErrorAction SilentlyContinue)
+                    if ($ui.Count -gt 0) {
+                        Log $id ("ui running: closing " + $ui.Count + " process(es) before setup")
+                        $ui | ForEach-Object { try { $_.CloseMainWindow() | Out-Null } catch {} }
+                        Start-Sleep -Seconds 2
+                        Get-Process -Name "story-firewall-ui" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+                        Start-Sleep -Seconds 1
+                    }
                     $p = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
                     Log $id ("setup exit=" + $p.ExitCode)
                     Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue
                     Log $id ("temp removed=" + (-not (Test-Path $dl)))
                     $svcExe = Join-Path $env:ProgramFiles "Story Firewall\story-firewall-svc.exe"
                     if (-not (Test-Path $svcExe)) { Log $id "done exit=1 (service exe missing)"; break }
+                    # L065 (install-95, 2026-11-07): setup aborted (exit 2 = the UI was open) left the OLD binaries, but the
+                    # service was still re-registered with the NEW build's signer pin, so the old UI could no longer pass the
+                    # pipe check. On a failed setup keep the service exactly as it was and only report.
+                    if ($p.ExitCode -ne 0) { Log $id ("done exit=1 (setup exit=" + $p.ExitCode + ", old build kept; service pin unchanged - close the UI and retry)"); break }
                     foreach ($a in @(@("install", "--test-signer-sha256", $pin), @("stop"), @("start"))) {
                         $o = & $svcExe @a 2>&1 | Out-String
                         Log $id ("svc " + $a[0] + ": " + $o.Trim())
