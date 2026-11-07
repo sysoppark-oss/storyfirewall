@@ -350,6 +350,13 @@ if (mode === "nonadmin") {
   await runScenario(page, outDir, must);
   // 디자인 회신용 화면 캡처(Linux CI 와 개발 세션 로컬에서도 같은 것)
   await captureScreens(page, outDir, (m) => { console.log(m); results.push(`INFO ${m}`); });
+  // 반응형(2026-11-07): 좁은 창(700px)에서 대시보드 — 메뉴가 위로, KPI 2열, 가로 스크롤 없음
+  await page.setViewportSize({ width: 700, height: 900 });
+  await page.click("button.nav-btn[data-key=dashboard]");
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: path.join(outDir, "dashboard-narrow-700.png"), fullPage: false });
+  const narrow = await page.evaluate(() => ({ hscroll: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1, kpiCols: getComputedStyle(document.querySelector(".kpi-row")).gridTemplateColumns.split(" ").length }));
+  must(!narrow.hscroll && narrow.kpiCols === 2, `responsive: narrow dashboard no hscroll, kpi 2 cols (${JSON.stringify(narrow)})`);
 }
 
 must(cspViolations.length === 0, `no CSP violations (${cspViolations.join(" | ").slice(0, 300)})`);

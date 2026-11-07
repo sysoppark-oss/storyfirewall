@@ -10,6 +10,16 @@ body { margin: 0; font: 14px/1.5 system-ui, "Malgun Gothic", sans-serif; backgro
 .nav-btn { text-align: left; border: 0; background: transparent; color: var(--fg); padding: 8px 10px; border-radius: 6px; cursor: pointer; }
 .nav-btn.active, .nav-btn:hover { background: color-mix(in srgb, var(--brand-strong) 15%, transparent); }
 .main { padding: 20px 28px; overflow: auto; }
+/* 반응형(사용자 2026-11-07): 좁은 창에서는 메뉴를 위로 가로 배치, 여백 축소 */
+@media (max-width: 760px) {
+  #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+  .nav { grid-row: auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 8px; }
+  .nav-btn { padding: 6px 8px; font-size: 13px; }
+  .main { padding: 12px 12px; }
+  #app > .status { grid-column: 1; padding: 6px 12px; }
+}
+/* 서비스 보호 사건: 접힌 상자 */
+.prot-box { margin-top: 14px; padding: 10px 16px; } .prot-box > summary { cursor: pointer; font-weight: 600; } .prot-box[open] > summary { margin-bottom: 8px; }
 .status { grid-column: 2; padding: 6px 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .status.error { color: var(--bad); }
 .status.mixed { color: var(--muted); } .status .st-ok { color: var(--ok); } .status .st-warn { color: var(--warn); font-weight: 600; }
@@ -425,6 +435,7 @@ details.where-panel { border-radius: 16px; }
 /* 개편안 2판 1-2: KPI 4칸 */
 .screen > .cards.kpi-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 1200px) { .screen > .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } .screen > .cards.kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .screen > .cards, .screen > .cards.kpi-row { grid-template-columns: minmax(0, 1fr); } }
 .screen > .cards .card { min-width: 0; border-radius: 14px; }
 .card.tile { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; cursor: pointer; min-width: 0; }
 .card.tile:hover { border-color: var(--brand); }

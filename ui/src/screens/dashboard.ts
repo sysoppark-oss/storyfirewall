@@ -372,6 +372,7 @@ export function dashboard(): HTMLElement {
     const inGap = all.filter((s) => s.started_in_gap);
     if (hr.ok) body.append(healthLine(hr.result, () => state.go("settings", {}), { n: inGap.length, open: () => state.go("story", { root: inGap[0]?.root }) }));
     const prot = se.ok ? se.result.items.filter((e) => PROTECTION_KINDS.has(e.kind)) : [];
+    let protBox: HTMLElement | null = null;
     if (prot.length) {
       const list = el("div", "list service-events");
       for (const e of prot) {
@@ -420,7 +421,16 @@ export function dashboard(): HTMLElement {
         }
         list.append(row);
       }
-      body.append(el("h2", undefined, "서비스 보호 사건 (7일)"), list);
+      // 사용자 2026-11-07: 이 목록이 화면을 다 차지해 아래 위젯이 안 보였다 → 우선 대응 목록 뒤, 접힌 상자(details)로.
+      // 경고(막은 사건)가 24시간 안에 있으면 펼쳐 둔다. 나머지는 머리글 한 줄(건수 · 최근 사건)만
+      const recentAlert = prot.some((e) => !QUIET_KINDS.has(e.kind) && Date.now() / 1000 - e.ts < 86400);
+      const box = el("details", "card prot-box");
+      if (recentAlert) box.open = true;
+      const latest = prot[0];
+      const sum = el("summary", undefined, `서비스 보호 사건 ${prot.length}건 (7일)`);
+      if (latest) sum.append(el("span", "muted small", ` · 최근 ${SERVICE_EVENT_TITLE[latest.kind] ?? latest.kind} ${fmtShort(latest.ts)}`));
+      box.append(sum, list);
+      protBox = box;
     }
     if (sus.length) {
       const list = el("div", "list");
@@ -451,12 +461,14 @@ export function dashboard(): HTMLElement {
         list.append(row);
       }
       body.append(el("h2", undefined, "우선 대응 인시던트"), list);
+      if (protBox) body.append(protBox);
     } else {
       // D013: 오류 / 수집 안 됨 / 비어 있음을 가른다. "조용합니다"는 응답이 성공했고 수집이 돌 때만
       const st = listState(ev, hr.ok ? hr.result : null);
       if (st === "error" && !ev.ok) body.append(failBox(ev.error, () => void refresh(), "의심 사건 목록"));
       else if (st === "nodata") body.append(noDataBox(() => state.go("settings", {})));
       else body.append(el("p", "muted", "오늘은 조용합니다. 의심스러운 이야기가 없습니다."), checkedLine(hr.ok ? hr.result : null));
+      if (protBox) body.append(protBox);
     }
   };
   void refresh();
