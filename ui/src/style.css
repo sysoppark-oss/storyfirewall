@@ -435,9 +435,10 @@ details.where-panel { border-radius: 16px; }
 /* 개편안 2판 1-2: KPI 4칸 */
 .screen > .cards.kpi-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 1200px) { .screen > .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-/* 125% 배율 노트북(1093px)에서도 KPI 4열·그래프+도넛 나란히(사용자 2026-11-07) */
-@media (max-width: 900px) { .screen > .cards.kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 600px) { .screen > .cards, .screen > .cards.kpi-row { grid-template-columns: minmax(0, 1fr); } }
+/* 반응형(사용자 2026-11-07 "창을 줄여도 밀리지 않게"): KPI 는 600px 까지 4열을 유지하고 글자·여백이 폭에 따라 줄어든다(아래 clamp) */
+@media (max-width: 600px) { .screen > .cards.kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .screen > .cards.kpi-row > .card { padding: 10px 12px; } .kpi-head h3 { font-size: 12px; } .kpi .spark { width: 80px; } .kpi .muted.small { font-size: 11px; } }
+@media (max-width: 420px) { .screen > .cards, .screen > .cards.kpi-row { grid-template-columns: minmax(0, 1fr); } }
 .screen > .cards .card { min-width: 0; border-radius: 14px; }
 .card.tile { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; cursor: pointer; min-width: 0; }
 .card.tile:hover { border-color: var(--brand); }
@@ -550,13 +551,15 @@ details.where-panel { border-radius: 16px; }
 .flow-step:last-child.on { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--card)); }
 .flow-n { font-size: 24px; font-weight: 700; } .flow-name { font-weight: 600; margin-top: 2px; }
 .flow-arrow { align-self: center; color: var(--muted); font-size: 18px; }
-@media (max-width: 900px) { .flow-strip { flex-wrap: wrap; } .flow-arrow { display: none; } .flow-step { flex: 1 1 45%; } }
+@media (max-width: 1000px) { .flow-step { padding: 8px 6px; } .flow-n { font-size: 20px; } .flow-name { font-size: 13px; } .flow-step .muted.small { display: none; } .flow-arrow { font-size: 12px; } }
+@media (max-width: 560px) { .flow-strip { flex-wrap: wrap; } .flow-arrow { display: none; } .flow-step { flex: 1 1 45%; } }
 /* 2026-11-07: 카드 아래 시각 줄(그래프·도넛·4장 띠), 카드 강조 */
 .dash-viz { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
 .dash-viz .dash-row2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 14px; }
-@media (max-width: 900px) { .dash-viz .dash-row2 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .dash-viz .dash-row2 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1000px) { .dash-viz .dash-row2 { grid-template-columns: minmax(0, 1.6fr) minmax(220px, 1fr); } }
 .dash-viz .card h3, .dash-overview .card h3 { margin: 0 0 8px; font-size: 14px; }
-.kpi .big { font-size: 34px; line-height: 1.1; }
+.kpi .big { font-size: clamp(20px, 2.6vw, 34px); line-height: 1.1; }
 .kpi-head .kpi-icon { width: 28px; height: 28px; padding: 5px; border-radius: 8px; background: color-mix(in srgb, currentColor 14%, transparent); }
 .kpi.tone-neutral .kpi-icon { background: color-mix(in srgb, var(--muted) 14%, transparent); }
 .kpi.tone-ok { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }

@@ -363,7 +363,13 @@ if (mode === "nonadmin") {
   await page.waitForTimeout(1500);
   await page.screenshot({ path: path.join(outDir, "dashboard-narrow-700.png"), fullPage: false });
   const narrow = await page.evaluate(() => ({ hscroll: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1, kpiCols: getComputedStyle(document.querySelector(".kpi-row")).gridTemplateColumns.split(" ").length }));
-  must(!narrow.hscroll && narrow.kpiCols === 2, `responsive: narrow dashboard no hscroll, kpi 2 cols (${JSON.stringify(narrow)})`);
+  must(!narrow.hscroll && narrow.kpiCols === 4, `responsive: narrow(700) dashboard no hscroll, kpi still 4 cols (${JSON.stringify(narrow)})`);
+  // 898px(노트북 창 1122px·125%): 큰 화면과 같은 배치여야 한다
+  await page.setViewportSize({ width: 898, height: 760 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(outDir, "dashboard-898.png"), fullPage: false });
+  const w898 = await page.evaluate(() => ({ hscroll: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1, kpiCols: getComputedStyle(document.querySelector(".kpi-row")).gridTemplateColumns.split(" ").length, row2: getComputedStyle(document.querySelector(".dash-viz .dash-row2")).gridTemplateColumns.split(" ").length }));
+  must(!w898.hscroll && w898.kpiCols === 4 && w898.row2 === 2, `responsive: 898px same layout as wide (${JSON.stringify(w898)})`);
 }
 
 must(cspViolations.length === 0, `no CSP violations (${cspViolations.join(" | ").slice(0, 300)})`);
