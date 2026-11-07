@@ -45,8 +45,12 @@ tr.clickable { cursor: pointer; } tr.clickable:hover { background: color-mix(in 
 .detail { margin-top: 16px; } .card.process .section { margin-top: 10px; } .card.process h4 { margin: 0 0 4px; font-size: 13px; } .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; }
 .chain { display: flex; flex-wrap: wrap; gap: 4px; } .chip { padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); font-size: 12px; } .chip.remote { border-color: var(--warn); } .chip.file { border-style: dashed; }
 dialog.ack ul { margin: 4px 0 8px; padding-left: 18px; max-height: 160px; overflow: auto; } dialog.ack h4 { margin: 10px 0 2px; font-size: 13px; }
-.cy-wrap { display: grid; grid-template-columns: 1fr; gap: 10px; } .cy-wrap.has-side { grid-template-columns: 1fr 300px; } .mm-hint { font-size: 12px; margin: 0 0 6px; } .cy { height: 460px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); } .cy-side { max-height: 460px; overflow: auto; font-size: 12px; }
-@media (max-width: 1000px) { .cy-wrap { grid-template-columns: 1fr; } }
+/* 반응형: 캔버스 칸은 minmax(0,1fr) 로 줄어들 수 있게, 옆 칸은 카드 폭이 좁으면(컨테이너 질의) 아래로 */
+.card.mindmap { container-type: inline-size; min-width: 0; }
+.cy-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; } .cy-wrap.has-side { grid-template-columns: minmax(0, 1fr) minmax(220px, 280px); }
+.cy-wrap > * { min-width: 0; } .cy-side { overflow-wrap: anywhere; }
+@container (max-width: 720px) { .cy-wrap.has-side { grid-template-columns: minmax(0, 1fr); } .cy-side { max-height: 280px; } } .mm-hint { font-size: 12px; margin: 0 0 6px; } .cy { height: 460px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); } .cy-side { max-height: 460px; overflow: auto; font-size: 12px; }
+
 .chip.center { border-color: var(--brand-strong); font-weight: 600; }
 .badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; } .badge.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
 .card.gap { border-color: var(--warn); color: var(--warn); } label.block { display: block; margin-top: 4px; }

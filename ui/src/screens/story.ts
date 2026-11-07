@@ -731,7 +731,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     return box;
   };
   /// 끊기: 미리보기(무엇을 막고·끊고·남기는지) → 적용 → 정책마다 60초 확인
-  const cutDialog = async (rootId: number, card: HTMLElement, title = "여기서부터 끊기") => {
+  const cutDialog = async (rootId: number, card: HTMLElement, title = "격리·차단") => {
     const r = await rpc<CutPlan>("cut.preview", { story_root: rootId, also: ["terminate"] });
     if (!r.ok) return card.append(errorBox(`cut.preview: ${r.error.message}`));
     const p = r.result;
@@ -904,7 +904,7 @@ export function chainTitle(name: string, ch?: { parent?: string | null; children
 /// 권장 조치 문장(사실 판단은 서비스가, 화면은 말로만)
 export function recommendText(r: Pick<Investigation, "recommend">): string {
   return r.recommend === "mark_normal" ? "권장: 알려진 정상 모양 — 끊지 마세요"
-    : r.recommend === "cut" ? "권장: 여기서부터 끊기"
+    : r.recommend === "cut" ? "권장: 격리·차단"
     : "권장: 아래 사실을 보고 정하세요";
 }
 

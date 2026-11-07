@@ -138,7 +138,7 @@ export function policy(): HTMLElement {
       acl.load(row?.acl_yaml ?? null, live?.acl_yaml ?? null);
     } else acl.setActive(live?.acl_yaml ?? null);
     // D032-3: 비어 있음(2-5)
-    if (!r.result.items.length) list.append(el("p", "muted", "아직 만든 정책이 없습니다. 위 ACL 표, 이야기 카드의 '여기서부터 끊기…' 또는 아래 '고급'에서 만들 수 있습니다."));
+    if (!r.result.items.length) list.append(el("p", "muted", "아직 만든 정책이 없습니다. 위 ACL 표, 이야기 카드의 '격리·차단…' 또는 아래 '고급'에서 만들 수 있습니다."));
     for (const p of r.result.items) {
       // D006-4: [상태 칩] 이름 · 한국어 요약 · 만료 · 만든 곳 · (오른쪽) 일시 중지 / 되돌리기. 영어 상태 문자열을 보이지 않는다
       const chip = el("span", `chip state ${STATE_CLS[p.state] ?? "muted"}`, p.state_ko ?? "알 수 없음");

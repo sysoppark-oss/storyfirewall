@@ -373,6 +373,16 @@ if (mode === "nonadmin") {
     const ov = await page.evaluate(() => { const m = document.querySelector(".main"); return { hscroll: m.scrollWidth > m.clientWidth + 1, over: [...m.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > m.getBoundingClientRect().right + 1).slice(0, 5).map((e) => e.className || e.tagName) }; });
     must(!ov.hscroll, `responsive: ${key} 660px no horizontal overflow (${JSON.stringify(ov)})`);
   }
+  // 마인드맵 옆 칸이 열려도(실기기 2026-11-07: 오른쪽으로 넘침) 가로로 넘치지 않아야 한다
+  await page.click("button.nav-btn[data-key=story]");
+  await page.waitForTimeout(1200);
+  await page.click(".card.event >> nth=0 >> button:has-text('프로세스 그래프')");
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => document.querySelector(".cy-wrap")?.classList.add("has-side"));
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: path.join(outDir, "story-mindmap-660.png"), fullPage: false });
+  const mm = await page.evaluate(() => { const m = document.querySelector(".main"); return { hscroll: m.scrollWidth > m.clientWidth + 1, cols: getComputedStyle(document.querySelector(".cy-wrap")).gridTemplateColumns.split(" ").length }; });
+  must(!mm.hscroll && mm.cols === 1, `responsive: mindmap side panel stacks at 660px, no overflow (${JSON.stringify(mm)})`);
   // 898px(노트북 창 1122px·125%): 큰 화면과 같은 배치여야 한다
   await page.setViewportSize({ width: 898, height: 760 });
   await page.click("button.nav-btn[data-key=dashboard]");

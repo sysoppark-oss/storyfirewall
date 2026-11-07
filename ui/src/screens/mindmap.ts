@@ -137,9 +137,13 @@ export function mindmap(center: number): HTMLElement {
   const legend = el("p", "mm-legend", "● 프로그램  ▢ 파일  ◆ 접속지  ★ 자동 실행  ▭ 명령줄 — 빨간 선 = 판정 근거");
   const side = el("div", "cy-side");
   const wrap = el("div", "cy-wrap", canvas, side);
-  const openSide = () => wrap.classList.add("has-side");
+  // 반응형(사용자 2026-11-07): 옆 칸이 열리면 캔버스 폭이 줄어드는데 Cytoscape 캔버스는 스스로 줄지 않아 오른쪽으로 넘쳤다
+  // → 칸 전환 뒤 cy.resize()·fit, 창 크기가 바뀌어도 같은 처리(ResizeObserver)
+  const refit = () => { if (cy) { cy.resize(); cy.fit(undefined, 30); } };
+  const openSide = () => { wrap.classList.add("has-side"); requestAnimationFrame(refit); };
   root.append(head, hint, legend, wrap);
   let cy: cytoscape.Core | undefined;
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => refit()).observe(canvas);
 
   const explain = async (edgeId: number) => {
     clear(side);

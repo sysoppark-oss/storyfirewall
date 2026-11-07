@@ -137,7 +137,7 @@ describe("실시간 1: 카드의 지금 상태 줄", () => {
 describe("자동 조사: 권장 조치 문장", () => {
   it("세 가지", () => {
     expect(recommendText({ recommend: "mark_normal" })).toBe("권장: 알려진 정상 모양 — 끊지 마세요");
-    expect(recommendText({ recommend: "cut" })).toBe("권장: 여기서부터 끊기");
+    expect(recommendText({ recommend: "cut" })).toBe("권장: 격리·차단");
     expect(recommendText({ recommend: "review" })).toBe("권장: 아래 사실을 보고 정하세요");
   });
 });
