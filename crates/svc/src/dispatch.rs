@@ -757,6 +757,15 @@ fn handle(
             let triage_all = crate::triage::all(&world.graph);
             let triage_filter = crate::triage::Filter::parse(&v.triage).unwrap_or(crate::triage::Filter::Open);
             let mut counts = crate::triage::Counts::default();
+            // 개편안 2판 2-2(낮음 요약 칩): 등급 필터에 걸려 숨긴 미조치 사건 수 — 숨겨도 존재는 알린다
+            let hidden_low = stories
+                .iter()
+                .filter(|s| {
+                    s.level.rank() < min
+                        && scope.process_visible(&world.graph, s.root)
+                        && triage_filter.keeps(triage_all.get(&s.root).map_or(crate::triage::State::New, |r| r.state))
+                })
+                .count();
             // A30: 다른 사용자 세션의 프로세스가 든 이야기는 통째로 숨긴다
             let kept: Vec<judge::Story> = stories
                 .iter()
@@ -888,7 +897,7 @@ fn handle(
                 .timings
                 .record("이야기 목록: 기록 없는 구간", t_gaps.elapsed());
             j(
-                serde_json::json!({ "items": page.items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(), "next": page.next, "gaps": gaps, "counts": counts }),
+                serde_json::json!({ "items": page.items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(), "next": page.next, "gaps": gaps, "counts": counts, "hidden_low": hidden_low }),
             )
         }
         Method::StoryTriage => {

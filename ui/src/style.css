@@ -19,6 +19,7 @@ body { margin: 0; font: 14px/1.5 system-ui, "Malgun Gothic", sans-serif; backgro
   #app > .status { grid-column: 1; padding: 6px 12px; }
 }
 /* 서비스 보호 사건: 접힌 상자 */
+.hidden-low-row { margin-top: 10px; } .chip-low { color: var(--muted); }
 .prot-box { margin-top: 14px; padding: 10px 16px; } .prot-box > summary { cursor: pointer; font-weight: 600; } .prot-box[open] > summary { margin-bottom: 8px; }
 .status { grid-column: 2; padding: 6px 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .status.error { color: var(--bad); }
@@ -507,7 +508,7 @@ details.where-panel { border-radius: 16px; }
 /* 2026-11-07 대시보드 다듬기: 숫자 카드 아이콘·색조·추세선, 24시간 영역 그래프 */
 .kpi, .card.tile.kpi { position: relative; overflow: hidden; }
 .kpi-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.kpi-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.kpi-head h3 { margin: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .kpi-icon { width: 20px; height: 20px; flex: none; color: var(--muted); }
 .kpi.tone-bad .kpi-icon, .kpi.tone-bad .big { color: var(--bad); }
 .kpi.tone-warn .kpi-icon { color: var(--warn); }

@@ -362,7 +362,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     cards.append(loadingBox());
     today.append(loadingBox());
     const [r, t, h] = await Promise.all([
-      rpc<{ items: StoryEvent[]; gaps?: Gap[]; counts?: TriageCounts }>("story.events", { level_min: level.value, triage: triageSel.value, cursor: { limit: 50 } }),
+      rpc<{ items: StoryEvent[]; gaps?: Gap[]; counts?: TriageCounts; hidden_low?: number }>("story.events", { level_min: level.value, triage: triageSel.value, cursor: { limit: 50 } }),
       // L030: 범위를 서비스에 넘긴다(전에는 서비스가 DB 전체를 문장으로 만들었다)
       rpc<{ sentences: Sentence[]; truncated?: boolean }>("story.today", { since_ts: sinceOf(range.value === "24h" ? "24h" : "today") * 10_000_000 + 116_444_736_000_000_000 }),
       rpc<HealthLike>("collector.health", {}),
@@ -419,6 +419,14 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
         det.append(row, slot);
       }
       cards.append(det);
+    }
+    // 개편안 2판 2-2(42차 Q3): 등급 필터로 숨긴 사건은 목록 하단 요약 칩으로 존재를 알린다 — 누르면 "전부"로
+    const hidden = r.result.hidden_low ?? 0;
+    if (hidden > 0 && level.value !== "normal") {
+      const chipRow = el("div", "hidden-low-row");
+      const b = button(level.value === "watch" ? `${LEVEL.normal} ${hidden}건 숨김 · 전부 보기` : `이 심각도 아래 ${hidden}건 숨김 · 전부 보기`, () => { level.value = "normal"; void load(); }, "btn small chip-low");
+      chipRow.append(b);
+      cards.append(chipRow);
     }
     // D023-1: 대시보드·상태 줄·정책에서 "이야기 보기"로 왔으면 그 카드로(처음 한 번)
     if (typeof args["root"] === "number" && !focused) {
