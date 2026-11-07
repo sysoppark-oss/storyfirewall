@@ -31,6 +31,7 @@ pub use baseline::Baseline;
 pub use incremental::Incremental;
 pub use rules::{norm_dir, set_decoy_dirs, set_self_dirs, under_dirs, Chapter, RootKind};
 pub use score::{Level, Reason};
+pub mod recur;
 
 #[derive(Debug, thiserror::Error)]
 pub enum JudgeError {
@@ -364,6 +365,9 @@ pub(crate) fn assemble(
     let feedback = baseline.feedback_keys(store)?;
     let pc_domains = baseline.pc_domains(store)?;
     let mut stories = Vec::new();
+    // 개편안 2판 2-2 낮음 반복 승격: 사건별 축 키와 마지막 시각을 모아 두었다가 루프 뒤 한 번에 적용
+    let mut recur_keys: Vec<crate::recur::Keys> = Vec::new();
+    let mut recur_ts: Vec<i64> = Vec::new();
     // 앞 사건이 가진 노드(프로세스·파일). 전에는 선 id 를 넣고 뿌리 노드 id 로 찾았다 — 번호열이 달라
     // 뿌리 노드 번호가 우연히 앞 사건의 선 번호와 같으면 그 사건이 통째로 빠졌다(10판 구현 중 발견)
     let mut claimed: HashSet<i64> = HashSet::new();
@@ -400,6 +404,8 @@ pub(crate) fn assemble(
                 .iter()
                 .map(|(eid, ch)| (*eid, ch.map(|c| c as i64))),
         );
+        recur_keys.push(crate::recur::keys_of(view, root, &chain.procs, kind));
+        recur_ts.push(chain.edges.iter().filter_map(|(id, _)| view.by_id.get(id).map(|&i| view.edges[i].ts)).max().unwrap_or(0));
         stories.push(Story {
             root,
             root_label: view.node(root).label.clone(),
@@ -412,6 +418,8 @@ pub(crate) fn assemble(
             ingress_unknown: chain.ingress_unknown,
         });
     }
+    let now_ft = recur_ts.iter().copied().max().unwrap_or(0);
+    crate::recur::apply(&mut stories, &recur_keys, &recur_ts, now_ft);
     stories.sort_by(|a, b| b.score.cmp(&a.score).then(a.root.cmp(&b.root)));
     prof.stories = stories.len();
     Ok((stories, chapter_updates))

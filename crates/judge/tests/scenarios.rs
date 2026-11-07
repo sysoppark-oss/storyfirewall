@@ -1236,3 +1236,56 @@ fn recovery_inhibit_normal_feedback_includes_command_kind() {
         .unwrap();
     assert_eq!(s2.level, Level::Normal, "{:?}", s2.reasons);
 }
+
+/// 개편안 2판 2-2(42차 Q4): 낮음 사건이라도 같은 접속지로 7일 안에 서로 다른 사건 3건이면 중간으로 올린다 —
+/// 경로·이름을 바꿔 가며 다시 뜨는 드로퍼는 출처 축을 피해도 접속지 축에 걸린다
+#[test]
+fn low_events_sharing_a_remote_are_raised_to_watch_after_three() {
+    let store = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&store);
+    let mut evs = vec![snap(T0, 1000, 4, EXPLORER, &[])];
+    // 서로 다른 경로·이름의 스토어 앱 세 개(각각 낮음 30점)가 같은 서버에 접속
+    for (i, app) in [
+        r"C:\Program Files\WindowsApps\V1.App_1.0\a.exe",
+        r"C:\Program Files\WindowsApps\V2.App_1.0\b.exe",
+        r"C:\Program Files\WindowsApps\V3.App_1.0\c.exe",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let pid = 3000 + i as u32;
+        let t = T0 + (i as i64) * DAY; // 하루 간격(7일 안)
+        evs.extend([
+            start(t + SEC, pid, 1000, app),
+            sig(t + SEC, app, Some("Vendor Inc"), "valid", false),
+            autorun(t + 2 * SEC, pid, app),
+            dns(t + 3 * SEC, pid, "c2.example", "198.51.100.9"),
+            conn(t + 4 * SEC, pid, "198.51.100.9", 443),
+        ]);
+    }
+    ing.ingest_all(&evs).unwrap();
+    for app in [r"C:\Program Files\WindowsApps\V1.App_1.0\a.exe", r"C:\Program Files\WindowsApps\V2.App_1.0\b.exe", r"C:\Program Files\WindowsApps\V3.App_1.0\c.exe"] {
+        let fid = store.find_node(graph::NodeKind::File, app).unwrap().unwrap();
+        store.merge_node_attrs(fid, &serde_json::json!({"store_package": app})).unwrap();
+    }
+    let bl = Baseline::open(&store, T0 + 3 * DAY).unwrap();
+    let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
+    assert_eq!(stories.len(), 3, "{:#?}", stories);
+    for s in &stories {
+        assert_eq!(s.level, Level::Watch, "{:?}", s.reasons);
+        assert_eq!(s.score, 40);
+        assert!(s.reasons.iter().any(|r| r.what.contains("같은 접속지")), "{:?}", s.reasons);
+    }
+    // 두 건뿐이면 그대로 낮음
+    let store2 = Store::open_in_memory().unwrap();
+    let mut ing2 = Ingester::new(&store2);
+    ing2.ingest_all(&evs[..1 + 2 * 5]).unwrap();
+    for app in [r"C:\Program Files\WindowsApps\V1.App_1.0\a.exe", r"C:\Program Files\WindowsApps\V2.App_1.0\b.exe"] {
+        let fid = store2.find_node(graph::NodeKind::File, app).unwrap().unwrap();
+        store2.merge_node_attrs(fid, &serde_json::json!({"store_package": app})).unwrap();
+    }
+    let bl2 = Baseline::open(&store2, T0 + 3 * DAY).unwrap();
+    let two = judge::run(&store2, 0, i64::MAX, &bl2).unwrap();
+    assert_eq!(two.len(), 2);
+    assert!(two.iter().all(|s| s.level == Level::Normal), "{:#?}", two);
+}
