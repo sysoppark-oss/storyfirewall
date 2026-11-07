@@ -227,9 +227,10 @@ pub fn chapter_name(c: Chapter) -> &'static str {
 }
 pub fn level_name(l: Level) -> &'static str {
     match l {
-        Level::Normal => "평범",
-        Level::Watch => "주의",
-        Level::Suspicious => "의심",
+        Level::Normal => "낮음",
+        Level::Watch => "중간",
+        Level::Suspicious => "높음",
+        Level::Critical => "심각",
     }
 }
 

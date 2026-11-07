@@ -14,6 +14,16 @@ export const STAGE_NAMES: string[] = STAGES.map((s) => s.name);
 export const STAGE_NAMES_4: string[] = STAGE_NAMES.slice(0, 4);
 
 /** 처리 상태(IR 라이프사이클, 40차 Q1) */
+/// 심각도 4단계(개편안 2판 2-2). 서비스 Level: Critical/Suspicious/Watch/Normal(소문자로 비교)
+export const LEVEL: Record<"critical" | "suspicious" | "watch" | "normal", string> = {
+  critical: "심각", suspicious: "높음", watch: "중간", normal: "낮음",
+};
+/// 높음 이상(알림 대상)인가
+export function isHigh(level: string): boolean {
+  const l = level.toLowerCase();
+  return l === "critical" || l === "suspicious";
+}
+
 export const TRIAGE_STATE: Record<"new" | "investigated" | "acted" | "closed", string> = {
   new: "신규",
   investigated: "분석 완료",

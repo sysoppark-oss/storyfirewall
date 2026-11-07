@@ -1,4 +1,4 @@
-import { STAGE_NAMES_4, TRIAGE_STATE, TRIAGE_ACTION, ACT } from "../terms";
+import { STAGE_NAMES_4, TRIAGE_STATE, TRIAGE_ACTION, ACT, LEVEL, isHigh } from "../terms";
 import { mutation, rpc, uuid, type RpcResult, type RpcError } from "../rpc";
 import { approvalBox, countdown, type ApplyReply } from "../confirm";
 import { fileName } from "../sanitize";
@@ -132,7 +132,7 @@ export function triageCountsText(c: TriageCounts | undefined, cards?: number): s
   return `${head}${tail} · ${TRIAGE_STATE.acted} ${c.acted} · ${TRIAGE_STATE.closed} ${c.closed}`;
 }
 
-const LEVEL_KO: Record<string, string> = { suspicious: "높음", watch: "중간", normal: "정보" };
+const LEVEL_KO: Record<string, string> = LEVEL;
 const CHAPTERS = STAGE_NAMES_4;
 /// D043-1: 5장(파괴 징후)은 칸을 늘리지 않는다(카드끼리 칸 위치가 같아야 훑어보기가 된다) — 막대 아래 destroyLine 한 줄
 
@@ -316,7 +316,8 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
   const root = el("section", "screen");
   root.append(el("h1", undefined, "인시던트"));
   const level = el("select");
-  for (const [v, l] of [["watch", "중간 이상"], ["suspicious", "높음만"], ["normal", "전부"]] as const) {
+  // 개편안 2판 2-2: 낮음은 기본 숨김, "전부"로 본다(토글)
+  for (const [v, l] of [["watch", "중간 이상"], ["suspicious", "높음 이상"], ["critical", "심각만"], ["normal", "전부(낮음 포함)"]] as const) {
     const o = el("option", undefined, l);
     o.value = v;
     level.append(o);
@@ -398,11 +399,11 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     }
     if (stale.length) {
       // D006-2: 머리에 수준 집계 — 의심이 접혀 안 보이는 일을 막는다. 의심이 있으면 빨간 세로 띠
-      const sus = stale.filter((e) => e.level.toLowerCase() === "suspicious").length;
+      const sus = stale.filter((e) => isHigh(e.level)).length;
       const wat = stale.filter((e) => e.level.toLowerCase() === "watch").length;
       const det = el("details", sus ? "stale-group has-suspicious" : "stale-group");
       const summ = el("summary", undefined, `수집 전부터 실행 중 · 오늘 새 활동 없음 (${stale.length}건`);
-      if (sus) summ.append(" · ", levelChip("suspicious"), ` ${sus}`);
+      if (sus) summ.append(" · ", levelChip("suspicious"), ` ${sus}`); // 심각·높음 합산
       if (wat) summ.append(" · ", levelChip("watch"), ` ${wat}`);
       summ.append(")");
       det.append(summ);

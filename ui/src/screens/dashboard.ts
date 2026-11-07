@@ -11,7 +11,7 @@ import type { InstallRun } from "./installs-text";
 import { LEDGER_SCOPE, LEDGER_PROXY_NOTE, ledgerSummary } from "./first-run";
 import { bars, type ConnLike } from "./conn-group";
 import { icon, sparkline, areaChart, hourlyCounts, donut, chapterReach, type Tone } from "./dash-viz";
-import { STAGES, TRIAGE_STATE } from "../terms";
+import { STAGES, TRIAGE_STATE, LEVEL, isHigh } from "../terms";
 import { flagPath } from "./connections";
 import { overview, type DashConn, type DashListener } from "./dash-overview";
 import { bytes } from "./connections";
@@ -137,7 +137,7 @@ export function dashboard(): HTMLElement {
   // 영역 그래프의 의심 사건 시각(unix 초) — refresh 가 채우고 drawOverview 가 읽는다
   let susTs: number[] = [];
   // 수준별 수(의심·주의)와 4장 도달 수 — refresh 가 채운다(평범은 story.events 기본 수준에 안 들어와 세지 않는다)
-  let levelN = { suspicious: 0, watch: 0 };
+  let levelN = { critical: 0, suspicious: 0, watch: 0 };
   let reach = [0, 0, 0, 0];
   const drawOverview = async () => {
     const gen = ++ovGen;
@@ -248,14 +248,16 @@ export function dashboard(): HTMLElement {
     whereCard.append(cols, el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."),
       el("div", "q-more", button("연결 화면에서 자세히", () => state.go("connections", {}), "btn small")));
     // 수준별 도넛(처리 안 한 사건) + 4장 흐름 띠(유입 → 실행 → 자리잡기 → 외부 접속, 오늘 도달한 사건 수)
-    const open = levelN.suspicious + levelN.watch;
+    const open = levelN.critical + levelN.suspicious + levelN.watch;
     const dn = el("section", "card donut-card", el("h3", undefined, "심각도별 미조치 인시던트"));
     const dnRow = el("div", "donut-row", donut([
-      { label: "높음", value: levelN.suspicious, cls: "d-sus" },
-      { label: "중간", value: levelN.watch, cls: "d-watch" },
+      { label: LEVEL.critical, value: levelN.critical, cls: "d-crit" },
+      { label: LEVEL.suspicious, value: levelN.suspicious, cls: "d-sus" },
+      { label: LEVEL.watch, value: levelN.watch, cls: "d-watch" },
     ], String(open), "사건"));
     const dl = el("ul", "donut-legend");
-    dl.append(el("li", "d-sus", el("span", "sw"), "높음 ", el("b", undefined, String(levelN.suspicious))));
+    dl.append(el("li", "d-crit", el("span", "sw"), `${LEVEL.critical} `, el("b", undefined, String(levelN.critical))));
+    dl.append(el("li", "d-sus", el("span", "sw"), `${LEVEL.suspicious} `, el("b", undefined, String(levelN.suspicious))));
     dl.append(el("li", "d-watch", el("span", "sw"), "중간 ", el("b", undefined, String(levelN.watch))));
     dnRow.append(dl);
     dn.append(dnRow, el("p", "muted small", open ? `미조치(${TRIAGE_STATE.new}·${TRIAGE_STATE.investigated})만 셉니다.` : "미조치 인시던트가 없습니다."));
@@ -291,14 +293,15 @@ export function dashboard(): HTMLElement {
     const stalledNow = hr.ok && collectionStalled(hr.result);
     // D004-2: 숫자는 오늘 새로 일어난 일 기준. 수집 전부터 실행 중·오늘 새 활동 없는 것은 보조 줄로
     const allLv = ev.ok ? ev.result.items : [];
-    const all = allLv.filter((s) => s.level.toLowerCase() === "suspicious");
+    const all = allLv.filter((s) => isHigh(s.level));
     const sus = all.filter((s) => s.fresh !== false);
     const watchFresh = allLv.filter((s) => s.fresh !== false && s.level.toLowerCase() === "watch");
     const staleN = all.length - sus.length;
     // D020-2·3: 같은 프로그램·같은 판정은 한 줄로, 최신이 위. 숫자는 묶은 뒤 개수(보조 줄에 사건 수)
     const groups = groupStories(sus);
     susTs = sus.map((x) => x.last_ts || x.sentences.find((y) => y.ts)?.ts || 0).filter((t) => t > 0).map((t) => filetimeToUnix(t));
-    levelN = { suspicious: sus.length, watch: watchFresh.length };
+    const critN = sus.filter((s) => s.level.toLowerCase() === "critical").length;
+    levelN = { critical: critN, suspicious: sus.length - critN, watch: watchFresh.length };
     reach = chapterReach([...sus, ...watchFresh].map((x) => x.reached ?? []));
     const susSpark = hourlyCounts(susTs, Date.now() / 1000);
     const card = (title: string, body: Node, cls = "card", ic?: string, tone: Tone = "neutral", spark?: number[]) => {

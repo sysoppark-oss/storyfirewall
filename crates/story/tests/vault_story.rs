@@ -120,7 +120,7 @@ fn vault_open_and_debug_launch_are_told_as_facts() {
     let bl = Baseline::open(&store, T0 + 24 * 3600 * SEC).unwrap();
     let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
     assert_eq!(stories.len(), 1, "{stories:#?}");
-    assert_eq!(stories[0].level, Level::Suspicious);
+    assert_eq!(stories[0].level, Level::Critical);
     for voice in [Voice::Plain, Voice::Expert] {
         let n = story::narrate(&store, &stories, voice).unwrap();
         let n = &n[0];

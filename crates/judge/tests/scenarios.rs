@@ -194,7 +194,7 @@ fn runner_scenario_only_payload_is_suspicious() {
     let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
     let sus: Vec<_> = stories
         .iter()
-        .filter(|s| s.level == Level::Suspicious)
+        .filter(|s| s.level.rank() >= Level::Suspicious.rank())
         .collect();
     assert_eq!(sus.len(), 1, "{:#?}", stories);
     let p = sus[0];
@@ -372,7 +372,7 @@ fn isolated_svchost_is_suspicious_but_known_service_is_not() {
     assert_eq!(s.root_kind, RootKind::IsolatedSvchost);
     assert_eq!(s.chapter, Chapter::Egress);
     assert!(
-        s.score >= 70 && s.level == Level::Suspicious,
+        s.score >= 70 && s.level.rank() >= Level::Suspicious.rank(),
         "{:?}",
         s.reasons
     );
@@ -728,7 +728,8 @@ fn signed_vssadmin_deleting_shadows_is_suspicious_chapter5() {
     let s = s[0];
     assert_eq!(s.root_label, "vssadmin.exe");
     assert_eq!(s.chapter, Chapter::Destroy);
-    assert_eq!(s.level, Level::Suspicious, "{:?}", s.reasons);
+    // 개편안 2판 2-2: 5장(파괴 행위)이 높음 점수면 심각
+    assert_eq!(s.level, Level::Critical, "{:?}", s.reasons);
     // Microsoft 서명 감점(−40)을 적용하지 않는다: 70 + 10
     assert_eq!(s.score, 80, "{:?}", s.reasons);
     let r = s
@@ -781,7 +782,7 @@ fn unsigned_program_running_vssadmin_is_one_story_reaching_chapter5() {
     let s = &stories[0];
     assert_eq!(s.root_kind, RootKind::UnsignedProcess);
     assert_eq!(s.chapter, Chapter::Destroy);
-    assert_eq!(s.level, Level::Suspicious);
+    assert_eq!(s.level, Level::Critical);
 }
 
 /// 10판 구현 중 찾은 결함: 앞 사건의 **선** id 를 모아 두고 다음 뿌리 **노드** id 로 찾아, 번호가 겹치면 사건이 빠졌다
@@ -1013,7 +1014,7 @@ fn renamed_copy_of_vssadmin_is_judged_by_original_name() {
         .iter()
         .find(|x| x.chapter == Chapter::Destroy)
         .unwrap_or_else(|| panic!("5장 사건 없음: {s:#?}"));
-    assert_eq!(s.level, Level::Suspicious);
+    assert_eq!(s.level, Level::Critical);
     // 원래 이름 없이(첫 토큰만)는 판별하지 못한다 — 수집기가 이름을 실어야 하는 이유
     assert_eq!(
         judge::rules::t1490_kind(&format!("{copy} delete shadows /all /quiet")),

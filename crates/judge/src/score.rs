@@ -15,12 +15,36 @@ use crate::{Result, View};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum Level {
-    /// 0~39: 하루 요약에 접힘
+    /// 낮음 0~39: 기본 숨김(토글로 봄), 하루 요약에 접힘
     Normal,
-    /// 40~69: 오늘의 이야기에 펼침, 알림 없음
+    /// 중간 40~69: 인시던트 목록에 펼침, 알림 없음
     Watch,
-    /// 70~: 알림 + 규칙 제안
+    /// 높음 70~89: 알림 + 규칙 제안
     Suspicious,
+    /// 심각 90~ 또는 5장 파괴 행위: 알림 + 대시보드 심각 블록 (개편안 2판 2-2)
+    Critical,
+}
+
+impl Level {
+    /// 등급 순위(낮음 0 … 심각 3). 필터 "이 등급 이상"에 쓴다.
+    pub fn rank(self) -> u8 {
+        match self {
+            Level::Normal => 0,
+            Level::Watch => 1,
+            Level::Suspicious => 2,
+            Level::Critical => 3,
+        }
+    }
+    /// API 문자열("normal"|"watch"|"suspicious"|"critical") → 등급
+    pub fn parse(s: &str) -> Option<Level> {
+        Some(match s {
+            "normal" => Level::Normal,
+            "watch" => Level::Watch,
+            "suspicious" => Level::Suspicious,
+            "critical" => Level::Critical,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -110,11 +134,12 @@ pub fn score_table_markdown() -> String {
             .join(" · "),
     );
     out.push_str(&format!(
-        "\n\n등급: 0~{} 평범 · {}~{} 주의 · {}~ 의심\n\n| 항목 | 점 |\n| --- | --- |\n",
+        "\n\n등급: 0~{} 낮음 · {}~{} 중간 · {}~ 높음 · 높음이면서 5장 또는 결정적 근거({}) 심각\n\n| 항목 | 점 |\n| --- | --- |\n",
         LEVEL_BOUNDS.0 - 1,
         LEVEL_BOUNDS.0,
         LEVEL_BOUNDS.1 - 1,
-        LEVEL_BOUNDS.1
+        LEVEL_BOUNDS.1,
+        DECISIVE.join("·")
     ));
     for (n, p) in WEIGHTS {
         out.push_str(&format!("| {n} | {p:+} |\n"));
@@ -160,13 +185,24 @@ pub fn user_writable_path(path: &str) -> bool {
     USER_WRITABLE.iter().any(|d| lower.contains(d))
 }
 
-pub fn level_of(score: u8) -> Level {
-    if score < LEVEL_BOUNDS.0 {
-        Level::Normal
-    } else if score < LEVEL_BOUNDS.1 {
+/// 결정적 근거: 이 항목이 들어간 높음 사건은 심각으로 올린다(자격 증명·금고 접근).
+pub const DECISIVE: &[&str] = &["미끼 파일 접근", "브라우저가 아닌 프로그램이 브라우저 저장소를 엶"];
+
+/// 점수 → 등급(개편안 2판 2-2, 구현 조정). 심각 = 높음 점수(70+)이면서 5장(파괴 행위) 또는 결정적 근거 포함.
+/// 점수 90 경계는 쓰지 않는다: 장 기본점 70 + 서명 없음 15 + 인터넷 출신 10 = 95 로 평범한 내려받기가 다 90 을 넘어
+/// "심각"이 흔해지기 때문(테스트 unsigned_portable_tool_* 가 그 예).
+pub fn level_of(score: u8, chapter: Chapter, reasons: &[Reason]) -> Level {
+    if score >= LEVEL_BOUNDS.1 {
+        let decisive = reasons.iter().any(|r| DECISIVE.contains(&r.what));
+        if chapter == Chapter::Destroy || decisive {
+            Level::Critical
+        } else {
+            Level::Suspicious
+        }
+    } else if score >= LEVEL_BOUNDS.0 {
         Level::Watch
     } else {
-        Level::Suspicious
+        Level::Normal
     }
 }
 
@@ -503,7 +539,7 @@ pub fn score(
     let score = total.clamp(0, 100) as u8;
     Ok(Scored {
         score,
-        level: level_of(score),
+        level: level_of(score, chain.chapter, &reasons),
         reasons,
     })
 }

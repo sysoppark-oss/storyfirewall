@@ -181,7 +181,7 @@ fn downloaded_setup_opening_chrome_logins_then_egress_is_suspicious() {
     let s = s[0];
     assert_eq!(s.root_kind, RootKind::IngressFile);
     assert_eq!(s.chapter, Chapter::Egress);
-    assert_eq!(s.level, Level::Suspicious, "{:?}", s.reasons);
+    assert_eq!(s.level, Level::Critical, "{:?}", s.reasons);
     let w = whats(s);
     assert!(w.contains(&VAULT_OPEN), "{w:?}");
     // 신호 종류마다 한 번
@@ -318,7 +318,7 @@ fn signed_program_opening_vault_alone_is_watch_and_with_egress_suspicious() {
     assert_eq!(stories[0].chapter, Chapter::Egress);
     assert_eq!(
         stories[0].level,
-        Level::Suspicious,
+        Level::Critical,
         "{:?}",
         stories[0].reasons
     );
@@ -460,7 +460,7 @@ fn decoy_open_alone_is_suspicious_only_when_registered() {
     assert_eq!(stories.len(), 1, "{stories:#?}");
     let s = &stories[0];
     assert_eq!(s.root_kind, RootKind::VaultAccess);
-    assert_eq!(s.level, Level::Suspicious, "{:?}", s.reasons);
+    assert_eq!(s.level, Level::Critical, "{:?}", s.reasons);
     assert!(whats(s).contains(&"미끼 파일 접근"));
     // 근거 선은 7000 의 열기
     let r = s

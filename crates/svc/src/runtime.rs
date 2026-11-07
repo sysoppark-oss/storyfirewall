@@ -747,7 +747,7 @@ fn process_start(
 /// ① 처음 의심 등급(70점)을 넘은 때: 장이 그대로여도 알린다 — 기록이 없으므로 prev=None
 /// ② 이미 알린 뒤에는 장이 올라갈 때만
 pub fn should_notify(prev: Option<i64>, level: judge::Level, chapter: i64) -> bool {
-    level == judge::Level::Suspicious && chapter > prev.unwrap_or(0)
+    matches!(level, judge::Level::Suspicious | judge::Level::Critical) && chapter > prev.unwrap_or(0)
 }
 
 /// 보관 정리 주기(초)

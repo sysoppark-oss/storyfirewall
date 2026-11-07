@@ -1,8 +1,8 @@
 /* 조용한 화면. 외부 자원 없음. */
 /* D011 색 토큰: hex 는 이 정의 줄에만(시험 검사). 기본 = Windows 설정(prefers-color-scheme), 설정 화면에서 밝게/어둡게 고정(data-theme) */
-:root { color-scheme: light dark; --bg: #F6F7F9; --card: #FFFFFF; --line: #E3E6EA; --fg: #1D2330; --muted: #6B7280; --brand: #188C9A; --brand-strong: #13737F; --on-brand: #FFFFFF; --bad: #B91C1C; --warn: #A16207; --ok: #15803D; --select: #1F2328; --map0: #E9EDF1; --map1: #CDE8EB; --map2: #8CCAD1; --map3: #46A5B0; --map4: #188C9A; --map-border: #FFFFFF; --on-chip: #FFFFFF; --mm-node: #9CA3AF; --mm-proc: #475569; --mm-file: #9CA3AF; --mm-domain: #188C9A; --mm-edge: #CBD5E1; --mm-center: #13737F; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) { --bg: #111315; --card: #16191C; --line: #2A2E33; --fg: #E7E9EC; --muted: #8B929B; --brand: #5EE6C8; --brand-strong: #5EE6C8; --on-brand: #111315; --bad: #FF6B6B; --warn: #F59E4B; --ok: #5EE6C8; --select: #E5E7EB; --map0: #2A3442; --map1: #1D6670; --map2: #2A8A95; --map3: #45AAB5; --map4: #7FD0D8; --map-border: #0F1419; --on-chip: #0F1419; --mm-node: #6B7280; --mm-proc: #94A3B8; --mm-file: #6B7280; --mm-domain: #5EE6C8; --mm-edge: #3A4553; --mm-center: #5EE6C8; } }
-:root[data-theme=dark] { color-scheme: dark; --bg: #111315; --card: #16191C; --line: #2A2E33; --fg: #E7E9EC; --muted: #8B929B; --brand: #5EE6C8; --brand-strong: #5EE6C8; --on-brand: #111315; --bad: #FF6B6B; --warn: #F59E4B; --ok: #5EE6C8; --select: #E5E7EB; --map0: #2A3442; --map1: #1D6670; --map2: #2A8A95; --map3: #45AAB5; --map4: #7FD0D8; --map-border: #0F1419; --on-chip: #0F1419; --mm-node: #6B7280; --mm-proc: #94A3B8; --mm-file: #6B7280; --mm-domain: #5EE6C8; --mm-edge: #3A4553; --mm-center: #5EE6C8; } :root[data-theme=light] { color-scheme: light; }
+:root { color-scheme: light dark; --bg: #F6F7F9; --card: #FFFFFF; --line: #E3E6EA; --fg: #1D2330; --muted: #6B7280; --brand: #188C9A; --brand-strong: #13737F; --on-brand: #FFFFFF; --bad: #B91C1C; --crit: #7F1D1D; --warn: #A16207; --ok: #15803D; --select: #1F2328; --map0: #E9EDF1; --map1: #CDE8EB; --map2: #8CCAD1; --map3: #46A5B0; --map4: #188C9A; --map-border: #FFFFFF; --on-chip: #FFFFFF; --mm-node: #9CA3AF; --mm-proc: #475569; --mm-file: #9CA3AF; --mm-domain: #188C9A; --mm-edge: #CBD5E1; --mm-center: #13737F; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) { --bg: #111315; --card: #16191C; --line: #2A2E33; --fg: #E7E9EC; --muted: #8B929B; --brand: #5EE6C8; --brand-strong: #5EE6C8; --on-brand: #111315; --bad: #FF6B6B; --crit: #FF3B5C; --warn: #F59E4B; --ok: #5EE6C8; --select: #E5E7EB; --map0: #2A3442; --map1: #1D6670; --map2: #2A8A95; --map3: #45AAB5; --map4: #7FD0D8; --map-border: #0F1419; --on-chip: #0F1419; --mm-node: #6B7280; --mm-proc: #94A3B8; --mm-file: #6B7280; --mm-domain: #5EE6C8; --mm-edge: #3A4553; --mm-center: #5EE6C8; } }
+:root[data-theme=dark] { color-scheme: dark; --bg: #111315; --card: #16191C; --line: #2A2E33; --fg: #E7E9EC; --muted: #8B929B; --brand: #5EE6C8; --brand-strong: #5EE6C8; --on-brand: #111315; --bad: #FF6B6B; --crit: #FF3B5C; --warn: #F59E4B; --ok: #5EE6C8; --select: #E5E7EB; --map0: #2A3442; --map1: #1D6670; --map2: #2A8A95; --map3: #45AAB5; --map4: #7FD0D8; --map-border: #0F1419; --on-chip: #0F1419; --mm-node: #6B7280; --mm-proc: #94A3B8; --mm-file: #6B7280; --mm-domain: #5EE6C8; --mm-edge: #3A4553; --mm-center: #5EE6C8; } :root[data-theme=light] { color-scheme: light; }
 * { box-sizing: border-box; }
 body { margin: 0; font: 14px/1.5 system-ui, "Malgun Gothic", sans-serif; background: var(--bg); color: var(--fg); }
 #app { display: grid; grid-template-columns: 160px 1fr; grid-template-rows: 1fr auto; height: 100vh; }
@@ -16,7 +16,7 @@ body { margin: 0; font: 14px/1.5 system-ui, "Malgun Gothic", sans-serif; backgro
 h1 { font-size: 20px; margin: 0 0 16px; } h2 { font-size: 16px; margin: 24px 0 8px; } h3 { font-size: 14px; margin: 0 0 6px; }
 .cards { display: flex; gap: 12px; flex-wrap: wrap; } .cards-col { display: flex; flex-direction: column; gap: 12px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 180px; }
-.card.alert { border-color: var(--warn); } .card.event.suspicious { border-left: 4px solid var(--bad); } .card.event.watch { border-left: 4px solid var(--warn); } .card.focus { outline: 2px solid var(--brand-strong); }
+.card.alert { border-color: var(--warn); } .card.event.critical { border-left: 4px solid var(--crit, #b00020); } .card.event.suspicious { border-left: 4px solid var(--bad); } .card.event.watch { border-left: 4px solid var(--warn); } .card.focus { outline: 2px solid var(--brand-strong); }
 .big { font-size: 28px; font-weight: 600; } .big.warn { color: var(--warn); } .big.ok { color: var(--ok); }
 .muted { color: var(--muted); } .ok { color: var(--ok); } .warn { color: var(--warn); } .error { color: var(--bad); }
 .row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); } .row.alert .title { color: var(--bad); font-weight: 600; }
@@ -70,6 +70,7 @@ img.flag { width: 16px; height: 12px; flex: none; border: 1px solid rgba(127, 12
 .card-head h3 { margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .when { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; color: var(--on-chip); flex: none; }
+.chip.level-critical { background: var(--crit, #b00020); font-weight: 700; }
 .chip.level-suspicious { background: var(--bad); }
 .chip.level-watch { background: var(--warn); }
 .chip.level-normal { background: var(--muted); }
@@ -510,11 +511,11 @@ details.where-panel { border-radius: 16px; }
 .donut { width: 120px; height: 120px; flex: none; }
 .donut-ring { fill: none; stroke: var(--line); stroke-width: 12; }
 .donut-seg { fill: none; stroke-width: 12; }
-.donut-seg.d-sus { stroke: var(--bad); } .donut-seg.d-watch { stroke: var(--warn); }
+.donut-seg.d-crit { stroke: var(--crit, #b00020); } .donut-seg.d-sus { stroke: var(--bad); } .donut-seg.d-watch { stroke: var(--warn); }
 .donut-big { fill: var(--fg); font-size: 26px; font-weight: 700; } .donut-sub { fill: var(--muted); font-size: 11px; }
 .donut-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 14px; }
 .donut-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
-.donut-legend .d-sus .sw { background: var(--bad); } .donut-legend .d-watch .sw { background: var(--warn); }
+.donut-legend .d-crit .sw { background: var(--crit, #b00020); } .donut-legend .d-sus .sw { background: var(--bad); } .donut-legend .d-watch .sw { background: var(--warn); }
 .flow-strip { display: flex; align-items: stretch; gap: 8px; margin-top: 6px; }
 .flow-step { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; text-align: center; }
 .flow-step.on { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, var(--card)); }

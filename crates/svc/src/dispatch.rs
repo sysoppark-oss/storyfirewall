@@ -740,11 +740,8 @@ fn handle(
                 .timings
                 .record("이야기 목록: 판정 결과", t_judge.elapsed());
             let t_narr = std::time::Instant::now();
-            let min = match v.level_min.as_str() {
-                "normal" => 0,
-                "watch" => 40,
-                _ => 70,
-            };
+            // 등급으로 거른다(점수가 아니라): 5장 심각은 점수 70~89 라도 심각이다
+            let min = judge::Level::parse(&v.level_min).unwrap_or(judge::Level::Suspicious).rank();
             let scope = caller.scope();
             // 사건 추적: 처리 상태는 한 번에 읽고(사건마다 묻지 않는다), 수준·범위를 거른 뒤 상태별 개수를 센 다음 필터를 건다
             let triage_all = crate::triage::all(&world.graph);
@@ -754,7 +751,7 @@ fn handle(
             let kept: Vec<judge::Story> = stories
                 .iter()
                 .filter(|s| {
-                    s.score as i32 >= min
+                    s.level.rank() >= min
                         && scope.process_visible(&world.graph, s.root)
                         && scope.edges_visible(&world.graph, &s.edges)
                 })

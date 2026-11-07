@@ -257,7 +257,7 @@ pub struct ValidationReply {
 pub struct StoryEventsParams {
     #[serde(default)]
     pub since_ts: i64,
-    /// "normal" | "watch" | "suspicious"
+    /// "normal"(낮음 이상=전부) | "watch"(중간 이상) | "suspicious"(높음 이상) | "critical"(심각만)
     #[serde(default = "StoryEventsParams::default_level")]
     pub level_min: String,
     /// 처리 상태 필터: "open"(처리 안 한 사건 — 기본) | "done"(조치함·닫힘) | "all"
@@ -474,8 +474,8 @@ pub fn validate_params(
             let v: StoryEventsParams = serde_json::from_value(p.clone())
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
             check(
-                matches!(v.level_min.as_str(), "normal" | "watch" | "suspicious"),
-                "level_min 은 normal|watch|suspicious",
+                matches!(v.level_min.as_str(), "normal" | "watch" | "suspicious" | "critical"),
+                "level_min 은 normal|watch|suspicious|critical",
             )?;
             check(
                 matches!(v.voice.as_str(), "plain" | "expert" | "one_line"),
