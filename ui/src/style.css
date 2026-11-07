@@ -531,12 +531,20 @@ details.where-panel { border-radius: 16px; }
 .area-chart .line.s-sent { stroke: var(--sent, #8B5CF6); } .area-chart .area.s-sent { fill: var(--sent, #8B5CF6); opacity: .18; }
 .area-chart .mark.m-high { fill: var(--warn); } .area-chart .mark.m-crit { fill: var(--crit); }
 .area-chart .ax-right { fill: var(--muted); }
+.bar-chart .bar.b-recv { fill: var(--brand); opacity: .85; } .bar-chart .bar.b-sent { fill: var(--sent, #8B5CF6); opacity: .85; } .bar-chart .bar.b-empty { fill: var(--line); }
+.bar-chart .hit { fill: transparent; } .bar-chart .mark.m-high { fill: var(--warn); } .bar-chart .mark.m-crit { fill: var(--crit); }
 .chart-legend .lg.recv::before { background: var(--brand); } .chart-legend .lg.sent::before { background: var(--sent, #8B5CF6); }
 .chart-legend .lg.crit::before { background: var(--crit); } .chart-legend .lg.high::before { background: var(--warn); }
 .chart-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
 .chart-legend .lg::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .chart-legend .lg.conn::before { background: var(--brand); } .chart-legend .lg.sus::before { background: var(--bad); }
-.donut-card .donut-row { display: flex; align-items: center; gap: 18px; }
+.donut-card { display: flex; flex-direction: column; } .donut-card .donut-body { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
+.donut-card .donut-row { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.donut-card h4 { margin: 0; font-weight: 600; }
+.triage-bars { display: grid; gap: 6px; font-size: 12px; } .triage-bar-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 28px; align-items: center; gap: 8px; }
+.triage-bar-row .lbl { color: var(--muted); white-space: nowrap; } .triage-bar-row .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; display: block; } .triage-bar-row .fill { display: block; height: 100%; border-radius: 4px; }
+.triage-bar-row b { text-align: right; }
+.fill.t-new { background: var(--bad); } .fill.t-inv { background: var(--warn); } .fill.t-act { background: var(--ok); } .fill.t-closed { background: var(--muted); }
 .donut { width: 120px; height: 120px; flex: none; }
 .donut-ring { fill: none; stroke: var(--line); stroke-width: 12; }
 .donut-seg { fill: none; stroke-width: 12; }

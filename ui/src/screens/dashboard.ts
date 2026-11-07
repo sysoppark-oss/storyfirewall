@@ -2,7 +2,7 @@ import { rpc, mutation } from "../rpc";
 import { el, ext, fmtTs, fmtShort, fmtRange, filetimeToUnix, button, clear } from "../ui";
 import { diffShort, distinguishGroups, groupStories } from "./story-group";
 import { listState, loadingBox, failBox, noDataBox, checkedLine, collectionStalled, cardFail } from "../list-state";
-import { levelChip, bareTitle } from "./story";
+import { levelChip, bareTitle, type TriageCounts } from "./story";
 import { engineStuckText, state } from "../state";
 import { processPanel } from "./process";
 import { watchUntilText } from "./first-run";
@@ -10,7 +10,7 @@ import { buildCard } from "./installs";
 import type { InstallRun } from "./installs-text";
 import { LEDGER_SCOPE, LEDGER_PROXY_NOTE, ledgerSummary } from "./first-run";
 import { bars, type ConnLike } from "./conn-group";
-import { icon, sparkline, dualChart, hourlyCounts, donut, chapterReach, type Tone } from "./dash-viz";
+import { icon, sparkline, barChart, hourlyCounts, donut, chapterReach, type Tone } from "./dash-viz";
 import { STAGES, TRIAGE_STATE, LEVEL, isHigh } from "../terms";
 import { flagPath } from "./connections";
 import { overview, type DashConn, type DashListener } from "./dash-overview";
@@ -147,10 +147,13 @@ export function dashboard(): HTMLElement {
   const where = el("section", "dash-overview");
   // 2026-11-07: 그래프·도넛·4장 띠는 카드 바로 아래(첫 화면에 보이게), 네 질문·어디와 통신했나는 그 아래
   const viz = el("section", "dash-viz");
-  root.append(strip, status, viz, body, where);
+  // 사용자 2026-11-07: 서비스 보호 사건은 대시보드 맨 아래
+  const foot = el("section", "dash-foot");
+  root.append(strip, status, viz, body, where, foot);
   let ovGen = 0;
   // 영역 그래프의 의심 사건 시각(unix 초) — refresh 가 채우고 drawOverview 가 읽는다
   let critTs: number[] = [];
+  let triageCounts: TriageCounts | null = null;
   let highTs: number[] = [];
   // 수준별 수(의심·주의)와 4장 도달 수 — refresh 가 채운다(평범은 story.events 기본 수준에 안 들어와 세지 않는다)
   let levelN = { critical: 0, suspicious: 0, watch: 0 };
@@ -235,8 +238,8 @@ export function dashboard(): HTMLElement {
     const highHourly = hourlyCounts(highTs, nowSec);
     const maxH = Math.max(...o.hourly);
     const legend = el("div", "chart-legend", el("span", "lg recv", "수신"), el("span", "lg sent", "송신"), el("span", "lg crit", LEVEL.critical), el("span", "lg high", LEVEL.suspicious));
-    hours.append(el("div", "chart-head", el("h3", undefined, "트래픽 · 인시던트 추이 (오늘)"), legend), dualChart({ sent: o.hourlySent, recv: o.hourlyRecv, critical: critHourly, high: highHourly }, nowH));
-    hours.append(el("p", "muted small", maxH ? `왼쪽 축 바이트 · 오른쪽 축 인시던트 건수 · 접속 ${maxH}건이 가장 많은 시간 · 마지막 접속 시각 기준` : "오늘 접속 기록이 없습니다."));
+    hours.append(el("div", "chart-head", el("h3", undefined, "트래픽 · 인시던트 (오늘, 시간대별)"), legend), barChart({ sent: o.hourlySent, recv: o.hourlyRecv, critical: critHourly, high: highHourly }, nowH));
+    hours.append(el("p", "muted small", maxH ? `막대 = 시간대별 수신+송신 바이트 · 막대 위 점 = 그 시간의 인시던트 · 접속이 가장 많은 시간 ${maxH}건 · 마지막 접속 시각 기준` : "오늘 접속 기록이 없습니다."));
     const whereCard = el("section", "card where-dash", el("h3", undefined, "오늘 어디와 통신했나"));
     const cols = el("div", "where-dash-cols");
     for (const [by, title] of [["country", "나라별 (접속 수)"], ["org", "망(조직)별 (접속 수)"]] as const) {
@@ -276,7 +279,22 @@ export function dashboard(): HTMLElement {
     dl.append(el("li", "d-sus", el("span", "sw"), `${LEVEL.suspicious} `, el("b", undefined, String(levelN.suspicious))));
     dl.append(el("li", "d-watch", el("span", "sw"), "중간 ", el("b", undefined, String(levelN.watch))));
     dnRow.append(dl);
-    dn.append(dnRow, el("p", "muted small", open ? `미조치(${TRIAGE_STATE.new}·${TRIAGE_STATE.investigated})만 셉니다.` : "미조치 인시던트가 없습니다."));
+    // 사용자 2026-11-07: 도넛 아래 빈 공간 → 처리 상태 막대(신규/분석 완료/조치 완료/예외 처리). 도넛은 틀 안 세로 중앙
+    const tc = triageCounts;
+    if (tc) {
+      const tot = Math.max(1, tc.new + tc.investigated + tc.acted + tc.closed);
+      const bars = el("div", "triage-bars");
+      for (const [k, cls] of [["new", "t-new"], ["investigated", "t-inv"], ["acted", "t-act"], ["closed", "t-closed"]] as const) {
+        const n = tc[k];
+        const row = el("div", "triage-bar-row", el("span", "lbl", TRIAGE_STATE[k]), el("span", "bar", el("span", `fill ${cls}`)), el("b", undefined, String(n)));
+        (row.querySelector(".fill") as HTMLElement).style.width = `${Math.round((n / tot) * 100)}%`;
+        bars.append(row);
+      }
+      dn.append(el("div", "donut-body", dnRow, el("h4", "muted small", "처리 상태 (전체)"), bars));
+    } else {
+      dn.append(el("div", "donut-body", dnRow));
+    }
+    dn.append(el("p", "muted small", open ? `도넛은 미조치(${TRIAGE_STATE.new}·${TRIAGE_STATE.investigated})만 셉니다.` : "미조치 인시던트가 없습니다."));
     const flow = el("section", "card flow-card", el("h3", undefined, "공격 단계 도달 현황 (오늘)"));
     const strip = el("div", "flow-strip");
     const names = STAGES.slice(0, 4).map((s) => s.name);
@@ -300,7 +318,7 @@ export function dashboard(): HTMLElement {
     // 전에는 의심 사건 → 정책 → 서비스 사건을 차례로 기다려, 엔진이 바쁘면 카드 하나만 그려진 반쪽 화면이 됐다(L044)
     const [ev, hr, pol, se] = await Promise.all([
       // 2026-11-07: 주의까지 받아 도넛·흐름 띠에 쓰고, "의심 사건" 카드·목록은 의심만 센다(전과 같음)
-      rpc<{ items: StoryEvent[] }>("story.events", { level_min: "watch", cursor: { limit: 60 } }),
+      rpc<{ items: StoryEvent[]; counts?: TriageCounts }>("story.events", { level_min: "watch", cursor: { limit: 60 } }),
       rpc<Health>("collector.health", {}),
       rpc<{ items: { name: string; state: string }[] }>("policy.list", {}),
       rpc<{ items: ServiceEvent[] }>("service.events", { since_secs: 7 * 86400, limit: 50 }),
@@ -316,6 +334,7 @@ export function dashboard(): HTMLElement {
     // D020-2·3: 같은 프로그램·같은 판정은 한 줄로, 최신이 위. 숫자는 묶은 뒤 개수(보조 줄에 사건 수)
     const groups = groupStories(sus);
     const tsOf = (xs: StoryEvent[]) => xs.map((x) => x.last_ts || x.sentences.find((y) => y.ts)?.ts || 0).filter((t) => t > 0).map((t) => filetimeToUnix(t));
+    triageCounts = ev.ok ? ev.result.counts ?? null : null;
     critTs = tsOf(sus.filter((s) => s.level.toLowerCase() === "critical"));
     highTs = tsOf(sus.filter((s) => s.level.toLowerCase() !== "critical"));
     const susTs = [...critTs, ...highTs];
@@ -465,15 +484,15 @@ export function dashboard(): HTMLElement {
         list.append(row);
       }
       body.append(el("h2", undefined, "우선 대응 인시던트"), list);
-      if (protBox) body.append(protBox);
     } else {
       // D013: 오류 / 수집 안 됨 / 비어 있음을 가른다. "조용합니다"는 응답이 성공했고 수집이 돌 때만
       const st = listState(ev, hr.ok ? hr.result : null);
       if (st === "error" && !ev.ok) body.append(failBox(ev.error, () => void refresh(), "의심 사건 목록"));
       else if (st === "nodata") body.append(noDataBox(() => state.go("settings", {})));
       else body.append(el("p", "muted", "오늘은 조용합니다. 의심스러운 이야기가 없습니다."), checkedLine(hr.ok ? hr.result : null));
-      if (protBox) body.append(protBox);
     }
+    clear(foot);
+    if (protBox) foot.append(protBox);
   };
   void refresh();
   state.onNotify(root, (n) => {

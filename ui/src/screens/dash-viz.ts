@@ -279,3 +279,66 @@ export function dualChart(d: DualInput, nowHour: number, w = 520, h = 160): SVGE
   }
   return s;
 }
+
+/// 사용자 2026-11-07 "다른 그래프로": 시간대별 막대 — 수신 위에 송신을 쌓고(왼쪽 축 바이트), 인시던트는 막대 위 점(심각 진홍·높음 주황).
+/// 한 시간에 몰린 자료도 면적 선과 달리 막대 하나로 또렷이 보인다
+export function barChart(d: DualInput, nowHour: number, w = 520, h = 160): SVGElement {
+  const L = 44, R = 8, T = 14, B = 22;
+  const s = document.createElementNS(NS, "svg");
+  s.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  s.setAttribute("class", "area-chart bar-chart");
+  s.setAttribute("role", "img");
+  s.setAttribute("aria-label", "시간대별 트래픽(송신·수신)과 인시던트");
+  const maxB = Math.max(1, ...d.sent.map((v, i) => v + (d.recv[i] ?? 0)));
+  const slot = (w - L - R) / 24;
+  const bw = slot * 0.62;
+  const x = (i: number) => L + i * slot + (slot - bw) / 2;
+  const yB = (v: number) => T + (h - T - B) * (1 - v / maxB);
+  const text = (tx: number, ty: number, anchor: string, label: string, cls = "ax") => {
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", tx.toFixed(1)); t.setAttribute("y", ty.toFixed(1));
+    t.setAttribute("class", cls); t.setAttribute("text-anchor", anchor);
+    t.textContent = label;
+    return t;
+  };
+  for (const f of [0, 0.5, 1]) {
+    const g = document.createElementNS(NS, "line");
+    g.setAttribute("x1", String(L)); g.setAttribute("x2", String(w - R));
+    g.setAttribute("y1", yB(maxB * f).toFixed(1)); g.setAttribute("y2", yB(maxB * f).toFixed(1));
+    g.setAttribute("class", "grid");
+    s.append(g, text(L - 4, yB(maxB * f) + 3, "end", bytesAxis(maxB * f)));
+  }
+  for (let hh = 0; hh <= 23; hh += 6) s.append(text(x(hh) + bw / 2, h - 6, "middle", `${hh}시`));
+  const last = Math.max(0, Math.min(23, nowHour));
+  const rect = (rx: number, ry: number, rw: number, rh: number, cls: string) => {
+    const r = document.createElementNS(NS, "rect");
+    r.setAttribute("x", rx.toFixed(1)); r.setAttribute("y", ry.toFixed(1));
+    r.setAttribute("width", rw.toFixed(1)); r.setAttribute("height", Math.max(0, rh).toFixed(1));
+    r.setAttribute("rx", "2"); r.setAttribute("class", cls);
+    return r;
+  };
+  for (let i = 0; i <= last; i++) {
+    const rv = d.recv[i] ?? 0, sn = d.sent[i] ?? 0;
+    if (rv) s.append(rect(x(i), yB(rv), bw, yB(0) - yB(rv), "bar b-recv"));
+    if (sn) s.append(rect(x(i), yB(rv + sn), bw, yB(rv) - yB(rv + sn), "bar b-sent"));
+    if (!rv && !sn) s.append(rect(x(i), yB(0) - 1.5, bw, 1.5, "bar b-empty"));
+    // 인시던트 점: 막대 위, 높음 → 심각 순으로 쌓아 올림(최대 4개씩)
+    const hi = d.high[i] ?? 0, cr = d.critical[i] ?? 0;
+    let top = yB(rv + sn) - 6;
+    for (const [n, cls] of [[hi, "m-high"], [cr, "m-crit"]] as const) {
+      for (let k = 0; k < Math.min(n, 4); k++) {
+        const c = document.createElementNS(NS, "circle");
+        c.setAttribute("cx", (x(i) + bw / 2).toFixed(1)); c.setAttribute("cy", top.toFixed(1)); c.setAttribute("r", "3");
+        c.setAttribute("class", `mark ${cls}`);
+        s.append(c);
+        top -= 7;
+      }
+    }
+    const hit = rect(L + i * slot, T, slot, h - T - B, "hit");
+    const title = document.createElementNS(NS, "title");
+    title.textContent = `${i}시 · 송신 ${bytesAxis(sn)} · 수신 ${bytesAxis(rv)} · 심각 ${cr} · 높음 ${hi}`;
+    hit.append(title);
+    s.append(hit);
+  }
+  return s;
+}
