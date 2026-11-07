@@ -18,7 +18,7 @@
 #   cmd.exe is always started with /d (ignores HKCU Command Processor AutoRun).
 # - Output goes to %ProgramFiles%\StoryFirewallDev\logs (admin-written, user-readable).
 # Request format (UTF-8 JSON, one object):  {"job":"b2","seconds":900}   {"job":"pull"}   {"job":"status"}
-#                                           {"job":"install"}   {"job":"uninstall"}   {"job":"selfupdate"}   {"job":"diag"}
+#                                           {"job":"install"}   {"job":"uninstall"}   {"job":"selfupdate"}   {"job":"diag"}   {"job":"hostinfo"}
 # selfupdate: pull, then replace bin\job-runner.ps1 with the repo copy (no new trust: b2 already runs repo scripts
 #   as SYSTEM; whoever can write main can already run code here). Takes effect from the next run.
 # install (user decision 2026-11-02): installs the latest dev build from the orphan branch dev-builds (CI-built,
@@ -209,6 +209,30 @@ try {
                     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
                     try { $o = & $svcExe diag 2>&1 | Out-String } finally { [Console]::OutputEncoding = $prevEnc }
                     foreach ($l in ($o -split "`r?`n")) { if ($l.Trim()) { Log $id ($l -replace '[^\x20-\x7E\u3131-\uD7A3]', '?') } }
+                    Log $id "done exit=0"
+                }
+                "hostinfo" {
+                    # L071 (VM setup, 2026-11-07): read-only host facts to choose the VM platform.
+                    # Edition (Hyper-V needs Pro/Enterprise/Education), build, RAM, cores, firmware virtualization,
+                    # Hyper-V / VirtualMachinePlatform feature state, free disk on C:, existing VMs.
+                    $os = Get-CimInstance Win32_OperatingSystem
+                    $cs = Get-CimInstance Win32_ComputerSystem
+                    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+                    Log $id ("os " + $os.Caption + " build " + $os.BuildNumber + " arch " + $os.OSArchitecture)
+                    Log $id ("edition " + (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").EditionID)
+                    Log $id ("ram_gb " + [math]::Round($cs.TotalPhysicalMemory / 1GB, 1) + " free_gb " + [math]::Round($os.FreePhysicalMemory / 1MB, 1))
+                    Log $id ("cpu " + $cpu.Name + " cores " + $cpu.NumberOfCores + " logical " + $cpu.NumberOfLogicalProcessors)
+                    Log $id ("virt_firmware " + $cpu.VirtualizationFirmwareEnabled + " slat " + $cpu.SecondLevelAddressTranslationExtensions + " hypervisor_present " + $cs.HypervisorPresent)
+                    $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+                    Log $id ("disk_c free_gb " + [math]::Round($disk.FreeSpace / 1GB, 1) + " size_gb " + [math]::Round($disk.Size / 1GB, 1))
+                    foreach ($f in @("Microsoft-Hyper-V-All", "Microsoft-Hyper-V", "Microsoft-Hyper-V-Management-PowerShell", "VirtualMachinePlatform", "HypervisorPlatform", "Microsoft-Windows-Subsystem-Linux")) {
+                        try { $st = (Get-WindowsOptionalFeature -Online -FeatureName $f -ErrorAction Stop).State; Log $id ("feature " + $f + " " + $st) }
+                        catch { Log $id ("feature " + $f + " unknown") }
+                    }
+                    try { $vms = Get-VM -ErrorAction Stop; Log $id ("hyperv_vms " + (($vms | ForEach-Object { $_.Name + ":" + $_.State }) -join ",")) } catch { Log $id "hyperv_vms unavailable" }
+                    foreach ($x in @("C:\Program Files\Oracle\VirtualBox\VBoxManage.exe", "C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe", "C:\Program Files\VMware\VMware Workstation\vmrun.exe")) {
+                        if (Test-Path $x) { Log $id ("found " + $x) }
+                    }
                     Log $id "done exit=0"
                 }
                 "selfupdate" {
