@@ -40,6 +40,8 @@ h1 { font-size: 20px; margin: 0 0 16px; } h2 { font-size: 16px; margin: 24px 0 8
 table.grid { border-collapse: collapse; width: 100%; } table.grid th, table.grid td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
 dialog.ack { border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); max-width: 520px; } dialog::backdrop { background: rgba(0,0,0,.4); }
 .form label { display: block; margin: 8px 0; } .form input, .form select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); min-width: 220px; }
+/* install-99 검수: 설정 화면 체크박스가 .form input 의 min-width 220px 를 물려받아 글자가 멀리 밀렸다 */
+.form input[type="checkbox"] { min-width: 0; width: auto; padding: 0; margin: 0 6px 0 0; vertical-align: middle; }
 .toolbar { margin-bottom: 10px; }
 tr.clickable { cursor: pointer; } tr.clickable:hover { background: color-mix(in srgb, var(--brand-strong) 8%, transparent); } tr.any-addr td:nth-child(2) { color: var(--warn); }
 .detail { margin-top: 16px; } .card.process .section { margin-top: 10px; } .card.process h4 { margin: 0 0 4px; font-size: 13px; } .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; }

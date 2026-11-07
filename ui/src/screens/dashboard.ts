@@ -365,7 +365,10 @@ export function dashboard(): HTMLElement {
     viz.append(el("div", "dash-row2 row-chain", flow, dn), el("div", "dash-row2", hours, feed));
     where.append(whereCard);
   };
+  // install-99 실측: 화면 진입과 서비스 이벤트로 refresh 가 겹치면 둘 다 clear 뒤 KPI 칸을 덧붙여 6칸이 됐다 → 늦게 끝난 옛 호출은 버린다
+  let rfGen = 0;
   const refresh = async () => {
+    const my = ++rfGen;
     clear(status);
     clear(body);
     body.append(loadingBox());
@@ -378,6 +381,8 @@ export function dashboard(): HTMLElement {
       rpc<{ items: { name: string; state: string }[] }>("policy.list", {}),
       rpc<{ items: ServiceEvent[] }>("service.events", { since_secs: 7 * 86400, limit: 50 }),
     ]);
+    if (my !== rfGen) return;
+    clear(status);
     clear(body);
     const stalledNow = hr.ok && collectionStalled(hr.result);
     // D004-2: 숫자는 오늘 새로 일어난 일 기준. 수집 전부터 실행 중·오늘 새 활동 없는 것은 보조 줄로
