@@ -69,7 +69,7 @@ export async function captureScreens(page, outDir, log) {
   try {
     await page.click("button.nav-btn[data-key=story]");
     await page.waitForTimeout(800);
-    await page.click(".card.event >> text=마인드맵");
+    await page.click(".card.event >> text=프로세스 그래프");
     await page.waitForTimeout(2500);
     await page.screenshot({ path: `${dir}/mindmap.png`, fullPage: true });
     shots.push(`${dir}/mindmap.png`);
@@ -127,7 +127,7 @@ export async function captureScreens(page, outDir, log) {
       await page.click(`button.nav-btn[data-key=${key}]`);
       await page.waitForTimeout(900);
       if (key === "story") {
-        await page.click(".card.event >> text=마인드맵").catch(() => {});
+        await page.click(".card.event >> text=프로세스 그래프").catch(() => {});
         await page.waitForTimeout(2000);
       }
       if (key === "connections") {

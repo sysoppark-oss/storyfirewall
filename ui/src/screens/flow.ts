@@ -40,7 +40,8 @@ export interface RailStep {
   ts: number | null;
   edge: number | null;
 }
-export const RAIL_NAMES = ["유입", "실행", "자리잡기", "외부 접속", "파괴 징후"];
+import { STAGE_NAMES } from "../terms";
+export const RAIL_NAMES = STAGE_NAMES;
 /// 카드 항목 이름 → 장(항목에는 장 번호가 없다). 사실 문장이 없는 장은 이 항목으로 채운다
 export const ITEM_CHAPTER: Record<string, number> = { 출신: 1, 위치: 2, 서명: 2, "자동 실행": 3, 접속: 4 };
 export function railSteps(ev: {

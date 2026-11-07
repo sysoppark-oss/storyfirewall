@@ -14,13 +14,13 @@ export async function runScenario(page, outDir, must, opts = {}) {
   // D020: 같은 판정 묶기·최신이 위 — 첫 카드가 payload 라는 가정 대신 payload 카드를 찾는다
   const pay = page.locator(".card.event", { has: page.locator("h3", { hasText: "payload.exe" }) }).first();
   must((await pay.count()) > 0, "story card for payload.exe");
-  await pay.locator("button", { hasText: "마인드맵" }).click();
+  await pay.locator("button", { hasText: "프로세스 그래프" }).click();
   await page.waitForSelector(".cy canvas", { timeout: 10000 });
   await page.waitForTimeout(800);
   must((await page.evaluate(() => document.querySelectorAll(".cy canvas").length)) > 0, "mindmap canvas rendered");
   await page.locator(".mindmap").screenshot({ path: `${outDir}/2-mindmap.png` });
   // D049 흐름 보기: 네 열 상자 + 선(SVG) + 장 레일 5칸
-  await pay.locator("button", { hasText: "흐름 보기" }).click();
+  await pay.locator("button", { hasText: "실행 흐름" }).click();
   await page.waitForSelector(".flowview .flow-box", { timeout: 10000 });
   await page.waitForTimeout(500);
   must((await page.evaluate(() => document.querySelectorAll(".flowview .rail-step").length)) === 5, "flow rail has 5 steps");
@@ -37,7 +37,7 @@ export async function runScenario(page, outDir, must, opts = {}) {
   const dup = await page.evaluate(() => { const t = [...document.querySelectorAll(".flowview .col-did .flow-box-title")].map((e) => e.textContent?.toLowerCase()); return t.length - new Set(t).size; });
   must(dup === 0, `flow did-column has no duplicate boxes (${dup})`);
 
-  await pay.locator("button", { hasText: "여기서부터 끊기…" }).click();
+  await pay.locator("button", { hasText: "격리·차단…" }).click();
   await page.waitForSelector("dialog.ack[open]");
   const dlg = await page.textContent("dialog.ack");
   must(dlg.includes("통신을 막을 프로그램") && dlg.includes("payload.exe"), "cut dialog lists payload.exe");

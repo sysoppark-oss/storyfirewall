@@ -1,3 +1,4 @@
+import { SCREEN_LABEL } from "./terms";
 import { dashboard } from "./screens/dashboard";
 import { connections } from "./screens/connections";
 import { story } from "./screens/story";
@@ -30,10 +31,10 @@ setUnauthorizedHandler(notAdmin);
 
 const SCREENS = {
   dashboard: { label: "대시보드", make: () => dashboard() },
-  connections: { label: "연결", make: () => connections() },
-  story: { label: "이야기", make: (a?: Record<string, unknown>) => story(a) },
-  installs: { label: "설치", make: () => installs() },
-  agents: { label: "AI 도구", make: () => agents() },
+  connections: { label: SCREEN_LABEL.connections, make: () => connections() },
+  story: { label: SCREEN_LABEL.story, make: (a?: Record<string, unknown>) => story(a) },
+  installs: { label: SCREEN_LABEL.installs, make: () => installs() },
+  agents: { label: SCREEN_LABEL.agents, make: () => agents() },
   policy: { label: "정책", make: () => policy() },
   settings: { label: "설정", make: () => settings() },
 } as const;

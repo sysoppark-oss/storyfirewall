@@ -116,7 +116,7 @@ export function processPanel(nodeId: number): HTMLElement {
     const acts = el("div", "pd-acts");
     if (d.story) {
       const sr = d.story.root;
-      acts.append(button("이야기 보기", () => state.go("story", { root: sr })));
+      acts.append(button("인시던트 보기", () => state.go("story", { root: sr })));
       // D027-3: 판정이 있을 때만 조치 — 이야기 카드와 같은 규칙·같은 대화상자(그 카드로 가서 연다). 승인 창 경유 그대로
       acts.append(d.core
         ? button("이 접속지만 차단…", () => state.go("story", { root: sr, cut: true }), "btn danger-outline")

@@ -11,6 +11,8 @@ import type { InstallRun } from "./installs-text";
 import { LEDGER_SCOPE, LEDGER_PROXY_NOTE, ledgerSummary } from "./first-run";
 import { bars, type ConnLike } from "./conn-group";
 import { icon, sparkline, areaChart, hourlyCounts, donut, chapterReach, type Tone } from "./dash-viz";
+import { STAGES, TRIAGE_STATE } from "../terms";
+import { flagPath } from "./connections";
 import { overview, type DashConn, type DashListener } from "./dash-overview";
 import { bytes } from "./connections";
 import { fileName } from "../sanitize";
@@ -209,7 +211,7 @@ export function dashboard(): HTMLElement {
     where.append(grid);
 
     // 시간대별 접속(오늘) + 어디와 통신했나 — 2026-11-07: 막대 → 영역 그래프 두 겹(전체 접속·의심 사건)
-    const hours = el("section", "card hour-card", el("h3", undefined, "오늘 시간대별 접속과 의심 사건"));
+    const hours = el("section", "card hour-card", el("h3", undefined, "접속 · 인시던트 추이 (오늘)"));
     const nowH = new Date().getHours();
     const susHourly = hourlyCounts(susTs, Date.now() / 1000);
     const maxH = Math.max(...o.hourly);
@@ -227,8 +229,11 @@ export function dashboard(): HTMLElement {
       const max = Math.max(1, ...bs.map((b) => b.value));
       for (const b of bs) {
         const row = el("div", `bar-row${b.isNew ? " is-new" : ""}`);
+        // 40차 Q5: [국기] 나라 (망) — 대시보드 나라별 막대에도 국기
         const name = ext("span", b.label, "bar-name");
         name.title = b.label;
+        const fp = by === "country" ? flagPath(b.key) : null;
+        if (fp) { const im = document.createElement("img"); im.src = fp; im.alt = ""; im.className = "flag"; im.width = 16; im.height = 12; name.prepend(im, " "); }
         const fill = el("span", "bar-fill");
         fill.style.width = `${Math.round((b.value / max) * 100)}%`;
         row.append(name, el("span", "bar-track", fill), el("span", "bar-val", String(b.value)));
@@ -244,20 +249,20 @@ export function dashboard(): HTMLElement {
       el("div", "q-more", button("연결 화면에서 자세히", () => state.go("connections", {}), "btn small")));
     // 수준별 도넛(처리 안 한 사건) + 4장 흐름 띠(유입 → 실행 → 자리잡기 → 외부 접속, 오늘 도달한 사건 수)
     const open = levelN.suspicious + levelN.watch;
-    const dn = el("section", "card donut-card", el("h3", undefined, "수준별 처리 안 한 사건"));
+    const dn = el("section", "card donut-card", el("h3", undefined, "심각도별 미조치 인시던트"));
     const dnRow = el("div", "donut-row", donut([
-      { label: "의심", value: levelN.suspicious, cls: "d-sus" },
-      { label: "주의", value: levelN.watch, cls: "d-watch" },
+      { label: "높음", value: levelN.suspicious, cls: "d-sus" },
+      { label: "중간", value: levelN.watch, cls: "d-watch" },
     ], String(open), "사건"));
     const dl = el("ul", "donut-legend");
-    dl.append(el("li", "d-sus", el("span", "sw"), "의심 ", el("b", undefined, String(levelN.suspicious))));
-    dl.append(el("li", "d-watch", el("span", "sw"), "주의 ", el("b", undefined, String(levelN.watch))));
+    dl.append(el("li", "d-sus", el("span", "sw"), "높음 ", el("b", undefined, String(levelN.suspicious))));
+    dl.append(el("li", "d-watch", el("span", "sw"), "중간 ", el("b", undefined, String(levelN.watch))));
     dnRow.append(dl);
-    dn.append(dnRow, el("p", "muted small", open ? "처리 안 한 사건만 셉니다(조치함·닫힘 제외)." : "처리 안 한 의심·주의 사건이 없습니다."));
-    const flow = el("section", "card flow-card", el("h3", undefined, "오늘 사건이 어디까지 갔나 (4장)"));
+    dn.append(dnRow, el("p", "muted small", open ? `미조치(${TRIAGE_STATE.new}·${TRIAGE_STATE.investigated})만 셉니다.` : "미조치 인시던트가 없습니다."));
+    const flow = el("section", "card flow-card", el("h3", undefined, "공격 단계 도달 현황 (오늘)"));
     const strip = el("div", "flow-strip");
-    const names = ["유입", "실행", "자리잡기", "외부 접속"];
-    const subs = ["밖에서 들어옴", "실행·실행한 것", "자동 실행 등록", "밖으로 접속"];
+    const names = STAGES.slice(0, 4).map((s) => s.name);
+    const subs = STAGES.slice(0, 4).map((s) => s.plain);
     names.forEach((nm, i) => {
       const n = reach[i] ?? 0;
       const step = el("div", `flow-step${n ? " on" : ""}`, el("div", "flow-n", String(n)), el("div", "flow-name", nm), el("div", "muted small", subs[i] ?? ""));
@@ -265,7 +270,7 @@ export function dashboard(): HTMLElement {
       strip.append(step);
       if (i < 3) strip.append(el("div", "flow-arrow", "→"));
     });
-    flow.append(strip, el("p", "muted small", "사건 하나는 도달한 모든 장에 들어갑니다. 오른쪽으로 갈수록 더 위험합니다."));
+    flow.append(strip, el("p", "muted small", "MITRE ATT&CK 전술 순서. 인시던트 하나는 도달한 모든 단계에 들어갑니다. 오른쪽으로 갈수록 위험합니다."));
     viz.append(el("div", "dash-row2", hours, dn), flow);
     where.append(whereCard);
   };
@@ -313,7 +318,7 @@ export function dashboard(): HTMLElement {
     if (ev.ok && groups.length !== sus.length) susBody.append(el("div", "muted small", `사건 ${sus.length}건`));
     if (staleN) susBody.append(el("div", "muted small", `그 밖에 수집 전부터 실행 중 ${staleN}건`));
     // 사건 추적: story.events 기본(triage=open)이라 조치함·닫힘은 빠진다 — 제목도 그렇게
-    status.append(card("처리 안 한 의심 사건", susBody, sus.length ? "card alert alert-bad" : "card", "shield", sus.length ? "bad" : "ok", susSpark));
+    status.append(card("미조치 인시던트", susBody, sus.length ? "card alert alert-bad" : "card", "shield", sus.length ? "bad" : "ok", susSpark));
     // D006-3: 지금 Windows 에 걸려 있는 정책 수(확인 대기 + 적용 중, 일시 중지 제외). 서비스는 상태를 "Applied"·"Confirmed"로 준다 —
     // 전에는 소문자와 비교해 늘 0 이었다
     const applied = pol.ok ? pol.result.items.filter((p) => /^(applied|confirmed)$/i.test(p.state)).length : 0;
@@ -410,10 +415,10 @@ export function dashboard(): HTMLElement {
         // D043-1: 5장 파괴 징후는 수준 칩([의심])과 따로 글자 칩 하나(색만으로 구분하지 않게)
         if (s.destroy) row.append(el("span", "chip destroy", "파괴 징후"));
         row.append(desc, el("span", "muted when", ts ? fmtShort(filetimeToUnix(ts)) : ""));
-        row.append(button("이야기 보기", () => state.go("story", { root: s.root })));
+        row.append(button("인시던트 보기", () => state.go("story", { root: s.root })));
         list.append(row);
       }
-      body.append(el("h2", undefined, "지금 봐야 할 것"), list);
+      body.append(el("h2", undefined, "우선 대응 인시던트"), list);
     } else {
       // D013: 오류 / 수집 안 됨 / 비어 있음을 가른다. "조용합니다"는 응답이 성공했고 수집이 돌 때만
       const st = listState(ev, hr.ok ? hr.result : null);

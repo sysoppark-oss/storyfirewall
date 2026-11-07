@@ -158,23 +158,23 @@ describe("UI 3판 초안: 카드 제목 사슬·파괴 징후 권장", () => {
 
 describe("사건 추적(처리 상태)", () => {
   it("상태 칩 글자: 조치함은 조치 종류까지, 없으면 새 사건", () => {
-    expect(triageText(undefined)).toBe("새 사건");
-    expect(triageText({ state: "investigated", chapter: 2, updated_ts: 1 })).toBe("조사됨");
-    expect(triageText({ state: "acted", action: "watch", chapter: 3, updated_ts: 1 })).toBe("조치함 · 지켜보기");
-    expect(triageText({ state: "acted", action: "cut", chapter: 3, updated_ts: 1 })).toBe("조치함 · 끊음");
-    expect(triageText({ state: "closed", chapter: 3, updated_ts: 1 })).toBe("닫힘");
+    expect(triageText(undefined)).toBe("신규");
+    expect(triageText({ state: "investigated", chapter: 2, updated_ts: 1 })).toBe("분석 완료");
+    expect(triageText({ state: "acted", action: "watch", chapter: 3, updated_ts: 1 })).toBe("조치 완료 · 모니터링");
+    expect(triageText({ state: "acted", action: "cut", chapter: 3, updated_ts: 1 })).toBe("조치 완료 · 격리");
+    expect(triageText({ state: "closed", chapter: 3, updated_ts: 1 })).toBe("예외 처리");
   });
   it("상태별 개수 한 줄과 빈 목록 문구", () => {
     const c = { new: 2, investigated: 1, acted: 4, closed: 1 };
-    expect(triageCountsText(c)).toBe("처리 안 한 사건 3 (새 사건 2 · 조사됨 1) · 조치함 4 · 닫힘 1");
+    expect(triageCountsText(c)).toBe("미조치 인시던트 3 (신규 2 · 분석 완료 1) · 조치 완료 4 · 예외 처리 1");
     // 39차 Q4: 카드(묶음) 수를 앞세운다
-    expect(triageCountsText(c, 2)).toBe("처리 안 한 묶음 2개 (사건 3건: 새 사건 2 · 조사됨 1) · 조치함 4 · 닫힘 1");
+    expect(triageCountsText(c, 2)).toBe("미조치 2건 (이벤트 3건: 신규 2 · 분석 완료 1) · 조치 완료 4 · 예외 처리 1");
     expect(triageCountsText(undefined)).toBe("");
-    expect(triageText({ state: "closed", chapter: 3, updated_ts: 1, recur_count: 2 })).toBe("닫힘");
+    expect(triageText({ state: "closed", chapter: 3, updated_ts: 1, recur_count: 2 })).toBe("예외 처리");
     expect(cardNote(false, true, "부모 모름")).toBe("부모 모름");
-    expect(emptyText("open", c)).toContain("처리한 사건 5건");
-    expect(emptyText("open", { new: 0, investigated: 0, acted: 0, closed: 0 })).toBe("해당하는 사건이 없습니다.");
-    expect(emptyText("done", c)).toBe("처리한 사건이 없습니다.");
+    expect(emptyText("open", c)).toContain("조치·예외 처리 5건");
+    expect(emptyText("open", { new: 0, investigated: 0, acted: 0, closed: 0 })).toBe("해당하는 인시던트가 없습니다.");
+    expect(emptyText("done", c)).toBe("조치·예외 처리한 인시던트가 없습니다.");
   });
 });
 

@@ -145,7 +145,7 @@ if (mode === "flow") {
     await page.click("button.nav-btn[data-key=story]");
     await page.waitForSelector(".card.event");
     const pay = page.locator(".card.event", { has: page.locator("h3", { hasText: "payload.exe" }) }).first();
-    await pay.locator("button", { hasText: "흐름 보기" }).click();
+    await pay.locator("button", { hasText: "실행 흐름" }).click();
     await page.waitForSelector(".flowview .flow-box", { timeout: 10000 });
     await page.waitForTimeout(600);
     await page.locator(".flowview").evaluate((e) => e.scrollIntoView({ block: "start" }));
@@ -252,7 +252,7 @@ if (mode.startsWith("shots:")) {
         await sv.screenshot({ path: path.join(outDir, `${label}-card-svchost.png`) });
       }
       // D012: 오늘 처음 접속지 주황 테두리 — helper.exe 마인드맵
-      const btn = page.locator(".card.event", { hasText: "helper.exe" }).locator("button", { hasText: "마인드맵" }).first();
+      const btn = page.locator(".card.event", { hasText: "helper.exe" }).locator("button", { hasText: "프로세스 그래프" }).first();
       if (await btn.count()) {
         await btn.click();
         // D018: 국기 SVG 를 다 읽은 뒤 찍는다(같은 경로를 페이지에서 미리 읽어 load/complete 확인)
@@ -297,7 +297,7 @@ if (mode.startsWith("shots:")) {
     await page.waitForTimeout(2600);
     const row = page.locator(".row", { hasText: "svchost.exe" }).first();
     if (await row.count()) {
-      await row.locator("button", { hasText: "이야기 보기" }).click();
+      await row.locator("button", { hasText: "인시던트 보기" }).click();
       await page.locator(".card.event.flash").first().waitFor({ timeout: 15000 }).catch(() => {});
       await page.waitForTimeout(300);
       await page.screenshot({ path: path.join(outDir, `${label}-focus-svchost.png`) });
