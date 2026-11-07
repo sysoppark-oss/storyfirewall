@@ -32,6 +32,7 @@ pub use incremental::Incremental;
 pub use rules::{norm_dir, set_decoy_dirs, set_self_dirs, under_dirs, Chapter, RootKind};
 pub use score::{Level, Reason};
 pub mod recur;
+pub mod respond;
 
 #[derive(Debug, thiserror::Error)]
 pub enum JudgeError {

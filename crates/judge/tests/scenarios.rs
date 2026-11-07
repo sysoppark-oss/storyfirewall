@@ -1289,3 +1289,132 @@ fn low_events_sharing_a_remote_are_raised_to_watch_after_three() {
     assert_eq!(two.len(), 2);
     assert!(two.iter().all(|s| s.level == Level::Normal), "{:#?}", two);
 }
+
+// ---- 개편안 2판 4-2: 파괴 행위 자동 대응 판정 ----
+
+/// 서명 없는 프로그램 → cmd → vssadmin delete shadows: 세 조건 성립 → 원인 프로그램부터 끊기(Full)
+#[test]
+fn auto_response_full_for_unsigned_origin_running_t1490() {
+    use judge::respond::{self, Mode, Verdict};
+    let store = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&store);
+    let mal = r"C:\Users\u\AppData\Local\Temp\x.exe";
+    ing.ingest_all(&[
+        snap(T0, 1000, 4, EXPLORER, &[]),
+        sig(T0, EXPLORER, Some("Microsoft Windows"), "valid", true),
+        start(T0 + SEC, 4000, 1000, mal),
+        sig(T0 + SEC, mal, None, "nosignature", false),
+        start(T0 + 2 * SEC, 4100, 4000, CMD),
+        sig(T0 + 2 * SEC, CMD, Some("Microsoft Windows"), "valid", true),
+        start(T0 + 3 * SEC, 4200, 4100, VSSADMIN),
+        sig(T0 + 3 * SEC, VSSADMIN, Some("Microsoft Windows"), "valid", true),
+        cmd(T0 + 3 * SEC, 4200, "vssadmin.exe delete shadows /all /quiet"),
+    ])
+    .unwrap();
+    let bl = Baseline::open(&store, T0 + DAY).unwrap();
+    let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
+    let view = judge::View::load(&store, 0, i64::MAX).unwrap();
+    assert_eq!(stories.len(), 1);
+    match respond::judge(&view, &stories[0], &[]) {
+        Verdict::Respond(r) => {
+            assert_eq!(r.mode, Mode::Full);
+            assert_eq!(r.what, "그림자 복사본 삭제");
+            assert_eq!(r.story_root, stories[0].root);
+            // 명령을 실행한 프로세스는 vssadmin(4200); 서명 미확인 조상은 x.exe 하나(cmd·vssadmin 은 Windows 도구라 제외)
+            assert_eq!(r.unsigned_chain.len(), 1, "{r:?}");
+            // 끊기 대상은 원인 프로그램 x.exe
+            let o = view.node(r.origin);
+            assert!(judge::rules::attr_str(o, "image").unwrap_or_default().ends_with("x.exe"), "{o:?}");
+            let p = view.node(r.trigger_proc);
+            assert!(judge::rules::attr_str(p, "image").unwrap_or_default().ends_with("vssadmin.exe"), "{p:?}");
+        }
+        v => panic!("{v:?}"),
+    }
+}
+
+/// 조상이 Microsoft 서명(여기서는 cmd 가 아니라 Windows 밖 경로의 Microsoft 서명 프로그램)이면 대응하지 않는다
+#[test]
+fn auto_response_skipped_when_ancestor_is_microsoft_or_allowlisted() {
+    use judge::respond::{self, Mode, Verdict};
+    let store = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&store);
+    let tool = r"C:\Program Files\Acme Backup\acmebackup.exe";
+    ing.ingest_all(&[
+        snap(T0, 1000, 4, EXPLORER, &[]),
+        start(T0 + SEC, 4000, 1000, tool),
+        sig(T0 + SEC, tool, Some("Acme Software Inc."), "valid", false),
+        start(T0 + 2 * SEC, 4100, 4000, CMD),
+        start(T0 + 3 * SEC, 4200, 4100, VSSADMIN),
+        cmd(T0 + 3 * SEC, 4200, "vssadmin delete shadows /all /quiet"),
+    ])
+    .unwrap();
+    let bl = Baseline::open(&store, T0 + DAY).unwrap();
+    let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
+    let view = judge::View::load(&store, 0, i64::MAX).unwrap();
+    let s = stories.iter().find(|s| s.chapter == Chapter::Destroy).expect("5장 사건");
+    // 허용 목록 없음: 유효 서명이라도 Microsoft 가 아니면 대응한다(2판 4-2) — 끊기 대상은 사건 뿌리(vssadmin)가 아니라 Acme
+    match respond::judge(&view, s, &[]) {
+        Verdict::Respond(r) => {
+            assert_eq!(r.mode, Mode::Full);
+            assert!(judge::rules::attr_str(view.node(r.origin), "image").unwrap_or_default().ends_with("acmebackup.exe"), "{r:?}");
+        }
+        v => panic!("{v:?}"),
+    }
+    // 허용 목록에 서명자(앞부분, 대소문자 무시)가 있으면 대응하지 않는다
+    match respond::judge(&view, s, &["acme software".into()]) {
+        Verdict::TrustedAncestor { signer, .. } => assert_eq!(signer, "Acme Software Inc."),
+        v => panic!("{v:?}"),
+    }
+    // Microsoft 서명 조상은 목록 없이도 예외
+    let store2 = Store::open_in_memory().unwrap();
+    let mut ing2 = Ingester::new(&store2);
+    let ms = r"C:\Program Files\Microsoft Office\root\Office16\OUTLOOK.EXE";
+    ing2.ingest_all(&[
+        snap(T0, 1000, 4, EXPLORER, &[]),
+        start(T0 + SEC, 4000, 1000, ms),
+        sig(T0 + SEC, ms, Some("Microsoft Corporation"), "valid", false),
+        start(T0 + 2 * SEC, 4100, 4000, CMD),
+        start(T0 + 3 * SEC, 4200, 4100, VSSADMIN),
+        cmd(T0 + 3 * SEC, 4200, "vssadmin delete shadows /all /quiet"),
+    ])
+    .unwrap();
+    let bl2 = Baseline::open(&store2, T0 + DAY).unwrap();
+    let st2 = judge::run(&store2, 0, i64::MAX, &bl2).unwrap();
+    let view2 = judge::View::load(&store2, 0, i64::MAX).unwrap();
+    let s2 = st2.iter().find(|s| s.chapter == Chapter::Destroy).expect("5장 사건");
+    assert!(matches!(respond::judge(&view2, s2, &[]), Verdict::TrustedAncestor { .. }), "{s2:#?}");
+}
+
+/// 부모가 핵심 프로세스·Windows 도구뿐(explorer → cmd → vssadmin)이면 자식만 종료(ChildOnly)
+#[test]
+fn auto_response_child_only_when_parent_is_core_process() {
+    use judge::respond::{self, Mode, Verdict};
+    let store = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&store);
+    ing.ingest_all(&[
+        snap(T0, 1000, 4, EXPLORER, &[]),
+        sig(T0, EXPLORER, Some("Microsoft Windows"), "valid", true),
+        start(T0 + SEC, 3000, 1000, CMD),
+        sig(T0 + SEC, CMD, Some("Microsoft Windows"), "valid", true),
+        start(T0 + 2 * SEC, 3100, 3000, VSSADMIN),
+        sig(T0 + 2 * SEC, VSSADMIN, Some("Microsoft Windows"), "valid", true),
+        cmd(T0 + 2 * SEC, 3100, "vssadmin.exe delete shadows /all /quiet"),
+    ])
+    .unwrap();
+    let bl = Baseline::open(&store, T0 + DAY).unwrap();
+    let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
+    let view = judge::View::load(&store, 0, i64::MAX).unwrap();
+    let s = stories.iter().find(|s| s.root_kind == RootKind::RecoveryInhibit).expect("5장 사건");
+    match respond::judge(&view, s, &[]) {
+        Verdict::Respond(r) => {
+            assert_eq!(r.mode, Mode::ChildOnly);
+            assert!(r.unsigned_chain.is_empty());
+        }
+        v => panic!("{v:?}"),
+    }
+    // 5장이 아닌 사건은 NoDestroy
+    let st = judge::run(&store, 0, i64::MAX, &bl).unwrap();
+    for s in st.iter().filter(|s| s.chapter != Chapter::Destroy) {
+        assert_eq!(respond::judge(&view, s, &[]), Verdict::NoDestroy);
+    }
+}
