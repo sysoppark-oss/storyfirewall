@@ -157,23 +157,43 @@ pub fn read_mode(app: &tauri::AppHandle) -> String {
         .unwrap_or_else(|| "tray".into())
 }
 
+/// 마지막 상시 창 열기·닫기 결과(설정 화면에 보여 준다 — install-111: 창이 안 떠도 이유가 어디에도 남지 않았다)
+static LAST_APPLY: Mutex<String> = Mutex::new(String::new());
+/// 창 이름 일련번호: 막 destroy 한 창 이름이 아직 남아 있으면 같은 이름으로 다시 만들 때 실패한다 → 매번 새 이름(hud-N)
+static HUD_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+fn note(msg: String) {
+    if let Ok(mut g) = LAST_APPLY.lock() {
+        *g = msg;
+    }
+}
+
+/// HUD 창(이름이 "hud" 로 시작)을 모두 찾는다
+fn hud_windows(app: &tauri::AppHandle) -> Vec<tauri::WebviewWindow> {
+    app.webview_windows().into_iter().filter(|(k, _)| k.starts_with("hud")).map(|(_, w)| w).collect()
+}
+
 /// 상시 창을 열거나 닫는다. 창은 서비스에 붙지 않고 `hud-state` 이벤트만 그린다(권한 최소)
 pub fn apply_mode(app: &tauri::AppHandle, mode: &str) {
-    let existing = app.get_webview_window("hud");
+    let existing = hud_windows(app);
     if mode != "window" {
         // close() 는 빈 창(페이지를 못 읽은 창)에서 듣지 않았다(install-109 실측) → destroy
-        if let Some(w) = existing {
+        let n = existing.len();
+        for w in existing {
             let _ = w.destroy();
         }
+        note(format!("상시 창 닫음({n}개)"));
         return;
     }
-    if existing.is_some() {
+    if !existing.is_empty() {
+        note("상시 창이 이미 열려 있음".into());
         return;
     }
-    // install-109 실측: "index.html#hud" 는 앱 URL 에서 해시가 경로로 바뀌어 빈 창이 됐다 → 주소는 그대로, 창 이름(hud)으로 알아본다.
+    // install-109 실측: "index.html#hud" 는 앱 URL 에서 해시가 경로로 바뀌어 빈 창이 됐다 → 주소는 그대로, 창 이름(hud…)으로 알아본다.
     // 위치는 만들 때 논리 좌표로(만든 뒤 set_position 은 왼쪽 위에 그대로 있었다)
     let (w_l, h_l) = (300.0, 92.0);
-    let mut b = tauri::WebviewWindowBuilder::new(app, "hud", tauri::WebviewUrl::App("index.html".into()))
+    let label = format!("hud-{}", HUD_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    let mut b = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::App("index.html".into()))
         .title("Story Firewall HUD")
         .inner_size(w_l, h_l)
         .resizable(false)
@@ -181,12 +201,24 @@ pub fn apply_mode(app: &tauri::AppHandle, mode: &str) {
         .always_on_top(true)
         .skip_taskbar(true)
         .focused(false);
+    let mut pos = String::from("위치 기본값");
     if let Ok(Some(m)) = app.primary_monitor() {
         let sc = m.scale_factor();
         let (mw, mh) = (m.size().width as f64 / sc, m.size().height as f64 / sc);
-        b = b.position((mw - w_l - 16.0).max(0.0), (mh - h_l - 64.0).max(0.0));
+        let (x, y) = ((mw - w_l - 16.0).max(0.0), (mh - h_l - 64.0).max(0.0));
+        b = b.position(x, y);
+        pos = format!("위치 {x:.0},{y:.0}(배율 {sc})");
     }
-    let _ = b.build();
+    match b.build() {
+        Ok(_) => note(format!("상시 창 만듦: {label} · {pos}")),
+        Err(e) => note(format!("상시 창을 만들지 못함: {e}")),
+    }
+}
+
+/// 마지막 열기·닫기 결과(설정 화면 표시용)
+#[tauri::command]
+pub fn hud_last() -> String {
+    LAST_APPLY.lock().map(|g| g.clone()).unwrap_or_default()
 }
 
 #[tauri::command]

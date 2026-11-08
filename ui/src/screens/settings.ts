@@ -161,10 +161,19 @@ export function settings(): HTMLElement {
       } catch {
         hudSel.disabled = true;
       }
+      // 마지막 열기·닫기 결과를 옆에 보여 준다(창이 안 뜨면 이유를 알 수 있게)
+      const showLast = async () => {
+        try {
+          hudNote.textContent = (await invoke("hud_last")) as string;
+        } catch {
+          /* 이전 판 UI 셸 — 표시만 생략 */
+        }
+      };
+      await showLast();
       hudSel.addEventListener("change", async () => {
         try {
           await invoke("set_hud_mode", { mode: hudSel.value });
-          hudNote.textContent = "";
+          await showLast();
         } catch (e) {
           hudNote.textContent = `바꾸지 못했습니다: ${String(e)}`;
         }

@@ -2,6 +2,6 @@
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "default",
   "description": "메인 창·HUD 상시 창(서비스에 붙지 않고 hud-state 이벤트만 그림, 끌기만 추가): 코어의 기본 권한 + 우리 명령(connect, rpc, endpoint)만. 파일·셸·네트워크 플러그인 없음 (14차 Q4)",
-  "windows": ["main", "hud"],
+  "windows": ["main", "hud-*"],
   "permissions": ["core:default", "core:window:allow-start-dragging"]
 }
