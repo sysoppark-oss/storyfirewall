@@ -53,9 +53,15 @@ fn clean(s: &str, max: usize) -> String {
 
 /// story.events(level_min=suspicious, triage=open) 응답 + emergency.status 응답 → 상태
 pub fn summarize(events: &serde_json::Value, emergency: &serde_json::Value) -> HudState {
-    let items = events.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let critical = items.iter().filter(|x| x["level"] == "Critical").count();
-    let high = items.iter().filter(|x| x["level"] == "Suspicious").count();
+    // 대시보드 "미조치 심각·높음"과 같은 기준: 오늘 새 활동이 있는 것만(fresh != false), 수준은 대소문자 무관
+    let items: Vec<serde_json::Value> = events
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter(|x| x["fresh"] != serde_json::json!(false)).cloned().collect())
+        .unwrap_or_default();
+    let lv = |x: &serde_json::Value| x["level"].as_str().unwrap_or("").to_ascii_lowercase();
+    let critical = items.iter().filter(|x| lv(x) == "critical").count();
+    let high = items.iter().filter(|x| lv(x) == "suspicious").count();
     // 가장 최근(last_ts 큰 것) 하나
     let latest = items
         .iter()
@@ -284,15 +290,23 @@ pub fn spawn(app: tauri::AppHandle, link: Arc<crate::tray::Link>) {
     });
 }
 
+/// JSON-RPC 응답 봉투 → result (error 면 None)
+pub fn result_of(v: serde_json::Value) -> Option<serde_json::Value> {
+    if v.get("error").is_some_and(|e| !e.is_null()) {
+        return None;
+    }
+    v.get("result").cloned()
+}
+
 fn query() -> Option<HudState> {
     let ep = crate::probe_endpoint();
     let c = crate::client::Client::connect(&ep, Box::new(|_| {})).ok()?;
     let t = Duration::from_secs(5);
     c.call("rpc.hello", serde_json::json!({"client_version": env!("CARGO_PKG_VERSION"), "api": [1, 0]}), t).ok()?;
-    let ev = c
-        .call("story.events", serde_json::json!({"level_min": "suspicious", "triage": "open"}), t)
-        .ok()?;
-    let em = c.call("emergency.status", serde_json::json!({}), t).unwrap_or_default();
+    // install-113 실측: call 은 응답 봉투 전체({"jsonrpc","id","result"|"error"})를 돌려준다 —
+    // 봉투에서 바로 items 를 찾아 늘 0건("보호 중")이 됐다 → result 를 꺼내고, error 면 끊김으로 본다
+    let ev = result_of(c.call("story.events", serde_json::json!({"level_min": "suspicious", "triage": "open", "cursor": {"limit": 200}}), t).ok()?)?;
+    let em = c.call("emergency.status", serde_json::json!({}), t).ok().and_then(result_of).unwrap_or_default();
     Some(summarize(&ev, &em))
 }
 
@@ -328,6 +342,15 @@ mod tests {
         assert_eq!(st.tone, Tone::High);
         let st = summarize(&ev(serde_json::json!([])), &serde_json::json!({"active": false}));
         assert_eq!(st.tone, Tone::Ok);
+        // 소문자 수준·오늘 새 활동 없는 것(fresh=false)은 빼기
+        let st = summarize(&ev(serde_json::json!([
+            {"level": "critical", "title": "c", "last_ts": 1},
+            {"level": "Suspicious", "title": "old", "last_ts": 2, "fresh": false},
+        ])), &serde_json::json!({}));
+        assert_eq!((st.critical, st.high), (1, 0));
+        // 응답 봉투에서 result 꺼내기 · error 는 None
+        assert_eq!(result_of(serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": {"items": []}})), Some(serde_json::json!({"items": []})));
+        assert_eq!(result_of(serde_json::json!({"jsonrpc": "2.0", "id": 1, "error": {"code": -1}})), None);
         assert_eq!(tooltip(&st), "Story Firewall — 보호 중 · 미조치 심각·높음 없음");
     }
 
