@@ -71,7 +71,7 @@ export function connectionsScreen(args: Record<string, unknown> = {}): HTMLEleme
       live = liveConns((n) => { lastOpenN = n; });
       panel.append(live.root);
     } else {
-      const h = connections();
+      const h = connections({ map: args["map"] === true, cc: typeof args["cc"] === "string" ? args["cc"] : undefined, q: typeof args["q"] === "string" ? args["q"] : undefined });
       h.querySelector("h1")?.remove();
       // 4판 2-2: 이력 안내 옆 "지금 열린 연결 N건 ›" 바로 가기
       const quick = button(lastOpenN == null ? "지금 열린 연결 보기 ›" : `지금 열린 연결 ${lastOpenN}건 ›`, () => show("live"), "btn small link-btn");

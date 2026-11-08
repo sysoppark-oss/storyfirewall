@@ -62,8 +62,20 @@ const FEED_TITLE: Record<string, string> = {
   cut_applied: "격리·차단을 적용했습니다",
   cut_terminate: "프로세스를 끝냈습니다",
   power_resume: "절전에서 깨어났습니다",
+  // 4판 3-4 방어 피드: 자동 대응·긴급 차단·연결 끊기
+  auto_destroy: "파괴 행위 자동 대응 — 원인 프로그램을 끊었습니다",
+  auto_destroy_failed: "파괴 행위 자동 대응을 끝내지 못했습니다",
+  auto_destroy_skipped: "파괴 행위가 있었지만 자동 대응하지 않았습니다(허용 서명자·Microsoft 서명)",
+  emergency_on: "긴급 차단을 걸었습니다",
+  emergency_off: "긴급 차단을 풀었습니다",
+  conn_killed: "연결을 끊었습니다",
   time_changed: "PC 시계가 바뀌었습니다",
 };
+/// 방어 피드 기본에 보이는 사건(4판 3-4): 실제로 막거나 끊었거나 정책이 바뀐 것, 보호 사건 중 경고급
+export function isDefenseEvent(e: { kind: string; severity: number }): boolean {
+  if (/^(cut_|auto_destroy|emergency_|conn_killed|policy_(auto_rollback|tampered|restored|expired)|address_block_expired|defender_cfa_blocked)/.test(e.kind)) return true;
+  return e.severity >= 2 && !QUIET_KINDS.has(e.kind) && e.kind in SERVICE_EVENT_TITLE;
+}
 /// 경고 테두리 없이 보여 줄 사건(막지 않은 사실·끝난 사실)
 const QUIET_KINDS = new Set(["defender_cfa_audited", "first_run_watch", "remote_session_end", "rdp_inbound"]);
 /// 보여 줄 보호 사건 (정책 변경 기록 등 평범한 사건은 정책 화면 몫)
@@ -185,6 +197,9 @@ export function dashboard(): HTMLElement {
   let triageCounts: TriageCounts | null = null;
   /// 방어 피드 재료(refresh 가 채움): 서비스 사건 전부(보호·정책·시계 등), 새것부터
   let feedItems: ServiceEvent[] = [];
+  // 4판 3-4: 방어 피드 기본 = 차단·자동 대응·정책 적용/되돌림/만료 + 심각·높음 새 인시던트. [모두 보기] = 나머지 서비스 사건까지
+  let feedAll = false;
+  let feedIncidents: { root: number; level: string; title: string; ts: number }[] = [];
   // 빈 화면 사실 줄(4판 3-10): 오늘 기록·판정한 연결 수
   let emptyConnLine = "오늘 기록한 연결 수를 세는 중…";
   let emptyConnEl: HTMLElement | null = null;
@@ -250,9 +265,12 @@ export function dashboard(): HTMLElement {
     const fresh = conns.filter((c) => c.new_asn || c.new_cc).slice(0, 4);
     for (const c of fresh) news.append(el("li", "q-row", el("span", "badge-new", "오늘 처음"), ext("span", c.where?.org || c.where?.country || "—", "q-row-main"), ext("span", fileName(c.image), "muted q-row-side")));
     if (!fresh.length) news.append(el("li", "muted", "오늘 처음 본 망·나라 없음"));
+    // UI 명세 4판 1-3c 대안: 목록 머리에 "지도에서 보기 ›" — 연결 이력 지도(처음 본 나라가 하나면 그 나라로 거른 채)
+    const freshCc = [...new Set(fresh.map((c) => c.where?.cc).filter((x): x is string => !!x))];
+    const mapLink = button("지도에서 보기 ›", () => state.go("connections", { tab: "history", map: true, ...(freshCc.length === 1 ? { cc: freshCc[0] } : {}) }), "btn small link-btn");
     grid.append(q("내 PC에서 밖으로", "globe",
       el("p", "q-lead", `처음 본 망 ${newOrg}곳 · 처음 본 나라 ${newCc}곳`),
-      el("div", "muted small", "오늘 처음 접속한 곳"), news));
+      el("div", "muted small q-sub-row", "오늘 처음 접속한 곳 ", mapLink), news));
     // ③ 네트워크를 많이 쓴 프로그램
     const tops = el("div", "q-bars");
     // 양을 모르면(연결 표만 본 기록 등 0) 원격 수로 비교한다 — "—" 막대만 늘어서지 않게
@@ -367,7 +385,16 @@ export function dashboard(): HTMLElement {
     // 개편안 2판 3-1 방어 피드: 서비스 사건을 시간순 한 줄씩(같은 종류·대상 반복은 N회로). 연출 없음
     const feed = el("section", "card feed-card", el("div", "kpi-head", icon("shield"), el("h3", undefined, "실시간 방어 피드")));
     const flist = el("div", "feed-list");
-    const fg = groupProtection(feedItems).slice(0, 8);
+    const allBtn = button(feedAll ? "기본만 보기" : "모두 보기", () => { feedAll = !feedAll; void drawOverview(); }, "btn small link-btn");
+    allBtn.setAttribute("aria-pressed", String(feedAll));
+    feed.querySelector(".kpi-head")?.append(el("span", "spacer"), allBtn);
+    const shownItems = feedAll ? feedItems : feedItems.filter(isDefenseEvent);
+    const fg = groupProtection(shownItems).slice(0, 8);
+    // 심각·높음 새 인시던트(최대 3) — 누르면 그 카드
+    for (const inc of feedAll ? [] : feedIncidents.slice(0, 3)) {
+      const row = clickable(el("div", "feed-row alert", el("span", "muted when", fmtShort(inc.ts)), ext("span", `새 ${LEVEL[inc.level as keyof typeof LEVEL] ?? inc.level} 인시던트 — ${inc.title}`, "feed-text")), () => state.go("story", { root: inc.root }), "그 인시던트 보기");
+      flist.append(row);
+    }
     for (const { head: e, n } of fg) {
       const row = el("div", `feed-row${QUIET_KINDS.has(e.kind) || e.severity < 2 ? "" : " alert"}`);
       const dts = typeof e.target?.defender_ts === "number" && e.target.defender_ts > 0 ? e.target.defender_ts : e.ts;
@@ -379,7 +406,7 @@ export function dashboard(): HTMLElement {
       row.title = e.detail;
       flist.append(row);
     }
-    if (!fg.length) flist.append(el("p", "muted small", "최근 7일 서비스 사건이 없습니다."));
+    if (!fg.length && !(feedIncidents.length && !feedAll)) flist.append(el("p", "muted small", feedAll ? "최근 7일 서비스 사건이 없습니다." : "최근 7일 차단·대응 기록이 없습니다. [모두 보기]로 다른 서비스 사건을 볼 수 있습니다."));
     feed.append(flist);
     // 2판 화면 구성: [킬체인 | 도넛] → [트래픽 그래프 | 방어 피드]
     viz.append(el("div", "dash-row2 row-chain", flow, dn), el("div", "dash-row2", hours, feed));
@@ -438,6 +465,11 @@ export function dashboard(): HTMLElement {
     const susTs = [...critTs, ...highTs];
     const critN = sus.filter((s) => s.level.toLowerCase() === "critical").length;
     levelN = { critical: critN, suspicious: sus.length - critN, watch: watchFresh.length };
+    // 방어 피드: 미조치 심각·높음 중 최근 것(오늘 새 활동)
+    feedIncidents = sus
+      .map((x) => ({ root: x.root, level: x.level.toLowerCase(), title: bareTitle(x.title), ts: x.last_ts ? filetimeToUnix(x.last_ts) : 0 }))
+      .filter((x) => x.ts > 0)
+      .sort((a, b) => b.ts - a.ts);
     reach = chapterReach([...sus, ...watchFresh].map((x) => x.reached ?? []));
     const susSpark = hourlyCounts(susTs, Date.now() / 1000);
     const card = (title: string, body: Node, cls = "card", ic?: string, tone: Tone = "neutral", spark?: number[]) => {

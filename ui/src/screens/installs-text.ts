@@ -29,6 +29,10 @@ export interface InstallRun {
   signer?: string | null;
   /// 잘렸어도 접속·자동 실행·파일 쓰기를 한 자손은 모두 담았나(그 개수엔 "이상"을 붙이지 않는다)
   facts_complete?: boolean;
+  /// UI 명세 4판 3-6: 설치 프로그램을 띄운 부모의 이미지 경로(기록이 있을 때만)
+  parent?: string | null;
+  /// 설치 프로그램 자신의 명령줄(기록이 있을 때만)
+  cmdline?: string | null;
 }
 
 /// 조회 범위(일). 서비스 허용 범위 1..30
@@ -132,4 +136,58 @@ export function remoteText([name, count]: [string, number]): string {
 /// 최신 먼저(start_ts 내림차순). 원본은 바꾸지 않는다
 export function sortInstalls<T extends { start_ts: number }>(xs: T[]): T[] {
   return [...xs].sort((a, b) => b.start_ts - a.start_ts);
+}
+
+// ── UI 명세 4판 3-6 / 2장 4-1: 설치 사실 칩 ──
+// 판단 말("의심스러운")을 쓰지 않는다. 가진 사실(부모·명령줄·출처 기록)만 칩으로 보인다.
+
+/// 사용자가 직접 띄웠다고 보는 부모: 탐색기(더블클릭)·브라우저(내려받기 → 열기)
+const USER_PARENTS = new Set([
+  "explorer.exe", "chrome.exe", "msedge.exe", "firefox.exe", "whale.exe", "opera.exe", "brave.exe", "iexplore.exe", "vivaldi.exe",
+]);
+
+/// 조용한 설치 플래그(단어 단위, 대소문자 무시): msiexec /q·/qn·/quiet·/passive, NSIS /S, InstallShield /s,
+/// Inno /SILENT·/VERYSILENT, 일반 --silent·/silent. /qn+ /qb- 같은 꼬리 기호는 허용한다
+const SILENT_RE = /^(?:\/(?:q[nb]?[+-]?|quiet|passive|s|silent|verysilent)|--silent)$/i;
+
+/// 명령줄에서 조용한 설치 플래그 하나를 찾는다(표시용 조각). 따옴표 안 경로는 건너뛴다. 없으면 null
+export function silentFlag(cmdline: string | null | undefined): string | null {
+  const s = cmdline ?? "";
+  // 따옴표로 묶인 덩어리는 하나의 토큰(경로 안의 "/s" 같은 글자를 플래그로 읽지 않게)
+  const toks = s.match(/"[^"]*"|\S+/g) ?? [];
+  for (const t of toks.slice(1)) {
+    if (t.startsWith('"')) continue;
+    // /SILENT=값 같은 꼴은 = 앞까지만
+    const head = t.split("=")[0]!;
+    if (SILENT_RE.test(head)) return t;
+  }
+  return null;
+}
+
+export type InstallChipKind = "user" | "other" | "silent" | "no-origin";
+export interface InstallChip {
+  kind: InstallChipKind;
+  text: string;
+  /// 툴팁(외부 문자열 포함 — 화면은 글자로만 넣는다)
+  tip: string;
+}
+
+/// 설치 한 건의 사실 칩. 순서: 실행한 쪽 → 조용한 설치 → 출처 기록 없음
+export function installChips(run: Pick<InstallRun, "parent" | "cmdline" | "origin">): InstallChip[] {
+  const out: InstallChip[] = [];
+  if (run.parent) {
+    const p = baseName(run.parent);
+    if (USER_PARENTS.has(p.toLowerCase())) out.push({ kind: "user", text: "사용자가 실행", tip: `띄운 프로그램: ${run.parent}` });
+    else out.push({ kind: "other", text: "다른 프로그램이 실행", tip: `띄운 프로그램: ${run.parent}` });
+  }
+  const f = silentFlag(run.cmdline);
+  if (f) out.push({ kind: "silent", text: "조용한 설치", tip: `명령줄에 ${f} — 설치 창을 띄우지 않는 옵션입니다. 정상 업데이트도 이렇게 설치하므로 판정에는 쓰지 않습니다.` });
+  if (!originHost(run.origin)) out.push({ kind: "no-origin", text: "출처 기록 없음", tip: "이 설치 파일을 어디서 받았는지(인터넷 표시·내려받기 기록)가 없습니다." });
+  return out;
+}
+
+/// 카드 왼쪽 테두리: 조용한 설치이면서 다른 프로그램이 띄운 것만 주의(--warn), 나머지는 기본
+export function installEdge(chips: InstallChip[]): "warn" | "line" {
+  const k = new Set(chips.map((c) => c.kind));
+  return k.has("silent") && k.has("other") ? "warn" : "line";
 }

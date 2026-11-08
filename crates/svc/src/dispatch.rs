@@ -1671,7 +1671,27 @@ fn handle(
             // 화면 검수 7: 잘렸는지 알 수 있게 전체 건수도(미리 계산 상한 50 안에서)
             let total = items.len();
             items.truncate(v.limit as usize);
-            j(serde_json::json!({ "ready": ready, "items": items, "total": total }))
+            // UI 명세 4판 3-7: 접속지마다 나라·망(오프라인 DB, 외부 전송 없음). 조회 때는 DB 를 읽기만 한다
+            let mut out = serde_json::to_value(&items).unwrap_or_default();
+            if let Some(arr) = out.as_array_mut() {
+                for it in arr.iter_mut() {
+                    let geo_map: serde_json::Map<String, serde_json::Value> = it["run"]
+                        ["remote_ips"]
+                        .as_array()
+                        .map(|xs| {
+                            xs.iter()
+                                .filter_map(|x| {
+                                    let n = x.get(0)?.as_str()?;
+                                    let w = geo::global().lookup_str(x.get(1)?.as_str()?)?;
+                                    Some((n.to_string(), serde_json::to_value(w).ok()?))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    it["run"]["where"] = serde_json::Value::Object(geo_map);
+                }
+            }
+            j(serde_json::json!({ "ready": ready, "items": out, "total": total }))
         }
         Method::NetInterfaces => {
             let items = world

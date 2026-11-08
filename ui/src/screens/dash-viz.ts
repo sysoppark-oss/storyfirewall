@@ -32,6 +32,31 @@ export function withIcon<T extends HTMLElement>(b: T, name: string): T {
   return b;
 }
 
+/// UI 명세 4판 5-2c: 복사 아이콘 단추(aria-label "복사"). 누르면 1.5초 "복사함" 말풍선(실패면 "복사 못 함").
+/// 원문(raw) 그대로 클립보드에 — 화면에 보인 말줄임 글자가 아니다
+export function copyButton(raw: string): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "btn icon-only copy-btn";
+  b.setAttribute("aria-label", "복사");
+  b.title = "복사";
+  b.append(icon("copy"));
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const bubble = (text: string) => {
+    b.dataset["tip"] = text;
+    b.classList.add("tip-on");
+    if (t) clearTimeout(t);
+    t = setTimeout(() => b.classList.remove("tip-on"), 1500);
+  };
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const w = navigator.clipboard?.writeText(raw);
+    if (!w) return bubble("복사 못 함");
+    void w.then(() => bubble("복사함"), () => bubble("복사 못 함"));
+  });
+  return b;
+}
+
 export function icon(name: string): SVGElement {
   const s = document.createElementNS(NS, "svg");
   s.setAttribute("viewBox", "0 0 24 24");

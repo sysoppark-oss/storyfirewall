@@ -176,6 +176,15 @@ fn xray_collects_files_autoruns_remotes_origin() {
     );
     assert!(!x.truncated);
     assert!(x.last_ts >= T + 8 * S);
+    // UI 명세 4판 3-6: 부모(탐색기)와 접속지 IP(나라·망을 붙이는 재료)
+    assert_eq!(x.parent.as_deref(), Some(r"C:\Windows\explorer.exe"));
+    assert!(
+        x.remote_ips
+            .iter()
+            .any(|(n, ip)| n == "installer.whale.example" && !ip.is_empty()),
+        "접속지 이름 → IP: {:?}",
+        x.remote_ips
+    );
 }
 
 /// L060 (install-28 실측): 받은 설치 파일 뒤에 업데이트 서비스가 진짜 설치 과정을 띄우면 부모 연결이 끊긴다 → 시간으로 한 설치에 묶는다

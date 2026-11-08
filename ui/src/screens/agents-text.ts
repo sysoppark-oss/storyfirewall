@@ -8,7 +8,7 @@ export interface AgentRun {
   display: string;
   /// "image"(실행 파일 이름으로 알아봄) | "cmdline"(명령줄의 패키지 이름으로 알아봄)
   found_by: string;
-  run: InstallRun;
+  run: InstallRun & { where?: Record<string, import("./connections").Where> };
 }
 
 /// 조회 범위(일). 서비스 허용 범위 1..7(미리 계산 범위)
@@ -82,4 +82,40 @@ export function agentEmptyText(days: number): string {
 export function signerText(signer: string | null | undefined): { text: string; warn: boolean } {
   // warn 은 굵게만 쓴다(주황은 판정 결과에만 — 명세 2-1)
   return signer ? { text: `서명: ${signer}`, warn: false } : { text: "서명 확인 안 됨 — 이름만 같은 다른 프로그램일 수 있습니다", warn: true };
+}
+
+// ── UI 명세 4판 3-7 / 2장 5-2a: [외부 통신 차단…] ──
+export type BlockSpan = "1h" | "today" | "always";
+export const BLOCK_SPAN_LABEL: Record<BlockSpan, string> = { "1h": "1시간", today: "오늘(자정까지)", always: "계속(직접 해제할 때까지)" };
+
+/// 지금부터 지역 자정까지 남은 분(최소 1)
+export function minutesToMidnight(now: Date): number {
+  const mid = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  return Math.max(1, Math.ceil((mid.getTime() - now.getTime()) / 60_000));
+}
+
+/// 그 에이전트 실행 파일의 인터넷 방향 나가기 차단 정책(YAML 1건). LAN·로컬(로컬 MCP 서버 등)은 막지 않는다.
+/// 경로는 외부 문자열 — JSON 문자열로 넣어 YAML 해석을 바꾸지 못하게 한다. 이름은 우리 표(도구 이름)에서만 만든다
+export function agentBlockYaml(exePath: string, display: string, span: BlockSpan, now: Date = new Date()): string {
+  const name = `AI 에이전트 외부 통신 차단 - ${display}`.slice(0, 64);
+  const lines = [
+    `- name: ${JSON.stringify(name)}`,
+    "  action: block",
+    `  match: { direction: out, process: [${JSON.stringify(exePath.replace(/\\/g, "/"))}], remote_ip: [internet] }`,
+  ];
+  if (span === "1h") lines.push("  expires: 60m");
+  else if (span === "today") lines.push(`  expires: ${minutesToMidnight(now)}m`);
+  return lines.join("\n") + "\n";
+}
+
+/// 접속지 한 줄 글자: "example.com ×3"
+export function remoteCountText(name: string, count: number): string {
+  return count > 1 ? `${name} ×${count}` : name;
+}
+
+/// 공용 실행기(node·python 등)로 도는 에이전트: 그 실행 파일을 막으면 같은 실행기를 쓰는 다른 프로그램도 막힌다
+const SHARED_RUNTIMES = new Set(["node.exe", "python.exe", "pythonw.exe", "py.exe", "bun.exe", "deno.exe", "uv.exe", "uvx.exe", "npx.exe", "cmd.exe", "powershell.exe", "pwsh.exe", "java.exe", "javaw.exe"]);
+export function sharedRuntime(path: string): boolean {
+  const b = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
+  return SHARED_RUNTIMES.has(b.toLowerCase());
 }

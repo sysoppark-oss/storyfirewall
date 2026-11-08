@@ -205,6 +205,7 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
         stat.setAttribute("aria-expanded", String(opened));
         if (opened) (menu.querySelector("button") as HTMLButtonElement | null)?.focus();
       }, "tb-badge badge-crit tb-emg-state");
+      stat.dataset["cmd"] = "emg-state";
       stat.append(el("span", "tb-dot"), label, " ▾");
       stat.setAttribute("aria-haspopup", "true");
       stat.setAttribute("aria-expanded", "false");
@@ -221,7 +222,9 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
       menu.append(off, el("p", "muted small", "기한이 지나거나 재부팅하면 저절로 풀립니다."));
       emg.replaceChildren(stat, menu);
     } else if (er.ok) {
-      emg.replaceChildren(button("긴급 차단…", () => emergencyDialog(() => { window.dispatchEvent(new Event(EMERGENCY_EVENT)); void refresh(); }, st?.suggested_tools ?? []), "btn small danger"));
+      const start = button("긴급 차단…", () => emergencyDialog(() => { window.dispatchEvent(new Event(EMERGENCY_EVENT)); void refresh(); }, st?.suggested_tools ?? []), "btn small danger");
+      start.dataset["cmd"] = "emg-start";
+      emg.replaceChildren(start);
     } else {
       // 상태를 못 읽으면 단추를 숨기지 않고 흐리게 — 이유는 툴팁(믿을 수 없는 값을 안심처럼 보이지 않음)
       const b = button("긴급 차단…", () => undefined, "btn small danger");

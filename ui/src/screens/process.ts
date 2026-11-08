@@ -1,3 +1,4 @@
+import { copyButton } from "./dash-viz";
 import { ACT } from "../terms";
 import { rpc } from "../rpc";
 import { el, ext, clear, button, fmtShortSec, fmtHms, filetimeToUnix } from "../ui";
@@ -67,8 +68,7 @@ export function placeKind(path: string): string {
 /// 주소·경로 글자 + "복사". 링크로 만들지 않는다(악성 주소를 실수로 여는 일 방지, D025-A2)
 function copyable(text: string, cls = "mono"): HTMLElement {
   const box = el("span", "copyable", ext("span", text, cls));
-  const b = button("복사", () => { void navigator.clipboard?.writeText(text).catch(() => {}); }, "btn link small");
-  box.append(" ", b);
+  box.append(" ", copyButton(text));
   return box;
 }
 

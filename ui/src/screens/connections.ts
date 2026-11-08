@@ -117,7 +117,15 @@ export function bytes(n: number): string {
 }
 
 /// 연결 목록(최근 N분, 2초 갱신) + 리스닝 포트. 행을 누르면 프로세스 상세.
-export function connections(): HTMLElement {
+/// opts.map: 분포 패널을 펼치고 지도 보기로. opts.cc: 그 나라로 거른 채(대시보드 "지도에서 보기 ›", UI 명세 4판 1-3c 대안)
+/// opts.q: 주소·도메인·프로그램 글자로 거른 채(명령 팔레트, UI 명세 4판 3-9). 외부 문자열 — 비교만 하고 글자로만 보인다
+export function textMatch(c: { raddr: string; domain: string | null; image: string }, q: string): boolean {
+  const t = q.trim().toLowerCase();
+  if (!t) return true;
+  return [c.raddr, c.domain ?? "", c.image].some((x) => x.toLowerCase().includes(t));
+}
+export function connections(opts: { map?: boolean; cc?: string; q?: string } = {}): HTMLElement {
+  let textQ = (opts.q ?? "").slice(0, 253);
   const root = el("section", "screen");
   root.append(el("h1", undefined, "네트워크 연결"));
   const windowSel = el("select");
@@ -177,11 +185,12 @@ export function connections(): HTMLElement {
   paintSeg();
   const expanded = new Set<string>();
   // A3: "통신 대상 분포 (오늘)" 접이식 막대 패널(기본 접힘). 막대를 누르면 표를 거른다(다시 누르면 해제)
-  let filter: { by: "country" | "org"; key: string } | null = null;
+  let filter: { by: "country" | "org"; key: string } | null = opts.cc && /^[A-Z]{2}$/.test(opts.cc) ? { by: "country", key: opts.cc } : null;
   const where3 = el("details", "where-panel");
+  if (opts.map) where3.open = true;
   const where3Body = el("div", "where-bars");
   // 막대 / 지도 전환(사용자 요청). 지도도 같은 거르기
-  let view: "bars" | "map" = "bars";
+  let view: "bars" | "map" = opts.map ? "map" : "bars";
   const viewBtns = (["bars", "map"] as const).map((v) => {
     const b = button(v === "bars" ? "막대" : "지도", () => { view = v; viewBtns.forEach((x) => x.classList.toggle("on", x === b)); void tick(); }, "btn small seg-btn");
     if (v === view) b.classList.add("on");
@@ -262,8 +271,14 @@ export function connections(): HTMLElement {
       note.append(h.ok && collectionStalled(h.result) ? noDataBox() : el("p", "muted", "이 범위에 연결 기록이 없습니다."));
     }
     paintBars(r.result.items);
-    const shown = r.result.items.filter((c) => matchesFilter(c, filter));
+    const shown = r.result.items.filter((c) => matchesFilter(c, filter) && textMatch(c, textQ));
     if (filter) note.append(el("p", "muted", "막대로 거른 목록입니다. 같은 막대를 다시 누르면 해제됩니다."));
+    if (textQ) {
+      const chip = button("", () => { textQ = ""; void tick(); }, "filter-chip");
+      chip.append("글자 거르기: ", ext("span", textQ, "mono"), " ×");
+      chip.setAttribute("aria-label", "글자 거르기 해제");
+      note.append(el("p", "muted", chip, ` · ${shown.length}건`));
+    }
     if (mode === "none") {
       for (const c of shown) body.append(rowOf(c));
       return;

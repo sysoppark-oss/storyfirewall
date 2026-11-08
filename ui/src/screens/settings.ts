@@ -21,6 +21,24 @@ export function retentionText(v: Record<string, unknown>): string {
 }
 
 /// 설정: 보관·화법·연결 끝점. 외부 전송 옵션(Claude 서술 등)은 켤 때 무엇이 나가는지 보여 준다 (지침 AI 요소).
+/// 탭 안에서 글자를 담은 첫 줄(제목·라벨·단추)을 찾아 화면에 보이고 1.5초 강조. 못 찾으면 0.3초마다 3초까지 다시
+export function highlightText(host: HTMLElement, text: string, focus = false): void {
+  let tries = 0;
+  const find = () => {
+    const cand = [...host.querySelectorAll<HTMLElement>("h2, h3, label, button, summary")].find((x) => (x.textContent ?? "").includes(text));
+    if (!cand) {
+      if (++tries < 10) window.setTimeout(find, 300);
+      return;
+    }
+    cand.scrollIntoView({ block: "center" });
+    cand.classList.add("flash");
+    window.setTimeout(() => cand.classList.add("flash-out"), 1500);
+    window.setTimeout(() => cand.classList.remove("flash", "flash-out"), 2300);
+    if (focus && cand instanceof HTMLButtonElement) cand.focus();
+  };
+  find();
+}
+
 export function settings(args: Record<string, unknown> = {}): HTMLElement {
   const root = el("section", "screen");
   root.append(el("h1", undefined, "설정"));
@@ -266,6 +284,8 @@ export function settings(args: Record<string, unknown> = {}): HTMLElement {
   bar.hidden = true;
   root.append(tabRow, host, out, bar);
   showTab(typeof args["tab"] === "string" ? args["tab"] : "engine");
+  // 명령 팔레트(4판 3-9): 설정 항목 이름으로 왔으면 그 탭의 그 줄을 강조(늦게 그려지는 진단 칸도 있어 몇 번 다시 찾는다)
+  if (typeof args["find"] === "string") highlightText(host, args["find"], args["focus"] === true);
   void (async () => {
     const r = await rpc<Record<string, unknown>>("settings.get", {});
     if (r.ok && typeof r.result["voice"] === "string") voice.value = r.result["voice"];

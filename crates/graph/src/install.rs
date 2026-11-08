@@ -79,6 +79,15 @@ pub struct InstallRun {
     /// 자손이 잘렸어도(`truncated`) 접속·자동 실행·파일 쓰기를 한 자손은 모두 담았나(화면 검수 N1: 그 개수에는 "이상"을 붙이지 않는다)
     #[serde(default)]
     pub facts_complete: bool,
+    /// UI 명세 4판 3-6: 설치 프로그램을 띄운 부모 프로세스의 이미지 경로(기록이 있을 때만)
+    #[serde(default)]
+    pub parent: Option<String>,
+    /// UI 명세 4판 3-6: 설치 프로그램 자신의 명령줄(기록이 있을 때만)
+    #[serde(default)]
+    pub cmdline: Option<String>,
+    /// UI 명세 4판 3-7: 접속한 곳 이름 → 처음 본 IP (화면이 나라·망을 붙이는 데 쓴다). remotes 와 같은 이름
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remote_ips: Vec<(String, String)>,
 }
 
 /// 앞 설치의 마지막 기록 뒤 이 안(100ns, 2분)에 시작했고 **둘 다 같은 회사의 유효 서명**이면 같은 설치로 묶는다(L062, 30차 Q1:
@@ -181,6 +190,11 @@ pub fn group_runs(mut runs: Vec<InstallRun>, limit: usize) -> Vec<InstallRun> {
                     }
                 }
                 g.remotes.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+                for (n, ip) in x.remote_ips {
+                    if !g.remote_ips.iter().any(|r| r.0 == n) {
+                        g.remote_ips.push((n, ip));
+                    }
+                }
                 g.commands.extend(x.commands);
                 g.truncated |= x.truncated;
                 g.persistence = persistence_of(&g.commands, &g.procs);
@@ -341,6 +355,7 @@ pub fn install_xray(store: &Store, root: i64, max_procs: usize) -> Result<Instal
     let mut files = Vec::new();
     let mut autoruns = Vec::new();
     let mut remotes: BTreeMap<String, u32> = BTreeMap::new();
+    let mut remote_ip: BTreeMap<String, String> = BTreeMap::new();
     let mut commands = Vec::new();
     let mut last_ts = node.first_ts;
     let mut out_st = conn.prepare_cached(
@@ -372,14 +387,24 @@ pub fn install_xray(store: &Store, root: i64, max_procs: usize) -> Result<Instal
                 ("registered", "autorun") => autoruns.push((key, label)),
                 ("connected", "remote") => {
                     // 도메인을 알면 도메인, 모르면 주소
-                    let name = attrs
+                    let av = attrs
                         .as_deref()
-                        .and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok())
+                        .and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok());
+                    let name = av
+                        .as_ref()
                         .and_then(|v| {
                             v.get("domain")
                                 .and_then(|d| d.as_str().map(|s| s.to_string()))
                         })
                         .unwrap_or(label);
+                    if let Some(ip) = av
+                        .as_ref()
+                        .and_then(|v| v.get("ip").and_then(|x| x.as_str()))
+                    {
+                        remote_ip
+                            .entry(name.clone())
+                            .or_insert_with(|| ip.to_string());
+                    }
                     *remotes.entry(name).or_default() += 1;
                 }
                 ("ran", "command") => commands.push(label),
@@ -418,9 +443,30 @@ pub fn install_xray(store: &Store, root: i64, max_procs: usize) -> Result<Instal
         .and_then(|a| serde_json::from_str::<serde_json::Value>(&a).ok())
         .filter(|v| v.get("sig_status").and_then(|s| s.as_str()) == Some("valid"))
         .and_then(|v| v.get("signer").and_then(|s| s.as_str()).map(|s| s.to_string()));
+    // 부모(spawned 의 src) 이미지
+    let parent: Option<String> = conn
+        .query_row(
+            "SELECT n.attrs_json FROM edges e JOIN nodes n ON n.id = e.src WHERE e.dst = ?1 AND e.rel = 'spawned' AND n.kind = 'process' LIMIT 1",
+            params![root],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+        .and_then(|a| image_of(Some(&a)));
+    // 뿌리 자신의 명령줄(ran 선)
+    let cmdline: Option<String> = conn
+        .query_row(
+            "SELECT n.label FROM edges e JOIN nodes n ON n.id = e.dst WHERE e.src = ?1 AND e.rel = 'ran' AND n.kind = 'command' ORDER BY e.ts LIMIT 1",
+            params![root],
+            |r| r.get(0),
+        )
+        .ok();
     Ok(InstallRun {
         root,
         image,
+        parent,
+        cmdline,
+        remote_ips: remote_ip.into_iter().collect(),
         pid,
         start_ts: node.first_ts,
         last_ts,

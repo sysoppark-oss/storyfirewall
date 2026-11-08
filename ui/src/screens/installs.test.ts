@@ -75,3 +75,36 @@ describe("L060 설치 엑스레이 검수 반영", () => {
     expect(countPaths(["C:\\W\\schtasks.exe", "c:/w/SCHTASKS.exe", "C:\\W\\sc.exe"])).toEqual([["C:\\W\\schtasks.exe", 2], ["C:\\W\\sc.exe", 1]]);
   });
 });
+
+import { silentFlag, installChips, installEdge } from "./installs-text";
+describe("설치 사실 칩(UI 명세 4판 3-6)", () => {
+  it("조용한 설치 플래그를 단어 단위로 찾는다", () => {
+    expect(silentFlag('msiexec.exe /i "C:\\a b\\x.msi" /qn')).toBe("/qn");
+    expect(silentFlag("setup.exe /S")).toBe("/S");
+    expect(silentFlag("setup.exe /VERYSILENT /NORESTART")).toBe("/VERYSILENT");
+    expect(silentFlag("setup.exe --silent")).toBe("--silent");
+    expect(silentFlag("msiexec /i x.msi /qb-")).toBe("/qb-");
+    expect(silentFlag("setup.exe /SILENT=1")).toBe("/SILENT=1");
+  });
+  it("경로·다른 옵션 안의 글자는 플래그가 아니다", () => {
+    expect(silentFlag('"C:\\tools\\/s\\setup.exe" /norestart')).toBeNull();
+    expect(silentFlag("setup.exe /silently /sp-")).toBeNull();
+    expect(silentFlag("/S")).toBeNull(); // 첫 토큰(실행 파일)은 보지 않는다
+    expect(silentFlag(null)).toBeNull();
+  });
+  it("부모로 실행한 쪽을 나눈다, 부모 기록이 없으면 그 칩은 없다", () => {
+    expect(installChips({ parent: "C:\\Windows\\explorer.exe", cmdline: "s.exe", origin: "https://x.com/s.exe" }).map((c) => c.kind)).toEqual(["user"]);
+    expect(installChips({ parent: "C:\\Program Files\\Google\\Chrome\\Application\\CHROME.EXE", cmdline: null, origin: "x.com" }).map((c) => c.kind)).toEqual(["user"]);
+    expect(installChips({ parent: "C:\\Users\\a\\AppData\\Local\\Temp\\upd.exe", cmdline: "s.exe /S", origin: null }).map((c) => c.kind)).toEqual(["other", "silent", "no-origin"]);
+    expect(installChips({ parent: null, cmdline: null, origin: " " }).map((c) => c.kind)).toEqual(["no-origin"]);
+  });
+  it("테두리: 조용한 설치 + 다른 프로그램만 주의", () => {
+    expect(installEdge(installChips({ parent: "C:\\a\\upd.exe", cmdline: "s.exe /S", origin: "x" }))).toBe("warn");
+    expect(installEdge(installChips({ parent: "C:\\Windows\\explorer.exe", cmdline: "s.exe /S", origin: "x" }))).toBe("line");
+    expect(installEdge(installChips({ parent: "C:\\a\\upd.exe", cmdline: "s.exe", origin: null }))).toBe("line");
+  });
+  it("칩 문구에 판단 말이 없다", () => {
+    const all = installChips({ parent: "C:\\a\\upd.exe", cmdline: "s.exe /S", origin: null });
+    for (const c of all) expect(c.text + c.tip).not.toMatch(/의심|악성|위험/);
+  });
+});

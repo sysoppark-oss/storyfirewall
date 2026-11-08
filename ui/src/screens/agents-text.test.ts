@@ -45,3 +45,32 @@ describe("agents-text", () => {
     expect(signerText(null).warn).toBe(true);
   });
 });
+
+import { agentBlockYaml, minutesToMidnight, sharedRuntime } from "./agents-text";
+describe("외부 통신 차단 정책(UI 명세 4판 3-7)", () => {
+  it("자정까지 분", () => {
+    expect(minutesToMidnight(new Date(2026, 10, 9, 23, 0, 0))).toBe(60);
+    expect(minutesToMidnight(new Date(2026, 10, 9, 23, 59, 30))).toBe(1);
+  });
+  it("인터넷 방향만, 기한별 expires", () => {
+    const y = agentBlockYaml("C:\\Users\\a\\AppData\\Local\\claude\\claude.exe", "Claude", "1h");
+    expect(y).toContain('process: ["C:/Users/a/AppData/Local/claude/claude.exe"]');
+    expect(y).toContain("remote_ip: [internet]");
+    expect(y).toContain("expires: 60m");
+    expect(agentBlockYaml("C:\\a.exe", "X", "always")).not.toContain("expires");
+    expect(agentBlockYaml("C:\\a.exe", "X", "today", new Date(2026, 10, 9, 22, 30))).toContain("expires: 90m");
+  });
+  it("경로의 따옴표·줄바꿈이 YAML 을 깨지 못한다", () => {
+    const y = agentBlockYaml('C:\\x"]}\n- name: evil\n  action: allow', "X", "always");
+    expect(y.split("\n").filter((l) => l.startsWith("- name")).length).toBe(1);
+    expect(y).not.toMatch(/^\s*action: allow/m);
+  });
+});
+
+describe("공용 실행기", () => {
+  it("node·python 은 공용, 전용 앱은 아님", () => {
+    expect(sharedRuntime("C:\\Program Files\\nodejs\\NODE.EXE")).toBe(true);
+    expect(sharedRuntime("C:/x/python.exe")).toBe(true);
+    expect(sharedRuntime("C:\\Users\\a\\AppData\\Local\\AnthropicClaude\\claude.exe")).toBe(false);
+  });
+});

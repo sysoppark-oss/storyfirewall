@@ -2,6 +2,7 @@ import { topbar } from "./topbar";
 import { connectionsScreen } from "./screens/live-conns";
 import { SCREEN_LABEL, GLOSSARY } from "./terms";
 import { setGlossary } from "./ui";
+import { installPalette, openPalette } from "./palette";
 import { dashboard } from "./screens/dashboard";
 import { story } from "./screens/story";
 import { installs } from "./screens/installs";
@@ -53,7 +54,14 @@ const status = el("div", "status");
 // UI 명세 4판 3-1: 모든 화면 위 공통 상단 띠(보호 상태·엔진 뱃지·긴급 차단). 화면 본문(main)만 스크롤된다
 const top = isHud ? null : topbar();
 const content = el("div", "content");
-if (top) content.append(top.root, main);
+if (top) {
+  // 4판 3-9: 명령 팔레트(Ctrl+K) — 띠 오른쪽 끝에 찾기 단추도 둔다(단축키를 모르는 사용자)
+  const find = button("찾기  Ctrl+K", () => openPalette(), "tb-badge tb-find");
+  find.setAttribute("aria-keyshortcuts", "Control+K");
+  top.root.append(find);
+  content.append(top.root, main);
+  installPalette();
+}
 if (!isHud) app.append(nav, content, status);
 
 let current: HTMLElement | undefined;

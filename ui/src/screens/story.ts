@@ -1,4 +1,4 @@
-import { withIcon } from "./dash-viz";
+import { withIcon, copyButton } from "./dash-viz";
 import { parseFilter, matches, filterChips, dropChip, type StoryFilter } from "./story-filter";
 import { STAGES, STAGE_NAMES_4, TRIAGE_STATE, TRIAGE_ACTION, ACT, LEVEL, isHigh } from "../terms";
 import { mutation, rpc, uuid, type RpcResult, type RpcError } from "../rpc";
@@ -949,11 +949,7 @@ function cmdlineLine(cmd: string): HTMLElement {
   const line = el("div", "cmdline");
   const t = el("span", "path", cmdlineText(cmd));
   t.title = cmd;
-  const done = el("span", "muted small");
-  const copy = button("복사", () => {
-    void navigator.clipboard?.writeText(cmd).then(() => { done.textContent = " 복사했습니다."; }, () => { done.textContent = " 복사하지 못했습니다."; });
-  }, "btn small");
-  line.append(t, " ", copy, done);
+  line.append(t, " ", copyButton(cmd));
   return line;
 }
 /// 카드의 "지금 상태" 한 줄(시각 없음 — 카드 오른쪽 위가 마지막 활동). "수집 시작 전부터 실행 중" 줄과 엇갈려 보이지 않게
