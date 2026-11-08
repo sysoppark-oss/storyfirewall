@@ -1,0 +1,210 @@
+// 공통 상단 띠(UI 명세 4판 3-1): 모든 화면 위에 보호 서비스 상태·엔진 뱃지·정책 수와 긴급 차단 단추를 둔다.
+// 전에는 대시보드에만 있어서 다른 화면에서는 긴급 차단을 누를 수도, 걸려 있는지 볼 수도 없었다.
+// - 뱃지는 모두 단추(누르면 설정 › 진단 또는 정책 화면). 누를 수 있게 보이면 실제 button(2판 원칙 9).
+// - 긴급 차단 단추는 빨간 테두리(채움 아님, 2판 2-4). 차단 중이면 상태 단추 + 띠 아래 빨간 선.
+// - 남은 시간은 분 단위, 마지막 5분만 m:ss(4판 1-1: 매초 바뀌는 숫자는 불안을 키우고 화면 읽기 프로그램을 시끄럽게 한다).
+import { rpc, mutation } from "./rpc";
+import { el, button } from "./ui";
+import { engineStuckText, state } from "./state";
+import { collectionStalled, type HealthLike } from "./list-state";
+import { icon } from "./screens/dash-viz";
+import { bytes } from "./screens/connections";
+
+/// collector.health 중 띠가 쓰는 것
+export interface TopHealth extends HealthLike {
+  timings?: { name: string; last_ms: number }[];
+  wfp_filters?: number;
+  db_bytes?: number | null;
+}
+
+/// 긴급 차단 상태(emergency.status) — 대시보드 개편안 3판 1-1
+export interface EmergencyStatus {
+  active: boolean;
+  policy_id?: number;
+  version?: number;
+  expires_at?: number;
+  remaining_secs?: number;
+  confirmed?: boolean;
+  /// 걸려 있지 않을 때: 지금 통신 중인 원격 도구(대화상자가 예외 칸을 미리 채움)
+  suggested_tools?: { display: string; path: string }[];
+}
+
+/// 남은 시간 문구(순수 함수 — 시험용): 5분 넘으면 분(올림), 1시간 넘으면 시간+분, 5분 이하는 m:ss
+export function leftText(secs: number): string {
+  const s = Math.max(0, Math.floor(secs));
+  if (s <= 300) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} 남음`;
+  const m = Math.ceil(s / 60);
+  return m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분 남음` : `${m}분 남음`;
+}
+
+/// 상단 띠의 긴급 차단 문구(순수 함수 — 시험용). 걸려 있지 않으면 null. `left` 를 주면 그 값(초)을 쓴다(띠의 1초 갱신)
+export function emergencyText(st: EmergencyStatus | null, left?: number): string | null {
+  if (!st || !st.active) return null;
+  if (st.confirmed === false) return "긴급 차단 · 유지 확인 대기";
+  return `긴급 차단 중 · ${leftText(left ?? st.remaining_secs ?? 0)}`;
+}
+
+/// 엔진 뱃지 문구(순수 함수 — 시험용). 수치가 없으면 그 뱃지는 뺀다(개편안 2판 3-2)
+export function engineBadges(h: TopHealth | null, policies: number, pending: number): string[] {
+  const out: string[] = [];
+  const j = h?.timings?.find((t) => t.name === "엔진: 주기 판정");
+  if (j) out.push(`판정 지연 ${j.last_ms}ms`);
+  if (typeof h?.wfp_filters === "number") out.push(`필터 ${h.wfp_filters}개`);
+  if (typeof h?.db_bytes === "number") out.push(`DB ${bytes(h.db_bytes)}`);
+  out.push(pending ? `정책 ${policies}개 (확인 대기 ${pending})` : `정책 ${policies}개`);
+  return out;
+}
+
+/// 보호 서비스 한 단어(순수 함수 — 시험용): 연결 끊김 / 기록 멈춤? / 작동 중 · 응답 늦음 / 작동 중
+export function serviceWord(connected: boolean, stalled: boolean, stuck: boolean): { word: string; tone: "ok" | "warn" } {
+  if (!connected) return { word: "연결 끊김", tone: "warn" };
+  if (stalled) return { word: "기록 멈춤?", tone: "warn" };
+  if (stuck) return { word: "작동 중 · 응답 늦음", tone: "warn" };
+  return { word: "작동 중", tone: "ok" };
+}
+
+/// 긴급 차단·해제가 끝났다고 화면들에 알린다(대시보드 등이 다시 그림)
+export const EMERGENCY_EVENT = "sf-emergency";
+
+/// 긴급 차단 대화상자: 기한·원격 도구 예외를 고르고 승인 창으로 보낸다(서비스가 RDP 세션은 자동으로 예외)
+export function emergencyDialog(done: () => void, suggested: { display: string; path: string }[] = []) {
+  const dlg = el("dialog", "ack");
+  dlg.append(el("h3", undefined, "긴급 차단"));
+  dlg.append(el("p", undefined, "이 PC 의 나가는·들어오는 통신을 모두 막습니다. 예외: 이 PC 안 통신(루프백) · DNS · DHCP · 이 앱 · 지금 접속한 원격 데스크톱 세션의 상대 IP · 아래에 적은 원격 도구."));
+  dlg.append(el("p", "muted small", "승인 창에서 확인한 뒤 60초 안에 [유지]를 눌러야 유지됩니다(원격으로 접속해 있다가 끊기면 자동으로 되돌아갑니다). 재부팅하면 풀립니다. 이미 열려 있는 연결도 끊길 수 있습니다. 예외로 연 원격 도구 안에 다른 프로그램이 숨어 들어가면 막지 못합니다."));
+  const mins = el("select") as HTMLSelectElement;
+  for (const [v, t] of [[15, "15분"], [30, "30분 (기본)"], [60, "1시간"], [120, "2시간"], [480, "8시간"]] as const) {
+    const o = el("option", undefined, t) as HTMLOptionElement;
+    o.value = String(v);
+    if (v === 30) o.selected = true;
+    mins.append(o);
+  }
+  dlg.append(el("label", undefined, "기한 ", mins));
+  const tools = el("textarea") as HTMLTextAreaElement;
+  tools.rows = 3;
+  tools.placeholder = "예외로 둘 원격 도구 실행 파일 경로(한 줄에 하나, 8개까지)\n예: C:\\Program Files\\TeamViewer\\TeamViewer.exe";
+  tools.style.width = "100%";
+  // 사용자 승인 2026-11-08: 지금 통신 중인 원격 도구를 미리 채운다(지우면 막힌다)
+  tools.value = suggested.map((t) => t.path).join("\n");
+  dlg.append(el("label", "block", "원격 도구 예외", tools));
+  if (suggested.length) dlg.append(el("p", "muted small", `지금 통신 중인 원격 도구를 미리 넣었습니다: ${suggested.map((t) => t.display).join(", ")}. 지운 줄은 막힙니다.`));
+  const out = el("div");
+  const go = button("승인 창 열기", async () => {
+    go.disabled = true;
+    const list = tools.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).slice(0, 8);
+    const r = await mutation("emergency.start", { minutes: Number(mins.value), remote_tools: list });
+    go.disabled = false;
+    if (!r.ok) return out.replaceChildren(el("p", "error", `긴급 차단: ${r.error.message}`));
+    dlg.close();
+    dlg.remove();
+    done();
+  }, "btn danger");
+  const cancel = button("취소", () => { dlg.close(); dlg.remove(); }, "btn");
+  dlg.append(out, el("div", "actions", go, cancel));
+  document.body.append(dlg);
+  dlg.showModal();
+}
+
+/// 공통 상단 띠. 20초마다·엔진 상태가 바뀔 때·긴급 차단을 바꾼 뒤 다시 그린다. 차단 중 마지막 5분은 1초마다 남은 시간만 고친다
+export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
+  const root = el("div", "topbar");
+  root.setAttribute("role", "region");
+  root.setAttribute("aria-label", "보호 상태");
+  const badges = el("div", "tb-badges");
+  const emg = el("div", "tb-emg");
+  root.append(badges, emg);
+  let gen = 0;
+  let endAt = 0; // 긴급 차단 끝 시각(ms, 이 PC 시계) — 1초 갱신용
+  let emgLabel: HTMLElement | null = null;
+  let lastSt: EmergencyStatus | null = null;
+
+  const toDiag = () => state.go("settings", { tab: "diag" });
+  const badgeBtn = (cls: string, text: string, onClick: () => void, title?: string, ico?: string) => {
+    const b = button("", onClick, `tb-badge ${cls}`.trim());
+    if (ico) b.append(icon(ico), " ");
+    b.append(text);
+    if (title) b.title = title;
+    return b;
+  };
+
+  const tick = () => {
+    if (!emgLabel || !lastSt?.active || lastSt.confirmed === false) return;
+    const left = (endAt - Date.now()) / 1000;
+    if (left <= 300) emgLabel.textContent = emergencyText(lastSt, left);
+    if (left <= 0) void refresh();
+  };
+  window.setInterval(tick, 1000);
+
+  async function refresh(): Promise<void> {
+    const my = ++gen;
+    if (!state.connected) {
+      const sw = serviceWord(false, false, false);
+      badges.replaceChildren(badgeBtn(`badge-${sw.tone}`, `보호 서비스 ${sw.word}`, toDiag, "서비스가 멈췄거나 시작 중일 수 있습니다", "heart"));
+      emg.replaceChildren();
+      root.classList.remove("emg-on");
+      return;
+    }
+    const [hr, pol, er] = await Promise.all([
+      rpc<TopHealth>("collector.health", {}),
+      rpc<{ items: { state: string }[] }>("policy.list", {}),
+      rpc<EmergencyStatus>("emergency.status", {}),
+    ]);
+    if (my !== gen) return; // 더 새 갱신이 시작됐다(겹침 방지 — 대시보드 KPI 중복 결함과 같은 원인)
+    const h = hr.ok ? hr.result : null;
+    const sw = serviceWord(true, !!h && collectionStalled(h), !!engineStuckText(state.engineBusyMs));
+    const items = pol.ok ? pol.result.items : [];
+    const applied = items.filter((p) => /^(applied|confirmed)$/i.test(p.state)).length;
+    const pend = items.filter((p) => /^applied$/i.test(p.state)).length;
+    const row: HTMLElement[] = [badgeBtn(`badge-${sw.tone}`, `보호 서비스 ${sw.word}`, toDiag, `서비스 ${state.serverVersion} · 누르면 진단`, "heart")];
+    for (const t of engineBadges(h, applied, pend)) {
+      const isPolicy = t.startsWith("정책 ");
+      row.push(badgeBtn("", t, isPolicy ? () => state.go("policy", {}) : toDiag, isPolicy ? "정책 화면" : "설정 › 진단"));
+    }
+    badges.replaceChildren(...row);
+
+    // 긴급 차단
+    const st = er.ok ? er.result : null;
+    lastSt = st;
+    emgLabel = null;
+    const on = !!st?.active;
+    root.classList.toggle("emg-on", on);
+    if (on && st) {
+      endAt = Date.now() + Math.max(0, st.remaining_secs ?? 0) * 1000;
+      const label = el("span", "tb-emg-text", emergencyText(st) ?? "");
+      emgLabel = label;
+      const stat = button("", () => menu.toggleAttribute("hidden"), "tb-badge badge-crit tb-emg-state");
+      stat.append(el("span", "tb-dot"), label, " ▾");
+      stat.setAttribute("aria-haspopup", "true");
+      const menu = el("div", "tb-menu");
+      menu.setAttribute("hidden", "");
+      const off = button("지금 해제…", async () => {
+        off.disabled = true;
+        const r = await mutation("emergency.stop", {});
+        off.disabled = false;
+        if (!r.ok) return menu.append(el("p", "error small", `해제: ${r.error.message}`));
+        window.dispatchEvent(new Event(EMERGENCY_EVENT));
+        void refresh();
+      }, "btn small danger");
+      menu.append(off, el("p", "muted small", "기한이 지나거나 재부팅하면 저절로 풀립니다."));
+      emg.replaceChildren(stat, menu);
+    } else if (er.ok) {
+      emg.replaceChildren(button("긴급 차단…", () => emergencyDialog(() => { window.dispatchEvent(new Event(EMERGENCY_EVENT)); void refresh(); }, st?.suggested_tools ?? []), "btn small danger"));
+    } else {
+      // 상태를 못 읽으면 단추를 숨기지 않고 흐리게 — 이유는 툴팁(믿을 수 없는 값을 안심처럼 보이지 않음)
+      const b = button("긴급 차단…", () => undefined, "btn small danger");
+      b.disabled = true;
+      b.title = `긴급 차단 상태를 읽지 못했습니다: ${er.error.message}`;
+      emg.replaceChildren(b);
+    }
+  }
+
+  window.setInterval(() => void refresh(), 20_000);
+  window.addEventListener("engine-state", () => void refresh());
+  window.addEventListener(EMERGENCY_EVENT, () => void refresh());
+  // 펼친 메뉴 밖을 누르면 닫는다
+  document.addEventListener("click", (e) => {
+    const m = emg.querySelector(".tb-menu");
+    if (m && !m.hasAttribute("hidden") && !emg.contains(e.target as Node)) m.setAttribute("hidden", "");
+  });
+  return { root, refresh };
+}

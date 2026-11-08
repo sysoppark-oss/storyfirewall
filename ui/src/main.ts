@@ -1,3 +1,4 @@
+import { topbar } from "./topbar";
 import { SCREEN_LABEL } from "./terms";
 import { dashboard } from "./screens/dashboard";
 import { connections } from "./screens/connections";
@@ -47,7 +48,11 @@ const isHud = (window as unknown as { __TAURI_INTERNALS__?: { metadata?: { curre
 const nav = el("nav", "nav");
 const main = el("main", "main");
 const status = el("div", "status");
-if (!isHud) app.append(nav, main, status);
+// UI 명세 4판 3-1: 모든 화면 위 공통 상단 띠(보호 상태·엔진 뱃지·긴급 차단). 화면 본문(main)만 스크롤된다
+const top = isHud ? null : topbar();
+const content = el("div", "content");
+if (top) content.append(top.root, main);
+if (!isHud) app.append(nav, content, status);
 
 let current: HTMLElement | undefined;
 function go(key: Key, args?: Record<string, unknown>) {
@@ -100,6 +105,7 @@ async function boot() {
   const ok = await state.connect();
   await showStatus(ok);
   state.onDisconnect = (reason) => {
+    void top?.refresh();
     status.textContent = `서비스 연결 끊김 (${reason}) — 다시 닿으면 자동으로 연결합니다`;
     status.className = "status error";
   };
@@ -109,10 +115,12 @@ async function boot() {
       if (state.connected) return;
       const again = await state.connect();
       await showStatus(again);
+      void top?.refresh();
       if (again) go("dashboard");
     });
   }
   go("dashboard");
+  void top?.refresh();
   // 자동 업데이트(기본 켬, 공개 빌드에서만): 켜고 5초 뒤 한 번 확인 — 새 판이 있으면 맨 위 알림 띠
   // 실시간 2: 저장된 의심 사건 알림 설정을 Rust 쪽에 알려 준다(기본 켬)
   if ("__TAURI_INTERNALS__" in window && !storyToast()) void setStoryToast(false);

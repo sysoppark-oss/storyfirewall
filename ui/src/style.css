@@ -10,12 +10,29 @@ body { margin: 0; font: 14px/1.5 system-ui, "Malgun Gothic", sans-serif; backgro
 .nav-btn { text-align: left; border: 0; background: transparent; color: var(--fg); padding: 8px 10px; border-radius: 6px; cursor: pointer; }
 .nav-btn.active, .nav-btn:hover { background: color-mix(in srgb, var(--brand-strong) 15%, transparent); }
 .main { padding: 20px 28px; overflow: auto; }
+/* UI 명세 4판 3-1: 공통 상단 띠 + 본문 스크롤 */
+.content { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.content > .main { flex: 1; min-height: 0; }
+.topbar { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 8px 28px; border-bottom: 1px solid var(--line); background: var(--bg); font-size: 12px; }
+.topbar.emg-on { border-bottom: 2px solid var(--crit); }
+.tb-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-width: 0; }
+.tb-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--fg); font: inherit; white-space: nowrap; cursor: pointer; }
+.tb-badge:hover { border-color: var(--brand-strong); }
+.tb-badge .kpi-icon { width: 14px; height: 14px; }
+.tb-badge.badge-ok { border-color: var(--ok); color: var(--ok); } .tb-badge.badge-warn { border-color: var(--warn); color: var(--warn); font-weight: 600; }
+.tb-badge.badge-crit { border-color: var(--crit); color: var(--crit); font-weight: 600; }
+.tb-emg { margin-left: auto; position: relative; display: inline-flex; align-items: center; gap: 6px; }
+.tb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--crit); display: inline-block; margin-right: 4px; }
+.tb-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 220px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+.tb-menu[hidden] { display: none; }
 /* 반응형(사용자 2026-11-07): 좁은 창에서는 메뉴를 위로 가로 배치, 여백 축소 */
 @media (max-width: 760px) {
   #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
   .nav { grid-row: auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 8px; }
   .nav-btn { padding: 6px 8px; font-size: 13px; }
   .main { padding: 12px 12px; }
+  .content { grid-column: 1; }
+  .topbar { padding: 6px 12px; }
   #app > .status { grid-column: 1; padding: 6px 12px; }
 }
 /* 서비스 보호 사건: 접힌 상자 */

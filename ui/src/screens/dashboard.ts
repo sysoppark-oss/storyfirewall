@@ -98,75 +98,8 @@ interface Health {
   wfp_filters?: number;
   db_bytes?: number | null;
 }
-/// 긴급 차단 상태(emergency.status) — 대시보드 개편안 3판 1-1
-export interface EmergencyStatus {
-  active: boolean;
-  policy_id?: number;
-  version?: number;
-  expires_at?: number;
-  remaining_secs?: number;
-  confirmed?: boolean;
-  /// 걸려 있지 않을 때: 지금 통신 중인 원격 도구(대화상자가 예외 칸을 미리 채움)
-  suggested_tools?: { display: string; path: string }[];
-}
-/// 상단 띠의 긴급 차단 문구(순수 함수 — 시험용). 걸려 있지 않으면 null
-export function emergencyText(st: EmergencyStatus | null): string | null {
-  if (!st || !st.active) return null;
-  const left = Math.max(0, st.remaining_secs ?? 0);
-  const m = Math.ceil(left / 60);
-  const when = m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분 남음` : `${m}분 남음`;
-  return st.confirmed === false ? `긴급 차단 · 유지 확인 대기` : `긴급 차단 중 · ${when}`;
-}
-
-/// 긴급 차단 대화상자: 기한·원격 도구 예외를 고르고 승인 창으로 보낸다(서비스가 RDP 세션은 자동으로 예외)
-function emergencyDialog(done: () => void, suggested: { display: string; path: string }[] = []) {
-  const dlg = el("dialog", "ack");
-  dlg.append(el("h3", undefined, "긴급 차단"));
-  dlg.append(el("p", undefined, "이 PC 의 나가는·들어오는 통신을 모두 막습니다. 예외: 이 PC 안 통신(루프백) · DNS · DHCP · 이 앱 · 지금 접속한 원격 데스크톱 세션의 상대 IP · 아래에 적은 원격 도구."));
-  dlg.append(el("p", "muted small", "승인 창에서 확인한 뒤 60초 안에 [유지]를 눌러야 유지됩니다(원격으로 접속해 있다가 끊기면 자동으로 되돌아갑니다). 재부팅하면 풀립니다. 이미 열려 있는 연결도 끊길 수 있습니다."));
-  const mins = el("select") as HTMLSelectElement;
-  for (const [v, t] of [[15, "15분"], [30, "30분 (기본)"], [60, "1시간"], [120, "2시간"], [480, "8시간"]] as const) {
-    const o = el("option", undefined, t) as HTMLOptionElement;
-    o.value = String(v);
-    if (v === 30) o.selected = true;
-    mins.append(o);
-  }
-  dlg.append(el("label", undefined, "기한 ", mins));
-  const tools = el("textarea") as HTMLTextAreaElement;
-  tools.rows = 3;
-  tools.placeholder = "예외로 둘 원격 도구 실행 파일 경로(한 줄에 하나, 8개까지)\n예: C:\\Program Files\\TeamViewer\\TeamViewer.exe";
-  tools.style.width = "100%";
-  // 사용자 승인 2026-11-08: 지금 통신 중인 원격 도구를 미리 채운다(지우면 막힌다)
-  tools.value = suggested.map((t) => t.path).join("\n");
-  dlg.append(el("label", "block", "원격 도구 예외", tools));
-  if (suggested.length) dlg.append(el("p", "muted small", `지금 통신 중인 원격 도구를 미리 넣었습니다: ${suggested.map((t) => t.display).join(", ")}. 지운 줄은 막힙니다.`));
-  const out = el("div");
-  const go = button("승인 창 열기", async () => {
-    go.disabled = true;
-    const list = tools.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).slice(0, 8);
-    const r = await mutation("emergency.start", { minutes: Number(mins.value), remote_tools: list });
-    go.disabled = false;
-    if (!r.ok) return out.replaceChildren(el("p", "error", `긴급 차단: ${r.error.message}`));
-    dlg.close();
-    dlg.remove();
-    done();
-  }, "btn danger");
-  const cancel = button("취소", () => { dlg.close(); dlg.remove(); }, "btn");
-  dlg.append(out, el("div", "actions", go, cancel));
-  document.body.append(dlg);
-  dlg.showModal();
-}
-
-/// 개편안 2판 3-2 상단 띠 뱃지 문구(순수 함수 — 시험용). 수치가 없으면 그 뱃지는 뺀다
-export function engineBadges(h: Health | null, policies: number, pending: number): string[] {
-  const out: string[] = [];
-  const j = h?.timings?.find((t) => t.name === "엔진: 주기 판정");
-  if (j) out.push(`판정 지연 ${j.last_ms}ms`);
-  if (typeof h?.wfp_filters === "number") out.push(`필터 ${h.wfp_filters}개`);
-  if (typeof h?.db_bytes === "number") out.push(`DB ${bytes(h.db_bytes)}`);
-  out.push(pending ? `정책 ${policies}개 (확인 대기 ${pending})` : `정책 ${policies}개`);
-  return out;
-}
+// 긴급 차단·엔진 뱃지는 공통 상단 띠(topbar.ts)로 옮겼다(UI 명세 4판 3-1). 시험·다른 화면 호환용 다시 내보내기
+export { emergencyText, engineBadges, type EmergencyStatus } from "../topbar";
 /// C1 수집 상태 한 줄: 정상은 회색(초록 점만), 이상이면 주황 문장을 앞에. 원인을 단정하지 않는다
 /// 마지막 사건이 얼마 전인지(상태 줄과 보호 서비스 카드가 같은 말을 쓰게 — 검수 B3)
 export function agoText(lastSec: number | null): string {
@@ -217,8 +150,7 @@ export function healthLine(h: Health, onMore: () => void, gapStart?: { n: number
 export function dashboard(): HTMLElement {
   const root = el("section", "screen");
   root.append(el("h1", undefined, "대시보드"));
-  // 개편안 2판: 상단 띠(보호 서비스·엔진 뱃지·정책 수) → KPI 4 → 그래프
-  const strip = el("div", "dash-strip");
+  // 개편안 2판: KPI 4 → 그래프(상단 띠는 모든 화면 공통 topbar.ts — UI 명세 4판 3-1)
   const status = el("div", "cards kpi-row");
   // 목록은 새로 고칠 때마다 비운다 (전에는 알림마다 '지금 봐야 할 것' 목록이 아래에 계속 쌓였다)
   const body = el("div", "dash-body");
@@ -231,7 +163,7 @@ export function dashboard(): HTMLElement {
   const foot = el("section", "dash-foot");
   // 개편안 2판 1-3: 심각 인시던트가 있을 때만 KPI 위에 뜨는 블록(없으면 자리를 쓰지 않는다)
   const critBlock = el("section", "crit-block");
-  root.append(strip, critBlock, status, viz, body, where, foot);
+  root.append(critBlock, status, viz, body, where, foot);
   let ovGen = 0;
   // 영역 그래프의 의심 사건 시각(unix 초) — refresh 가 채우고 drawOverview 가 읽는다
   let critTs: number[] = [];
@@ -433,11 +365,10 @@ export function dashboard(): HTMLElement {
     body.append(loadingBox());
     // D035-2: 네 조회를 동시에 보내고 칸마다 따로 그린다(rpc 는 던지지 않고 결과로 돌려준다) — 한 조회가 늦거나 실패해도 나머지 칸은 그린다.
     // 전에는 의심 사건 → 정책 → 서비스 사건을 차례로 기다려, 엔진이 바쁘면 카드 하나만 그려진 반쪽 화면이 됐다(L044)
-    const [ev, hr, pol, se] = await Promise.all([
+    const [ev, hr, se] = await Promise.all([
       // 2026-11-07: 주의까지 받아 도넛·흐름 띠에 쓰고, "의심 사건" 카드·목록은 의심만 센다(전과 같음)
       rpc<{ items: StoryEvent[]; counts?: TriageCounts }>("story.events", { level_min: "watch", cursor: { limit: 60 } }),
       rpc<Health>("collector.health", {}),
-      rpc<{ items: { name: string; state: string }[] }>("policy.list", {}),
       rpc<{ items: ServiceEvent[] }>("service.events", { since_secs: 7 * 86400, limit: 50 }),
     ]);
     if (my !== rfGen) return;
@@ -500,55 +431,10 @@ export function dashboard(): HTMLElement {
     status.append(card("미조치 심각·높음", susBody, sus.length ? "card alert alert-bad" : "card", "shield", sus.length ? "bad" : "ok", susSpark));
     // D006-3: 지금 Windows 에 걸려 있는 정책 수(확인 대기 + 적용 중, 일시 중지 제외). 서비스는 상태를 "Applied"·"Confirmed"로 준다 —
     // 전에는 소문자와 비교해 늘 0 이었다
-    const applied = pol.ok ? pol.result.items.filter((p) => /^(applied|confirmed)$/i.test(p.state)).length : 0;
-    const pend = pol.ok ? pol.result.items.filter((p) => /^applied$/i.test(p.state)).length : 0;
     // KPI ③ 샌드박스 관찰 중: 첫 실행 관찰실에서 아직 관찰 끝 시각이 지나지 않은 프로그램 수
     const nowSec = Date.now() / 1000;
     const watching = se.ok ? se.result.items.filter((e) => e.kind === "first_run_watch" && typeof e.target?.until_ts === "number" && e.target.until_ts > nowSec).length : 0;
     status.append(card("샌드박스 관찰 중", se.ok ? el("div", undefined, el("div", "big", String(watching)), el("div", "muted small", watching ? "인터넷에서 받은 프로그램의 첫 실행" : "관찰 중인 프로그램 없음")) : cardFail(se.error, "샌드박스 관찰"), "card", "eye", watching ? "info" : "neutral"));
-    // D002: 왼쪽 메뉴 "연결"(네트워크)과 헷갈리지 않게 "보호 서비스"
-    // D015-2: 서비스 연결 + 기록 상태를 한 단어로(작동 중 / 기록 멈춤? / 연결 끊김)
-    const svcBody = !state.connected
-      ? el("div", undefined, el("div", "big-text warn", "연결 끊김"), el("div", "muted", "서비스가 멈췄거나 시작 중일 수 있습니다"))
-      : stalledNow
-        ? el("div", undefined, el("div", "big-text warn", "기록 멈춤?"), el("div", "muted", `서비스는 연결됨 · 마지막 사건 ${agoText(hr.ok ? lastEventSec(hr.result) : null)}`))
-        : engineStuckText(state.engineBusyMs)
-          // D046-3: 아래 상태 줄이 "엔진이 묶여 있다"고 말하는 동안 카드도 초록 "작동 중"만 보이지 않게(같은 기준값)
-          ? el("div", undefined, el("div", "big-text warn", "작동 중 · 응답 늦음"), el("div", "muted", `서비스 ${state.serverVersion}`))
-          : el("div", undefined, el("div", "big-text ok", "작동 중"), el("div", "muted", `서비스 ${state.serverVersion}`));
-    // 상단 띠: 보호 서비스 상태 + 엔진 건강 뱃지 + 정책 수(개편안 2판 3-2). 카드가 아니라 뱃지
-    clear(strip);
-    const svcTone = !state.connected || stalledNow ? "warn" : "ok";
-    const svcWord = !state.connected ? "연결 끊김" : stalledNow ? "기록 멈춤?" : engineStuckText(state.engineBusyMs) ? "작동 중 · 응답 늦음" : "작동 중";
-    const svcBadge = el("span", `badge badge-${svcTone}`, icon("heart"), ` 보호 서비스 ${svcWord}`);
-    svcBadge.title = (svcBody.textContent ?? "").trim();
-    strip.append(svcBadge);
-    for (const t of engineBadges(hr.ok ? hr.result : null, applied, pend)) strip.append(el("span", "badge", t));
-    // 대시보드 개편안 3판 1-1: 긴급 차단 상태·단추(상태 조회가 늦어도 띠는 먼저 그린다)
-    const emgSlot = el("span", "emg-slot");
-    strip.append(emgSlot);
-    void (async () => {
-      const er = await rpc<EmergencyStatus>("emergency.status", {});
-      const st = er.ok ? er.result : null;
-      const t = emergencyText(st);
-      if (t) {
-        const b = el("span", "badge badge-crit", icon("shield"), ` ${t}`);
-        const off = button("해제…", async () => {
-          off.disabled = true;
-          const r = await mutation("emergency.stop", {});
-          off.disabled = false;
-          if (r.ok) void refresh();
-          else b.title = r.error.message;
-        }, "btn small");
-        emgSlot.replaceChildren(b, off);
-      } else if (er.ok) {
-        emgSlot.replaceChildren(button("긴급 차단…", () => emergencyDialog(() => void refresh(), st?.suggested_tools ?? []), "btn small danger"));
-      }
-    })();
-    const more = el("a", "badge-link", "진단 ›");
-    more.href = "#";
-    more.addEventListener("click", (e) => { e.preventDefault(); state.go("settings", {}); });
-    strip.append(more);
     void drawOverview();
     // C1: 카드 아래, 상태 줄과 별개. D014: 기록 없는 구간에 시작한 의심 사건이 있으면 맨 앞 주황 경고
     const inGap = all.filter((s) => s.started_in_gap);

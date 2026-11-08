@@ -55,6 +55,26 @@ describe("emergencyText (대시보드 개편안 3판 1-1 긴급 차단 상태)",
     expect(emergencyText({ active: true, confirmed: false, remaining_secs: 1800 })).toBe("긴급 차단 · 유지 확인 대기");
     expect(emergencyText({ active: true, confirmed: true, remaining_secs: 719 })).toBe("긴급 차단 중 · 12분 남음");
     expect(emergencyText({ active: true, confirmed: true, remaining_secs: 7200 })).toBe("긴급 차단 중 · 2시간 0분 남음");
-    expect(emergencyText({ active: true, confirmed: true, remaining_secs: -5 })).toBe("긴급 차단 중 · 0분 남음");
+    // UI 명세 4판 1-1: 5분 이하는 m:ss(띠가 1초마다 고침), 5분 넘으면 분(올림)
+    expect(emergencyText({ active: true, confirmed: true, remaining_secs: -5 })).toBe("긴급 차단 중 · 0:00 남음");
+    expect(emergencyText({ active: true, confirmed: true, remaining_secs: 300 })).toBe("긴급 차단 중 · 5:00 남음");
+    expect(emergencyText({ active: true, confirmed: true, remaining_secs: 301 })).toBe("긴급 차단 중 · 6분 남음");
+    expect(emergencyText({ active: true, confirmed: true, remaining_secs: 59 })).toBe("긴급 차단 중 · 0:59 남음");
+    // 띠의 1초 갱신은 남은 초를 따로 넘긴다
+    expect(emergencyText({ active: true, confirmed: true, remaining_secs: 1800 }, 125.7)).toBe("긴급 차단 중 · 2:05 남음");
+  });
+});
+
+import { serviceWord } from "../topbar";
+describe("공통 상단 띠(UI 명세 4판 3-1)", () => {
+  it("보호 서비스 한 단어 — 끊김·멈춤이 '작동 중'보다 앞선다", () => {
+    expect(serviceWord(false, true, true)).toEqual({ word: "연결 끊김", tone: "warn" });
+    expect(serviceWord(true, true, true)).toEqual({ word: "기록 멈춤?", tone: "warn" });
+    expect(serviceWord(true, false, true)).toEqual({ word: "작동 중 · 응답 늦음", tone: "warn" });
+    expect(serviceWord(true, false, false)).toEqual({ word: "작동 중", tone: "ok" });
+  });
+  it("엔진 뱃지 — 수치가 없으면 빼고 정책 수는 늘", () => {
+    expect(engineBadges(null, 0, 0)).toEqual(["정책 0개"]);
+    expect(engineBadges({ now: 0, last_event_ft: null, timings: [{ name: "엔진: 주기 판정", last_ms: 400 }], wfp_filters: 4 }, 2, 1)).toEqual(["판정 지연 400ms", "필터 4개", "정책 2개 (확인 대기 1)"]);
   });
 });
