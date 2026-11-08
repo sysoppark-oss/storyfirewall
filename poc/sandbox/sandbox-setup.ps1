@@ -16,8 +16,12 @@ $pin = (Get-Content $pinFile -Raw).Trim()
 # mapped read-only at C:\wv2 through WEBVIEW2_BROWSER_EXECUTABLE_FOLDER (honoured by the WebView2 loader).
 $wvExe = Get-ChildItem "C:\wv2" -Filter msedgewebview2.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($wvExe) {
-    $env:WEBVIEW2_BROWSER_EXECUTABLE_FOLDER = $wvExe.DirectoryName
-    L ("webview2 folder " + $wvExe.DirectoryName)
+    # L077: pointing at the mapped share still failed (sandbox-3); copy the runtime to the sandbox disk first
+    $wvLocal = Join-Path $env:ProgramData "wv2"
+    Copy-Item $wvExe.DirectoryName $wvLocal -Recurse -Force
+    [Environment]::SetEnvironmentVariable("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", $wvLocal, "Machine")
+    $env:WEBVIEW2_BROWSER_EXECUTABLE_FOLDER = $wvLocal
+    L ("webview2 folder " + $wvLocal + " exe=" + (Test-Path (Join-Path $wvLocal "msedgewebview2.exe")))
 } else { L "webview2: host runtime not mapped - UI will not start" }
 # L076: clean-image dependency check (sandbox-2: the service binary printed nothing at all)
 foreach ($d in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {

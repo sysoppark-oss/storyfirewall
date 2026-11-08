@@ -1,0 +1,9 @@
+# Windows MSVC 대상은 C 런타임(VC++ 런타임)을 정적으로 링크한다.
+# Sandbox 실측(2026-11-08, L076): 깨끗한 Windows 11 26100 에 vcruntime140.dll 이 없어 서비스가
+# 0xC0000135(STATUS_DLL_NOT_FOUND)로 시작하지 못했다 — 설치는 성공하고 보호 서비스만 안 도는 결함.
+# UI(Tauri)는 tauri-build 가 이미 정적으로 링크한다. cc 로 빌드되는 C 코드(SQLite 등)도 이 설정을 따라 /MT 로 컴파일된다.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
