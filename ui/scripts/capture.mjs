@@ -12,6 +12,7 @@ export async function captureScreens(page, outDir, log) {
       if (w === 1280 && key !== "connections") continue;
       try {
         await page.click(`button.nav-btn[data-key=${key}]`);
+        if (key === "connections") await page.click("button.u-tab >> text=연결 이력").catch(() => {}); // 4판 3-4: 이력 탭으로
         await page.waitForTimeout(800);
         // 연결: 시연 데이터가 5분보다 오래됐을 수 있어 "오늘" 범위로
         if (key === "connections") {
@@ -125,6 +126,7 @@ export async function captureScreens(page, outDir, log) {
     await page.setViewportSize({ width: 1393, height: 997 });
     for (const key of ["dashboard", "story", "connections", "policy"]) {
       await page.click(`button.nav-btn[data-key=${key}]`);
+      if (key === "connections") await page.click("button.u-tab >> text=연결 이력").catch(() => {}); // 4판 3-4: 이력 탭으로
       await page.waitForTimeout(900);
       if (key === "story") {
         await page.click(".card.event >> text=프로세스 그래프").catch(() => {});

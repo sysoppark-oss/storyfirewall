@@ -660,10 +660,10 @@ fn t1490_command_forms() {
 #[test]
 fn t1490_tools_list_matches_collector() {
     let src = include_str!("../../collector/src/cmdline.rs");
-    let line = src
-        .lines()
-        .find(|l| l.contains("pub const T1490_TOOLS"))
-        .expect("T1490_TOOLS");
+    // cargo fmt 이 여러 줄로 나눠도 읽게: 선언부터 첫 "];" 까지
+    let start = src.find("pub const T1490_TOOLS").expect("T1490_TOOLS");
+    let end = start + src[start..].find("];").expect("];");
+    let line = &src[start..end];
     let tools: Vec<&str> = line.split('"').skip(1).step_by(2).collect();
     assert_eq!(
         tools,

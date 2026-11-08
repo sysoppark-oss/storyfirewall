@@ -234,6 +234,7 @@ if (mode.startsWith("shots:")) {
   await page.waitForSelector(".status", { timeout: 20000 });
   for (const key of ["dashboard", "story", "connections", "policy"]) {
     await page.click(`button.nav-btn[data-key=${key}]`);
+    if (key === "connections") await page.click("button.u-tab >> text=연결 이력").catch(() => {}); // 4판 3-4: 이력 탭으로
     if (label === "delay") {
       // D015-5: 불러오는 중 — 뼈대(2초 전)와 "불러오는 중…"(2초 뒤)
       await page.waitForTimeout(600);
@@ -283,6 +284,7 @@ if (mode.startsWith("shots:")) {
     }
     console.log(`shots live: chips=${await page.locator(".chip-btn").count()}`);
     await page.click("button.nav-btn[data-key=connections]");
+  await page.click("button.u-tab >> text=연결 이력").catch(() => {}); // UI 명세 4판 3-4: 기본 탭은 지금 열린 연결
     await page.waitForTimeout(2500);
     await page.click(".seg-btn[data-mode=none]").catch(() => {});
     await page.waitForTimeout(2500);
@@ -306,6 +308,7 @@ if (mode.startsWith("shots:")) {
   if (label === "items") {
     // D025: 프로그램 상세(payload — 연결 표에서, svchost — 이야기 카드 이름에서), 진단, 다크 상세
     await page.click("button.nav-btn[data-key=connections]");
+  await page.click("button.u-tab >> text=연결 이력").catch(() => {}); // UI 명세 4판 3-4: 기본 탭은 지금 열린 연결
     await page.waitForTimeout(2500);
     await page.selectOption(".toolbar select", "86400").catch(() => {});
     await page.click(".seg-btn[data-mode=none]").catch(() => {});
@@ -368,6 +371,7 @@ if (mode === "nonadmin") {
   await page.setViewportSize({ width: 660, height: 900 });
   for (const key of ["story", "connections"]) {
     await page.click(`button.nav-btn[data-key=${key}]`);
+    if (key === "connections") await page.click("button.u-tab >> text=연결 이력").catch(() => {}); // 4판 3-4: 이력 탭으로
     await page.waitForTimeout(1500);
     await page.screenshot({ path: path.join(outDir, `${key}-narrow-660.png`), fullPage: false });
     const ov = await page.evaluate(() => { const m = document.querySelector(".main"); return { hscroll: m.scrollWidth > m.clientWidth + 1, over: [...m.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > m.getBoundingClientRect().right + 1).slice(0, 5).map((e) => e.className || e.tagName) }; });

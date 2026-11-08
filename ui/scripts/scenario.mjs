@@ -65,6 +65,7 @@ export async function runScenario(page, outDir, must, opts = {}) {
   }
 
   await page.click("button.nav-btn[data-key=connections]");
+  await page.click("button.u-tab >> text=연결 이력").catch(() => {}); // UI 명세 4판 3-4: 기본 탭은 지금 열린 연결
   await page.waitForSelector("table.grid tbody tr");
   await page.selectOption(".toolbar select", "3600");
   // A2: 기본은 망(조직) 묶음 — 행 단위 확인은 "묶지 않음"으로
