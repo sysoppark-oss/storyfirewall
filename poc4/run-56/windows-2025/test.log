@@ -1,65 +1,65 @@
    Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
-   Compiling windows-sys v0.61.2
+   Compiling policy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\policy)
    Compiling api v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\api)
    Compiling ferrisetw v1.2.0 (D:\a\storyfirewall\storyfirewall\third_party\ferrisetw)
    Compiling graph v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\graph)
-   Compiling geo v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\geo)
-   Compiling policy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\policy)
-   Compiling judge v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\judge)
    Compiling dsl v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\dsl)
+   Compiling geo v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\geo)
    Compiling engine v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\engine)
+   Compiling judge v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\judge)
    Compiling story v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\story)
    Compiling collector v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\collector)
-   Compiling svc v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\svc)
-    Finished `release` profile [optimized] target(s) in 1m 33s
-     Running unittests src\lib.rs (target\release\deps\api-a9b3e9ecc075ffd7.exe)
+   Compiling svc v0.1.4 (D:\a\storyfirewall\storyfirewall\crates\svc)
+    Finished `release` profile [optimized] target(s) in 1m 17s
+     Running unittests src\lib.rs (target\release\deps\api-48930566c7357b71.exe)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests\messages.rs (target\release\deps\messages-fd8ee3b74bfbae8a.exe)
+     Running tests\messages.rs (target\release\deps\messages-8c868a5542879479.exe)
 
 running 10 tests
 test method_table_roles_and_idempotency_keys ... ok
 test first_run_watch_settings_are_validated ... ok
-test change_stage_validates_inner_method_and_params ... ok
 test error_codes_roundtrip_and_response_lines ... ok
+test change_stage_validates_inner_method_and_params ... ok
 test omitted_cursor_defaults_to_page_max_both_ways ... ok
 test pages_are_capped_and_cursor_normalized ... ok
-test remote_trusted_tools_are_validated ... ok
 test per_method_param_validation ... ok
+test remote_trusted_tools_are_validated ... ok
 test version_negotiation ... ok
 test request_envelope_parses_and_rejects_bad_shapes ... ok
 
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src\lib.rs (target\release\deps\engine-5e24af38f73079a0.exe)
+     Running unittests src\lib.rs (target\release\deps\engine-19f74ebead37e508.exe)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests\engine.rs (target\release\deps\engine-9d6e035091c66041.exe)
+     Running tests\engine.rs (target\release\deps\engine-aa44a683274a7a0c.exe)
 
-running 25 tests
+running 26 tests
 test backend_failure_leaves_nothing ... ok
+test acl_yaml_from_ui_is_accepted ... ok
 test acl_set_applies_as_one_record_and_multi_without_numbers_is_rejected ... ok
 test apply_confirm_rollback_roundtrip_and_idempotency ... ok
-test acl_yaml_from_ui_is_accepted ... ok
 test confirm_deadline_is_utc_and_schedule_uses_local_time ... ok
 test cut_source_with_explicit_list_fills_new_children ... ok
-test expiry_removes_and_notifies ... ok
 test confirm_window_uses_monotonic_clock ... ok
+test expiry_removes_and_notifies ... ok
 test excluded_system_turns_into_address_blocks_with_ttl_and_release ... ok
 test legacy_db_gets_filter_key_column_and_keys_filled ... ok
+test history_tables_have_physical_caps ... ok
 test needs_ack_then_ack_and_guard_rejects ... ok
 test next_wakeup_targets_the_schedule_boundary_and_events_reevaluate ... ok
-test history_tables_have_physical_caps ... ok
 test gap_filling_adds_filters_for_new_processes_and_respects_limit ... ok
-test reconcile_follows_filter_keys_when_bfe_renumbers ... ok
 test open_conds_survive_restart_even_when_root_file_is_gone ... ok
 test legacy_rows_without_ip_family_converge ... ok
+test reconcile_follows_filter_keys_when_bfe_renumbers ... ok
+test emergency_filters_lost_on_reboot_are_not_restored ... ok
 test rollback_to_version_restores_that_versions_open_cond ... ok
 test schedule_window_adds_and_removes_filters_with_midnight_wrap ... ok
 test self_heal_with_circuit_breaker_never_stops ... ok
@@ -69,9 +69,9 @@ test reconcile_rebinds_interface_filters_to_current_luid ... ok
 test restart_rolls_back_unconfirmed_policies ... ok
 test reconcile_restores_missing_and_removes_orphans ... ok
 
-test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.22s
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.18s
 
-     Running unittests src\lib.rs (target\release\deps\graph-b1ea64b10da7ded3.exe)
+     Running unittests src\lib.rs (target\release\deps\graph-201bfaca58d3a38a.exe)
 
 running 18 tests
 test agent::tests::names_and_markers ... ok
@@ -79,23 +79,23 @@ test ingest::normalize_tests::ip_forms_converge ... ok
 test install::tests::installer_names ... ok
 test install::tests::persistence_from_commands_and_tools ... ok
 test remote::tests::counter_reset_does_not_fake_burst ... ok
-test hash::tests::known_vector_and_missing_file ... ok
+test ledger::tests::ledger_rules ... ok
 test remote::tests::idle_relay_is_not_a_session ... ok
 test remote::tests::process_exit_ends_session ... ok
-test ledger::tests::ledger_rules ... ok
+test hash::tests::known_vector_and_missing_file ... ok
 test remote::tests::screen_streaming_starts_and_ends ... ok
 test remote::tests::signer_fallback_only_for_remote_vendors ... ok
 test remote::tests::tool_names ... ok
 test remote::tests::viewer_side_is_not_alarm ... ok
 test vault::tests::browser_needs_name_and_install_dir ... ok
 test vault::tests::debug_flags_are_kept_and_the_rest_dropped ... ok
-test vault::tests::decoy_candidates ... ok
 test vault::tests::shadow_copy_and_long_path_prefix_are_still_vault_files ... ok
+test vault::tests::decoy_candidates ... ok
 test vault::tests::vault_files_are_classified ... ok
 
 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests\agent.rs (target\release\deps\agent-431143674dff10b0.exe)
+     Running tests\agent.rs (target\release\deps\agent-2925cab54ece2a08.exe)
 
 running 3 tests
 test roots_skip_children_of_agents ... ok
@@ -104,15 +104,23 @@ test busy_descendants_survive_cap ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
-     Running tests\boot_clamp.rs (target\release\deps\boot_clamp-af30a4a41efa74c8.exe)
+     Running tests\boot_clamp.rs (target\release\deps\boot_clamp-aef79609633074d5.exe)
 
 running 2 tests
-test node_stored_before_the_fix_is_corrected_on_next_snapshot ... ok
 test snapshot_create_time_before_boot_is_clamped_but_key_kept ... ok
+test node_stored_before_the_fix_is_corrected_on_next_snapshot ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\boot_pid_reuse.rs (target\release\deps\boot_pid_reuse-c1d3c023bf985bb9.exe)
+
+running 2 tests
+test live_start_does_not_adopt_previous_boot_parent ... ok
+test parent_from_previous_boot_is_not_linked_after_reboot ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running tests\install.rs (target\release\deps\install-2e0a980bdcab37d6.exe)
+     Running tests\install.rs (target\release\deps\install-60949a7345b2a86c.exe)
 
 running 4 tests
 test xray_collects_files_autoruns_remotes_origin ... ok
@@ -120,25 +128,25 @@ test finds_outer_installer_only ... ok
 test detached_setup_started_soon_after_is_grouped_by_time ... ok
 test install_cache_matches_live_and_picks_up_new_installs ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running tests\late_start.rs (target\release\deps\late_start-9dae214e6d497b59.exe)
+     Running tests\late_start.rs (target\release\deps\late_start-ad0ff3abde269857.exe)
 
 running 3 tests
 test old_unresolved_node_of_reused_pid_is_not_adopted ... ok
-test unresolved_node_long_after_start_is_not_adopted ... ok
 test late_process_start_adopts_unresolved_node ... ok
+test unresolved_node_long_after_start_is_not_adopted ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running tests\ledger.rs (target\release\deps\ledger-63af3ac941551cb4.exe)
+     Running tests\ledger.rs (target\release\deps\ledger-6ba2a007f7e3248f.exe)
 
 running 1 test
 test inferred_files_by_root_tag ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests\poc1b_rewind.rs (target\release\deps\poc1b_rewind-1628d83b817c35fc.exe)
+     Running tests\poc1b_rewind.rs (target\release\deps\poc1b_rewind-a3d1d87842f2cd2d.exe)
 
 running 7 tests
 test capi2_attributes_crl_fetch_deterministically_and_replaces_window_rule ... ok
@@ -152,18 +160,18 @@ CRL 노드로 들어오는 선: ["connected", "connected_via"]
 curl 의 행동 가지: ["www.rust-lang.org", "www.rust-lang.org:443", "x1.c.lencr.org:80", "yr.c.lencr.org:80", "yr1.c.lencr.org:80"]
 test attributes_cryptsvc_crl_lookup_to_curl ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
-     Running tests\query_plans.rs (target\release\deps\query_plans-4cca658430de9252.exe)
+     Running tests\query_plans.rs (target\release\deps\query_plans-e3ab4691a156e0fc.exe)
 
 running 3 tests
-test hot_raw_event_queries_use_indexes ... ok
 test connections_list_uses_covering_partial_index ... ok
 test latest_process_by_pid_uses_key_index ... ok
+test hot_raw_event_queries_use_indexes ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running tests\remote.rs (target\release\deps\remote-ca2c93184bb416bc.exe)
+     Running tests\remote.rs (target\release\deps\remote-52442377ecf0e4d5.exe)
 
 running 5 tests
 test sent_recv_excludes_loopback ... ok
@@ -172,24 +180,24 @@ test running_tools_finds_live_remote_tools_only ... ok
 test session_facts_collects_whole_pc_in_window ... ok
 test session_facts_skip_service_session ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running tests\retention.rs (target\release\deps\retention-2c4f871bf7cd9c55.exe)
+     Running tests\retention.rs (target\release\deps\retention-4bb37c802149e8a6.exe)
 
 running 9 tests
 test actor_edges_grow_with_time ... ok
 test policy_round_trips_through_json_and_sanitizes ... ok
 test ordinary_edges_compact_into_daily_summary_and_raw_expire ... ok
 test size_cap_evicts_oldest_ordinary_raw_but_keeps_suspicious ... ok
-test new_file_db_uses_incremental_auto_vacuum ... ok
 test suspicious_edges_survive_daily_compaction ... ok
 test timeline_buckets_cover_all_edges ... ok
 test suspicious_raw_kept_longer_than_ordinary_raw ... ok
 test chunked_apply_matches_single_apply ... ok
+test new_file_db_uses_incremental_auto_vacuum ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
 
-     Running tests\traffic_hourly.rs (target\release\deps\traffic_hourly-ba0f14cc89f1ea4f.exe)
+     Running tests\traffic_hourly.rs (target\release\deps\traffic_hourly-5253629f3c964be8.exe)
 
 running 2 tests
 test hour_bucket_floors_to_hour ... ok
@@ -197,12 +205,12 @@ test bytes_and_conns_accumulate_per_hour ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests\views.rs (target\release\deps\views-f9b51ae8f2cfdc3c.exe)
+     Running tests\views.rs (target\release\deps\views-f5126ec884825b21.exe)
 
 running 12 tests
 test consistency_counts ... ok
-test cut_targets_from_file_root_include_descendants_and_mark_system ... ok
 test connections_are_aggregated_per_process_remote_with_bytes ... ok
+test cut_targets_from_file_root_include_descendants_and_mark_system ... ok
 test file_hash_is_recorded_once_and_change_is_detected ... ok
 test descendant_images_and_addresses_by_image ... ok
 test ingest_gaps_are_recorded_and_queried ... ok
@@ -210,34 +218,36 @@ test process_detail_has_signature_origin_children_and_autoruns ... ok
 test inflated_origin_side_cannot_push_out_actions ... ok
 test project_is_capped_at_hub_nodes ... ok
 test deferred_upgrade_fails_but_begin_write_waits ... ok
-busy batches=504 worst engine wait=5.0684ms
+busy batches=500 worst engine wait=155.7µs
 test rare_writer_is_not_starved_by_busy_writer ... ok
 test two_connections_open_same_file_concurrently ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.48s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.77s
 
-     Running unittests src\lib.rs (target\release\deps\svc-e3c58ff9e66ef058.exe)
+     Running unittests src\lib.rs (target\release\deps\svc-9cb8414e32d48006.exe)
 
-running 31 tests
+running 33 tests
 test blocked::tests::only_our_filters_are_counted_per_hour ... ok
 test change::tests::book_caps_and_expires ... ok
-test change::tests::lines_are_cleaned_tail_kept_and_digest_covers_full_content ... ok
 test blocked::tests::full_channel_counts_lost_instead_of_blocking ... ok
+test change::tests::lines_are_cleaned_tail_kept_and_digest_covers_full_content ... ok
 test change::tests::sections_are_capped_so_later_sections_stay_visible ... ok
 test change::tests::uuid_shape_and_uniqueness ... ok
 test defender::tests::cmdline_counts_pick ... ok
 test defender::tests::iso ... ok
 test defender::tests::modes_and_policy_wins ... ok
-test defender::tests::select_bookmark ... ok
 test defender::tests::parse_1123 ... ok
+test defender::tests::select_bookmark ... ok
+test emergency::tests::rdp_client_ips_are_parsed_from_wts_names ... ok
+test emergency::tests::system_images_are_not_allowed_as_remote_tools ... ok
 test first_run::tests::settings_defaults_and_bad_values ... ok
 test first_run::tests::story_line_is_facts_only ... ok
 test policy_view::address_tests::address_text_shows_host_port_proto ... ok
 test policy_view::tests::long_paths_are_shortened_and_cut_names_give_root ... ok
+test policy_view::tests::summary_reads_like_a_sentence ... ok
 test remote_watch::tests::inbound_hourly_tally ... ok
 test remote_watch::tests::rdp_sessions_start_and_end ... ok
 test remote_watch::tests::rdp_signals ... ok
-test policy_view::tests::summary_reads_like_a_sentence ... ok
 test runtime::tests::first_crossing_notifies_even_without_chapter_change ... ok
 test triage::tests::filter_and_counts ... ok
 test triage::tests::legacy_row_without_seen_dst_is_backfilled_not_recurred ... ok
@@ -246,38 +256,38 @@ test resolver::tests::list_exes_descendants_and_hash_guard ... ok
 test triage::tests::prune_old_log_and_orphan_state ... ok
 test win::authn::tests::release_pin_must_be_64_hex ... ok
 test win::data_dir::tests::our_name_only_accepts_our_folders ... ok
-test win::pipe_name::tests::name_format ... ok
 test triage::tests::recur_only_when_chapter_rises ... ok
+test win::pipe_name::tests::name_format ... ok
 test triage::tests::recur_on_new_destination_and_cap_note ... ok
 test runtime::tests::engine_busy_ms_counts_while_guarded ... ok
 
-test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
 
-     Running unittests src\bin\defender-probe.rs (target\release\deps\defender_probe-e6808411692181de.exe)
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-     Running unittests src\bin\story-firewall-svc.rs (target\release\deps\story_firewall_svc-24c1cd2244a7a847.exe)
+     Running unittests src\bin\defender-probe.rs (target\release\deps\defender_probe-28ba32a45bae10c9.exe)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src\bin\svc-dev.rs (target\release\deps\svc_dev-55afb066a64b628d.exe)
+     Running unittests src\bin\story-firewall-svc.rs (target\release\deps\story_firewall_svc-458586256236a141.exe)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src\bin\svc-poc.rs (target\release\deps\svc_poc-443e7333370c49b7.exe)
+     Running unittests src\bin\svc-dev.rs (target\release\deps\svc_dev-d446e2cd3e206d0c.exe)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests\cut.rs (target\release\deps\cut-233de3591cddad88.exe)
+     Running unittests src\bin\svc-poc.rs (target\release\deps\svc_poc-1cae8adcb67a0998.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cut.rs (target\release\deps\cut-1f2352f8d10dfcab.exe)
 
 running 4 tests
 test cut_yaml_survives_hostile_paths ... ok
@@ -285,18 +295,18 @@ test unknown_image_is_filled_from_live_process_and_dns_is_kept_open ... ok
 test injected_host_is_not_path_blocked_and_its_children_are_not_targets ... ok
 test root_hash_match_changed_missing_unrecorded ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running tests\demo_preexisting.rs (target\release\deps\demo_preexisting-73efbfc7c7f9f421.exe)
+     Running tests\demo_preexisting.rs (target\release\deps\demo_preexisting-91fe237b361e141f.exe)
 
 running 3 tests
 test first_poll_connections_are_marked_already_open ... ok
 test every_filled_step_has_an_item ... ok
 test demo_has_one_stale_and_one_fresh_preexisting_story ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
-     Running tests\first_run.rs (target\release\deps\first_run-cc0caa7b5fca9f4e.exe)
+     Running tests\first_run.rs (target\release\deps\first_run-a2cd35ec1f47c37c.exe)
 
 running 11 tests
 test downloaded_with_unknown_signature_becomes_target_at_expiry ... ok
@@ -311,11 +321,11 @@ test unsigned_installer_is_blocked_but_system_image_and_our_service_are_not ... 
 test signed_local_installer_and_user_normal_are_handled ... ok
 test umbrella_child_filters_are_capped ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
-     Running tests\integration.rs (target\release\deps\integration-07e050edcd6dbba6.exe)
+     Running tests\integration.rs (target\release\deps\integration-3d2cab7ececd3f68.exe)
 
-running 23 tests
+running 24 tests
 test a23_staged_change_expires ... ok
 test a19_connections_listeners_and_process_detail ... ok
 test a23_change_stage_get_commit_and_digest_guard ... ok
@@ -326,6 +336,7 @@ test apply_needs_ack_then_ack_confirm_and_auto_rollback_notification ... ok
 test auto_destroy_response_cuts_unsigned_origin_without_asking ... ok
 test baseline_uses_filetime_and_learns_daily ... ok
 test duplicate_time_changed_is_coalesced_without_swallowing_commands ... ok
+test emergency_block_start_confirm_expire_and_stop ... ok
 test a29_squat_event_links_to_graph_process_node_and_is_listed_for_users ... ok
 test a30_standard_user_sees_only_own_session_and_system ... ok
 test hello_is_mandatory_and_version_negotiated ... ok
@@ -340,9 +351,9 @@ test ingest_judge_story_events_and_suspicious_notification ... ok
 test triage_states_filter_and_recurrence_reopens_and_notifies ... ok
 test hello_answers_while_engine_is_busy ... ok
 
-test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.84s
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.83s
 
-     Running tests\investigate.rs (target\release\deps\investigate-2467aa48261e7728.exe)
+     Running tests\investigate.rs (target\release\deps\investigate-5ac2c7510ac9fbc2.exe)
 
 running 3 tests
 test lookalike_in_other_folder_is_not_matched ... ok
@@ -351,47 +362,54 @@ test registered_signed_native_host_is_known_normal ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running tests\perf_scale.rs (target\release\deps\perf_scale-c0d2a6f719130175.exe)
+     Running tests\perf_scale.rs (target\release\deps\perf_scale-0eb4214e55f05a13.exe)
 
 running 1 test
-PERF ingest ms=50035
-PERF scale n=20000 raw=28044 edges=36024 db_mb=13
-PERF latest_process_by_pid x200 (process nodes 20k) ms=5
-PERF judge.run(periodic) ms=125
-PERF judge.incremental(first = full) ms=113
-PERF judge.incremental(+1 minute) ms=12
-PERF judge.incremental(+1 minute) ms=12
 test screen_queries_within_two_seconds has been running for over 60 seconds
-PERF judge.incremental(+1 minute) ms=12
-PERF judge.incremental(+1 minute) ms=12
-PERF judge.incremental(+1 minute) ms=12
-PERF judge periodic: full_ms=125 incremental_first_full_ms=113 incremental_steady_avg_ms=12 max_ms=12
-PERF story.today(24h, cold) ms=197
-PERF connections.list(300s) ms=12
-PERF connections.list(86400s) ms=21
-PERF connections.list(604800s) ms=20
-PERF process.detail(busiest) ms=8
+PERF ingest ms=115848
+PERF scale n=20000 raw=28044 edges=36024 db_mb=13
+PERF latest_process_by_pid x200 (process nodes 20k) ms=3
+PERF judge.run(periodic) ms=87
+PERF judge.incremental(first = full) ms=80
+PERF judge.incremental(+1 minute) ms=10
+PERF judge.incremental(+1 minute) ms=10
+PERF judge.incremental(+1 minute) ms=10
+PERF judge.incremental(+1 minute) ms=11
+PERF judge.incremental(+1 minute) ms=10
+PERF judge periodic: full_ms=87 incremental_first_full_ms=80 incremental_steady_avg_ms=10 max_ms=11
+PERF story.today(24h, cold) ms=166
+PERF connections.list(300s) ms=10
+PERF connections.list(86400s) ms=15
+PERF connections.list(604800s) ms=16
+PERF process.detail(busiest) ms=6
 PERF collector.health gaps(24h) ms=0
 PERF stories=20 scores=[(55, "tool0.exe"), (55, "tool1.exe"), (55, "tool2.exe"), (55, "tool3.exe"), (55, "tool4.exe"), (55, "tool5.exe"), (55, "tool6.exe"), (55, "tool7.exe"), (55, "tool8.exe"), (55, "tool9.exe"), (55, "tool10.exe"), (55, "tool11.exe"), (55, "tool12.exe"), (55, "tool13.exe"), (55, "tool14.exe"), (55, "tool15.exe"), (55, "tool16.exe"), (55, "tool17.exe"), (55, "tool18.exe"), (55, "tool19.exe")]
-PERF story.events narrate(cold, 20 stories) ms=18
-PERF installs.list ms=26
+PERF story.events narrate(cold, 20 stories) ms=13
+PERF installs.list ms=18
 PERF story.events root_exec(file root 8k executions) ms=0
-PERF judge.assess(read path, startup only) ms=123
-PERF reader thread story.today(cold) ms=200
-PERF retention.apply(+4d, first run) ms=6274
+PERF judge.assess(read path, startup only) ms=95
+PERF reader thread story.today(cold) ms=166
+PERF retention.apply(+4d, first run) ms=6284
 PERF retention compacted=21200 summaries=3837 raw_deleted=0
-PERF retention.apply(again, steady) ms=19
-PERF summary n=20000 judge_ms=125 assess_ms=123 retention_first_ms=6274 retention_steady_ms=19 screen_max_ms=200
+PERF retention.apply(again, steady) ms=18
+PERF summary n=20000 judge_ms=87 assess_ms=95 retention_first_ms=6284 retention_steady_ms=18 screen_max_ms=166
 test screen_queries_within_two_seconds ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 68.72s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 144.51s
 
-     Running tests\reader.rs (target\release\deps\reader-93d170c1f8a4041e.exe)
+     Running tests\reader.rs (target\release\deps\reader-5f0b24c3aa8dc49a.exe)
 
 running 1 test
 test reader_matches_inline_and_cannot_write ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests\version_sync.rs (target\release\deps\version_sync-f76c429d758f8564.exe)
+
+running 1 test
+test all_version_fields_match ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Doc-tests api
 
