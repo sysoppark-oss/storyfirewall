@@ -65,6 +65,14 @@ jobs:
             target
             ui/src-tauri/target
           key: devbuild-${{ hashFiles('Cargo.lock', 'ui/src-tauri/Cargo.lock') }}
+      # 2026-11-08: GitHub 릴리스(nsis-3.13.zip, nsis_tauri_utils.dll) 내려받기가 504 로 연속 실패해 개발판이 막혔다.
+      # Tauri 가 번들 때 받는 NSIS 도구(%LOCALAPPDATA%\tauri)를 캐시해 매번 받지 않게 한다.
+      - name: Cache Tauri bundler tools (NSIS)
+        if: runner.environment == 'github-hosted'
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/tauri
+          key: tauri-tools-nsis-3.13-utils-0.5.3
 
       - name: Test certificate (per run, not trusted as a root)
         shell: pwsh
@@ -97,8 +105,17 @@ jobs:
           $c.bundle.windows | Add-Member -NotePropertyName signCommand -NotePropertyValue ("pwsh -NoProfile -ExecutionPolicy Bypass -File $sign %1") -Force
           $c | ConvertTo-Json -Depth 10 | Set-Content src-tauri\tauri.devbuild.conf.json -Encoding utf8
           npm ci
-          npx tauri build --config src-tauri/tauri.devbuild.conf.json 2>&1 | Tee-Object -FilePath ../build-installer.log
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # 번들 도구 내려받기(GitHub 릴리스)가 504 등으로 실패하면 1분 뒤 다시(최대 3번). 컴파일 결과는 남아 있어 재시도는 짧다.
+          $ok = $false
+          for ($i = 1; $i -le 3 -and -not $ok; $i++) {
+            npx tauri build --config src-tauri/tauri.devbuild.conf.json 2>&1 | Tee-Object -FilePath ../build-installer.log
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            $retry = Select-String -Path ../build-installer.log -Pattern 'http status: 5\d\d|failed to download|timed out' -Quiet
+            if (-not $retry) { break }
+            "bundle attempt $i failed on download - retrying in 60 s"
+            Start-Sleep -Seconds 60
+          }
+          if (-not $ok) { exit 1 }
 
       - name: Pick installer (self-hosted - no install on the laptop runner)
         if: runner.environment == 'self-hosted'
