@@ -8,6 +8,3 @@
    Compiling judge v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\judge)
    Compiling story v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\story)
    Compiling collector v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\collector)
-   Compiling engine v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\engine)
-   Compiling svc v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\svc)
-    Finished `release` profile [optimized] target(s) in 56.25s
