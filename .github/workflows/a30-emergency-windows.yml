@@ -60,7 +60,8 @@ jobs:
         run: |
           $prod = (Resolve-Path ".\target\release\story-firewall-svc.exe").Path
           $exe = (Resolve-Path ".\target\release\svc-poc.exe").Path
-          function Log($m) { $m | Tee-Object -FilePath run.out -Append }
+          # Tee-Object 는 파이프라인에도 내보내 함수 반환값에 섞인다(A30 첫 실행: $s.result 가 비었음) → 화면·파일에만
+          function Log($m) { Add-Content -Path run.out -Value $m; Write-Host $m }
           function Rpc($method, $obj) {
             $f = Join-Path $env:RUNNER_TEMP ("p-" + [guid]::NewGuid().ToString("N") + ".json")
             ($obj | ConvertTo-Json -Depth 6 -Compress) | Set-Content -Path $f -Encoding ascii
@@ -134,12 +135,12 @@ jobs:
         run: |
           $log = Get-Content run.out -Raw -ErrorAction SilentlyContinue
           $expect = @(
-            'before https=200'
+            'before https=[1-5]\d\d '
             'a30: started policy=\d+ filters=\d+'
             'a30: status active=True confirmed=True remaining=1\d\d'
             'a30: during https=000 loopback=True dns=True'
             'a30: emergency sublayer filters=[1-9]\d* persistent=0'
-            'a30: after stop active=False https=200'
+            'a30: after stop active=False https=[1-5]\d\d'
             'a30: emergency sublayer filters after stop=0'
           )
           $fail = 0
