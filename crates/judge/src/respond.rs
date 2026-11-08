@@ -55,10 +55,48 @@ fn image_path_lower(view: &View, proc_id: i64) -> Option<String> {
     view.image_file(proc_id).map(|f| f.key.to_ascii_lowercase())
 }
 
-/// `\Windows\` 아래 실행 파일인가(cmd·powershell·wscript·vssadmin 등 Windows 도구)
+/// 일반 사용자가 쓸 수 있는 Windows 폴더 아래 경로(소문자, `x:\windows\` 다음 부분). 여기 놓인 실행 파일은 Windows 도구가 아니다.
+/// 출처: 기본 ACL 에서 Users 쓰기·실행이 허용되는 것으로 알려진 폴더(AppLocker 우회 목록으로 널리 정리된 것). 44차 Q1-①
+const USER_WRITABLE_UNDER_WINDOWS: &[&str] = &[
+    "temp\\",
+    "tasks\\",
+    "tracing\\",
+    "debug\\",
+    "registration\\crmlog\\",
+    "system32\\tasks\\",
+    "system32\\fxstmp\\",
+    "system32\\com\\dmp\\",
+    "system32\\spool\\",
+    "system32\\microsoft\\crypto\\rsa\\machinekeys\\",
+    "syswow64\\tasks\\",
+    "syswow64\\fxstmp\\",
+    "syswow64\\com\\dmp\\",
+];
+
+/// 경로가 Windows 시스템 폴더(`<드라이브>:\Windows\`) **바로 아래에서 시작**하고 사용자 쓰기 가능 하위 폴더가 아닌가(소문자 경로).
+/// 44차 Q1-①: 예전 부분 문자열 판정은 `C:\Windows\Temp\x.exe`·`D:\backup\windows\x.exe` 를 Windows 도구로 건너뛰었다.
 pub fn is_windows_tool(path_lower: &str) -> bool {
     let p = path_lower.replace('/', "\\");
-    p.contains("\\windows\\")
+    let p = p.strip_prefix("\\\\?\\").unwrap_or(&p);
+    let b = p.as_bytes();
+    // get(): 여러 바이트 문자에서 자를 때 패닉하지 않게
+    if b.is_empty() || !b[0].is_ascii_alphabetic() || p.get(1..11) != Some(":\\windows\\") {
+        return false;
+    }
+    let rest = p.get(11..).unwrap_or("");
+    !USER_WRITABLE_UNDER_WINDOWS.iter().any(|w| rest.starts_with(w))
+}
+
+/// 건너뛸 Windows 도구인가: 위치(is_windows_tool) + 서명 사실이 있으면 Microsoft 서명이어야 한다.
+/// 서명 사실이 아직 없으면(서비스보다 먼저 켜짐) 위치만으로 판단한다.
+fn windows_tool(view: &View, proc_id: i64, path_lower: &str) -> bool {
+    if !is_windows_tool(path_lower) {
+        return false;
+    }
+    match view.image_file(proc_id).and_then(rules::sig_of) {
+        None | Some(Sig::Microsoft) => true,
+        Some(_) => false, // Windows 폴더에 있는데 Microsoft 서명이 아니다 → 프로그램으로 본다
+    }
 }
 
 /// 허용 목록 항목과 서명자 이름이 같은가(정확 일치 — 앞뒤 공백·대소문자·연속 공백만 정규화)
@@ -105,7 +143,7 @@ pub fn judge(view: &View, story: &Story, allow_signers: &[String]) -> Verdict {
         }
         hops += 1;
         match image_path_lower(view, p) {
-            Some(path) if is_windows_tool(&path) => cur = parent_of(view, p),
+            Some(path) if windows_tool(view, p, &path) => cur = parent_of(view, p),
             Some(_) => {
                 actor = Some(p);
                 break;
@@ -144,4 +182,40 @@ pub fn judge(view: &View, story: &Story, allow_signers: &[String]) -> Verdict {
         what,
         unsigned_chain,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_tool_is_exact_system_root_prefix_without_user_writable_folders() {
+        // 진짜 Windows 도구
+        assert!(is_windows_tool(r"c:\windows\system32\cmd.exe"));
+        assert!(is_windows_tool(r"c:\windows\system32\wbem\wmiprvse.exe"));
+        assert!(is_windows_tool(r"d:\windows\explorer.exe"));
+        assert!(is_windows_tool(r"\\?\c:\windows\system32\vssadmin.exe"));
+        // 44차 Q1-①: 일반 사용자가 쓸 수 있는 Windows 하위 폴더 · 경로 중간의 windows 는 도구가 아니다
+        assert!(!is_windows_tool(r"c:\windows\temp\malware.exe"));
+        assert!(!is_windows_tool(r"c:\windows\tasks\a.exe"));
+        assert!(!is_windows_tool(r"c:\windows\tracing\a.exe"));
+        assert!(!is_windows_tool(r"c:\windows\system32\spool\drivers\color\a.exe"));
+        assert!(!is_windows_tool(r"c:\windows\system32\tasks\a.exe"));
+        assert!(!is_windows_tool(r"d:\backup\windows\malware.exe"));
+        assert!(!is_windows_tool(r"c:\users\u\appdata\local\windows\x.exe"));
+        assert!(!is_windows_tool(r"c:\windowsapps\x.exe"));
+        // 여러 바이트 문자에서 패닉하지 않는다
+        assert!(!is_windows_tool("c:\\windows한\\x.exe"));
+        assert!(!is_windows_tool("가:\\windows\\x.exe"));
+        assert!(!is_windows_tool(""));
+    }
+
+    #[test]
+    fn signer_match_is_exact_after_normalizing_case_and_spaces() {
+        assert!(signer_matches("acme software inc.", "Acme Software Inc."));
+        assert!(signer_matches("  Acme   Software Inc. ", "Acme Software Inc."));
+        assert!(!signer_matches("Acme", "Acme Evil Ltd"));
+        assert!(!signer_matches("Acme Software", "Acme Software Inc."));
+        assert!(!signer_matches("", "Acme"));
+    }
 }

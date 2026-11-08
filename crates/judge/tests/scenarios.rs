@@ -1484,3 +1484,37 @@ fn auto_response_child_only_when_actor_signature_unknown() {
         v => panic!("{v:?}"),
     }
 }
+
+/// 44차 Q1-①: 일반 사용자가 쓸 수 있는 `C:\Windows\Temp` 에 둔 서명 없는 프로그램은 Windows 도구로 건너뛰지 않는다 —
+/// 예전 부분 문자열 판정이면 건너뛰고 explorer(핵심) 까지 올라가 "조상 없음" → ChildOnly 로 빠졌다
+#[test]
+fn auto_response_does_not_skip_program_in_user_writable_windows_folder() {
+    use judge::respond::{self, Mode, Verdict};
+    let store = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&store);
+    let mal = r"C:\Windows\Temp\upd.exe";
+    ing.ingest_all(&[
+        snap(T0, 1000, 4, EXPLORER, &[]),
+        sig(T0, EXPLORER, Some("Microsoft Windows"), "valid", true),
+        start(T0 + SEC, 4000, 1000, mal),
+        sig(T0 + SEC, mal, None, "nosignature", false),
+        start(T0 + 2 * SEC, 4100, 4000, CMD),
+        sig(T0 + 2 * SEC, CMD, Some("Microsoft Windows"), "valid", true),
+        start(T0 + 3 * SEC, 4200, 4100, VSSADMIN),
+        sig(T0 + 3 * SEC, VSSADMIN, Some("Microsoft Windows"), "valid", true),
+        cmd(T0 + 3 * SEC, 4200, "vssadmin.exe delete shadows /all /quiet"),
+    ])
+    .unwrap();
+    let bl = Baseline::open(&store, T0 + DAY).unwrap();
+    let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
+    let view = judge::View::load(&store, 0, i64::MAX).unwrap();
+    let s = stories.iter().find(|s| s.chapter == Chapter::Destroy).expect("5장 사건");
+    match respond::judge(&view, s, &[]) {
+        Verdict::Respond(r) => {
+            assert_eq!(r.mode, Mode::Full, "{r:?}");
+            let o = view.node(r.origin);
+            assert!(judge::rules::attr_str(o, "image").unwrap_or_default().to_ascii_lowercase().ends_with(r"windows\temp\upd.exe"), "{o:?}");
+        }
+        v => panic!("{v:?}"),
+    }
+}
