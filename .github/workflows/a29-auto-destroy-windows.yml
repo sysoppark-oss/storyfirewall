@@ -1,0 +1,126 @@
+name: A29 auto destroy response (stage 8, real run)
+
+# 대시보드 개편안 2판 4-2(8단계) 실집행 시험. 러너 = 일회용 VM(사용자 결정 2026-11-07 "러너 + Sandbox").
+# 제품 서비스(story-firewall-svc, 실제 ETW·WFP)를 설치하고 설정 auto_destroy_response 를 켠 뒤,
+# 서명 없는 시험 프로그램(Temp 아래, C# 즉석 빌드)이 cmd → vssadmin delete shadows 를 실행하게 한다.
+# 기대: 주기 판정(15초) 안팎에 서비스가 묻지 않고 끊는다 — 사건 조치함(끊음)·메모 auto:<id>:<ver>, 정책 확정,
+# 시험 프로그램 종료. 그 뒤 [자동 대응 되돌리기]와 같은 policy.rollback 이 성공해야 한다.
+on:
+  push:
+    paths:
+      - "crates/judge/src/respond.rs"
+      - "crates/svc/src/auto_respond.rs"
+      - "crates/svc/src/cut.rs"
+      - "crates/svc/src/bin/svc-poc.rs"
+      - ".github/workflows/a29-auto-destroy-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  run:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: a29-windows-2025-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build service and test client
+        shell: pwsh
+        run: |
+          cargo build --release --locked -p svc --features test-signer --bin svc-poc --bin story-firewall-svc 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Sign the test client with a self-signed test certificate
+        shell: pwsh
+        run: |
+          $exe = ".\target\release\svc-poc.exe"
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=StoryFirewall Test" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(2)
+          $cer = Join-Path $env:RUNNER_TEMP "test.cer"
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
+          $r = Set-AuthenticodeSignature -FilePath $exe -Certificate $cert -HashAlgorithm SHA256
+          "sign status: $($r.Status)"
+
+      - name: Build the unsigned simulator (Temp, C#)
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:LOCALAPPDATA "Temp\sfsim"
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          $sim = Join-Path $dir "invoice-viewer.exe"
+          $src = @"
+          using System; using System.Diagnostics; using System.Threading;
+          public static class P {
+            public static void Main() {
+              var si = new ProcessStartInfo("cmd.exe", "/c vssadmin delete shadows /all /quiet");
+              si.UseShellExecute = false;
+              var p = Process.Start(si);
+              p.WaitForExit();
+              Console.WriteLine("sim: cmd exit=" + p.ExitCode);
+              Thread.Sleep(180000);
+            }
+          }
+          "@
+          Add-Type -TypeDefinition $src -OutputAssembly $sim -OutputType ConsoleApplication
+          "sim=$sim"
+          (Get-AuthenticodeSignature $sim).Status
+          "SIM=$sim" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run scenario
+        shell: pwsh
+        run: |
+          $prod = ".\target\release\story-firewall-svc.exe"
+          $exe = ".\target\release\svc-poc.exe"
+          & $prod install --test-signer "StoryFirewall Test" 2>&1 | Tee-Object -FilePath run.out -Append
+          & $prod start 2>&1 | Tee-Object -FilePath run.out -Append
+          Start-Sleep -Seconds 10
+          & $prod status 2>&1 | Tee-Object -FilePath run.out -Append
+          & $exe auto-destroy $env:SIM 2>&1 | Tee-Object -FilePath run.out -Append
+          "a29 exit=$LASTEXITCODE" | Tee-Object -FilePath run.out -Append
+          Start-Sleep -Seconds 2
+          "--- product service.log (tail) ---" | Tee-Object -FilePath run.out -Append
+          Get-Content 'C:\ProgramData\StoryFirewall\service.log' -Tail 80 -ErrorAction SilentlyContinue | Tee-Object -FilePath run.out -Append
+          & $prod stop 2>&1 | Tee-Object -FilePath run.out -Append
+          & $prod uninstall 2>&1 | Tee-Object -FilePath run.out -Append
+          Get-Process invoice-viewer -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+      - name: Assert expected outcomes
+        if: always()
+        shell: pwsh
+        run: |
+          $log = Get-Content run.out -Raw -ErrorAction SilentlyContinue
+          $expect = @(
+            'a29: settings\.set \{.*"ok":true'
+            'a29: auto response after \d+s'
+            'a29: sim_exited=true'
+            'a29: event auto_destroy_response'
+            'a29: rollback \{.*"ok":true'
+            'a29: RESULT exited=true policy=[1-9]\d* rolled_back=true'
+            'a29 exit=0'
+          )
+          $fail = 0
+          foreach ($e in $expect) {
+            if ($log -match $e) { "PASS $e" } else { "FAIL $e"; $fail++ }
+          }
+          if ($fail -gt 0) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a29-logs
+          path: |
+            run.out
+            build.log

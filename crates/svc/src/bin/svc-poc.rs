@@ -208,6 +208,94 @@ fn main() {
             println!("apply: policy_id={pid} version={ver} filters={} confirm={}", v["result"]["filters"], if ok { "ok" } else { "failed" });
             if !ok { println!("apply: confirm reply {conf}"); std::process::exit(5); }
         }
+        // A29(대시보드 개편안 2판 4-2, 8단계 실집행): 설정을 켜고, 서명 없는 시험 프로그램(args[2])이
+        // cmd → vssadmin delete shadows 를 실행하게 한 뒤, 서비스가 묻지 않고 끊는지(사건 조치함·메모 auto:·
+        // 정책 확정·시험 프로그램 종료) 확인하고, [자동 대응 되돌리기]와 같은 policy.rollback 으로 되돌린다.
+        // 출력 줄 "a29: ..." 를 워크플로가 판정한다. 실패 시 0 이 아닌 종료 코드.
+        "auto-destroy" => {
+            let sim = args.get(2).cloned().unwrap_or_default();
+            let name = svc::win::pipe_name::resolve();
+            let mut tries = 0;
+            let mut c = loop {
+                match pipe::PipeClient::connect(&name) {
+                    Ok(c) => break c,
+                    Err(e) if tries < 40 && (e.contains("0x2") || e.contains("0xe7")) => { tries += 1; std::thread::sleep(std::time::Duration::from_millis(500)); }
+                    Err(e) => { println!("a29: connect failed: {e}"); std::process::exit(3); }
+                }
+            };
+            let mut next = 0u64;
+            let mut call = |m: &str, p: serde_json::Value| -> serde_json::Value {
+                next += 1;
+                let line = format!("{}\n", serde_json::json!({"jsonrpc": "2.0", "id": next, "method": m, "params": p}));
+                if !c.send(&line) { return serde_json::json!({"error": "send"}); }
+                loop {
+                    match c.recv() {
+                        Some(r) => {
+                            let v: serde_json::Value = serde_json::from_str(&r).unwrap_or_default();
+                            if v.get("id").is_some() { return v; }
+                        }
+                        None => return serde_json::json!({"error": "closed"}),
+                    }
+                }
+            };
+            let rid = |n: u64| format!("0f3c2a1e-9b7d-4c6a-8e5f-{n:012x}");
+            println!("a29: hello {}", call("rpc.hello", serde_json::json!({"client_version": "0.1.0-poc", "api": [1, 0]})));
+            let v = call("settings.set", serde_json::json!({"request_id": rid(0xa29001), "auto_destroy_response": true}));
+            println!("a29: settings.set {v}");
+            if v["result"]["ok"] != serde_json::json!(true) { std::process::exit(4); }
+            // 수집기가 새 프로세스를 보기 시작하도록 잠깐
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            let mut child = match std::process::Command::new(&sim).spawn() {
+                Ok(ch) => ch,
+                Err(e) => { println!("a29: spawn {sim} failed: {e}"); std::process::exit(5); }
+            };
+            println!("a29: sim pid={}", child.id());
+            // 주기 판정 15초 + 여유
+            let t0 = std::time::Instant::now();
+            let mut hit: Option<serde_json::Value> = None;
+            while t0.elapsed().as_secs() < 150 {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                let v = call("story.events", serde_json::json!({"level_min": "watch", "triage": "all", "limit": 200}));
+                if let Some(items) = v["result"]["items"].as_array() {
+                    if let Some(it) = items.iter().find(|x| x["triage"]["note"].as_str().is_some_and(|n| n.starts_with("auto:"))) {
+                        hit = Some(it.clone());
+                        break;
+                    }
+                }
+            }
+            let secs = t0.elapsed().as_secs();
+            let exited = matches!(child.try_wait(), Ok(Some(_)));
+            let Some(it) = hit else {
+                println!("a29: no auto response within {secs}s, sim_exited={exited}");
+                let v = call("story.events", serde_json::json!({"level_min": "normal", "triage": "all", "limit": 50}));
+                println!("a29: events {}", v["result"]["items"].as_array().map(|a| a.iter().map(|x| format!("{}|{}|{}", x["title"], x["level"], x["chapter"])).collect::<Vec<_>>().join(" ; ")).unwrap_or_default());
+                let _ = child.kill();
+                std::process::exit(6);
+            };
+            println!("a29: auto response after {secs}s title={} level={} triage={}", it["title"], it["level"], it["triage"]);
+            println!("a29: sim_exited={exited}");
+            let note = it["triage"]["note"].as_str().unwrap_or("").to_string();
+            let parts: Vec<i64> = note.trim_start_matches("auto:").split(':').filter_map(|x| x.parse().ok()).collect();
+            let pl = call("policy.list", serde_json::json!({}));
+            let items = pl["result"]["items"].as_array().cloned().unwrap_or_default();
+            println!("a29: policies {}", items.iter().map(|x| format!("{}:{}:{}", x["policy_id"], x["version"], x["state"])).collect::<Vec<_>>().join(","));
+            let mut rolled = false;
+            if parts.len() == 2 && parts[0] > 0 {
+                let v = call("policy.rollback", serde_json::json!({"request_id": rid(0xa29002), "policy_id": parts[0], "version": parts[1]}));
+                println!("a29: rollback {v}");
+                rolled = v["result"]["ok"] == serde_json::json!(true);
+                let pl = call("policy.list", serde_json::json!({}));
+                println!("a29: policies after rollback {}", pl["result"]["items"].as_array().map(|a| a.iter().map(|x| format!("{}:{}:{}", x["policy_id"], x["version"], x["state"])).collect::<Vec<_>>().join(",")).unwrap_or_default());
+            }
+            let h = call("service.events", serde_json::json!({"since_secs": 600, "limit": 30}));
+            for e in h["result"]["items"].as_array().cloned().unwrap_or_default() {
+                let k = e["kind"].as_str().unwrap_or("");
+                if k.starts_with("auto_destroy") || k == "cut_terminate" { println!("a29: event {k}: {}", e["detail"]); }
+            }
+            if !exited { let _ = child.kill(); }
+            println!("a29: RESULT exited={exited} policy={} rolled_back={rolled}", parts.first().copied().unwrap_or(0));
+            if !exited || !rolled { std::process::exit(7); }
+        }
         // A25: 표준 사용자로 돌려 서비스 파이프에 닿는지, 서버가 session 0 인지, 서비스 이미지 경로를 읽을 수 있는지(18차 Q5 측정)
         "probe" => {
             let name = svc::win::pipe_name::resolve();
