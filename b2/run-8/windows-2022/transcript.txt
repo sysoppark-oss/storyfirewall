@@ -1,0 +1,95 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20261108222930
+Username: runnervmquqza\runneradmin
+RunAs User: runnervmquqza\runneradmin
+Configuration Name: 
+Machine: runnervmquqza (Microsoft Windows NT 10.0.20348.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -File story-firewall\poc\b2\b2-run.ps1 -InstallSysmon -Seconds 90 -Root D:\a\storyfirewall\storyfirewall
+Process ID: 1772
+PSVersion: 5.1.20348.5773
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.20348.5773
+BuildVersion: 10.0.20348.5773
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+[b2] downloading Sysmon
+[b2] signature ok: CN=Microsoft Windows Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US
+
+[b2] building collector-poc and b2-compare (release)
+
+[b2] collecting for 90 s. Use the PC normally meanwhile (browser, updates, etc.).
+[b2] scenario: curl chain, renamed download with MOTW + Run key, DoH, nslookup, PowerShell web request
+
+
+[b2] inbound: 5 connects to 10.1.0.9:47556
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[b2] exporting Sysmon events
+
+b2 run 20261108-222930
+commit=caf9ea6
+os=Microsoft Windows Server 2022 Datacenter build=20348
+ram_gb=16 free_gb=13.3
+cpu=Intel(R) Xeon(R) 6973P-C
+sysmon=15.22
+seconds=90 scenario=True
+window_utc=2026-11-08 22:31:08.049 .. 2026-11-08 22:32:24.447
+sysmon_events_exported=404
+collector_exit=0
+mem_free_mb_start=13704 mem_free_mb_end=13681 collector_ws_max_mb=35 product_svc_ws_mb=-
+B2 누락률 — 구간 2026-11-08 22:31:08.049Z ~ 2026-11-08 22:32:24.447Z (허용치 2000ms)
+sysmon_lines=404 sysmon_bad=0 sysmon_keyed=352 ours_keyed=523 sysmon_etw_offset_ms=0
+category               sysmon  matched   missed     miss%  ours_only  by_offset  boundary
+dns(22)                    62       62        0     0.00%         20          0         0
+network_in(3)               7        7        0     0.00%          0          0         0
+network_out(3)            100      100        0     0.00%         14          0         0
+process_start(1)           64       64        0     0.00%          0          0         0
+process_stop(5)            61       61        0     0.00%          0          0         0
+
+[b2] done -> D:\a\storyfirewall\storyfirewall\logs\b2-20261108-222930
+**********************
+Windows PowerShell transcript end
+End time: 20261108223235
+**********************
