@@ -191,7 +191,7 @@ export function chapterReach(reached: number[][]): number[] {
   return out;
 }
 
-/// 개편안 2판 1-4: 이중 축 그래프 — 왼쪽 트래픽(송신·수신 바이트, 반투명 면적), 오른쪽 인시던트 건수(세로 마커: 심각 빨강·높음 주황)
+/// 개편안 2판 1-4: 이중 축 그래프 — 왼쪽 트래픽(송신·수신 바이트, 반투명 면적), 오른쪽 인시던트 건수(세로 마커: 심각 --crit·높음 --bad — 주황은 "주의"에만, UI 명세 2판 2-1 · UI 상세설계 1판 초안 1-3b)
 export interface DualInput {
   sent: number[];
   recv: number[];
@@ -280,7 +280,7 @@ export function dualChart(d: DualInput, nowHour: number, w = 520, h = 160): SVGE
   return s;
 }
 
-/// 사용자 2026-11-07 "다른 그래프로": 시간대별 막대 — 수신 위에 송신을 쌓고(왼쪽 축 바이트), 인시던트는 막대 위 점(심각 진홍·높음 주황).
+/// 사용자 2026-11-07 "다른 그래프로": 시간대별 막대 — 수신 위에 송신을 쌓고(왼쪽 축 바이트), 인시던트는 막대 위 점(심각 진홍·높음 빨강 --bad).
 /// 한 시간에 몰린 자료도 면적 선과 달리 막대 하나로 또렷이 보인다
 export function barChart(d: DualInput, nowHour: number, w = 520, h = 160): SVGElement {
   const L = 44, R = 8, T = 14, B = 22;

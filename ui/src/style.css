@@ -553,12 +553,12 @@ details.where-panel { border-radius: 16px; }
 /* 이중 축(개편안 2판 1-4): 수신 청록, 송신 보라, 인시던트 마커 심각 진홍·높음 주황 */
 .area-chart .line.s-recv { stroke: var(--brand); } .area-chart .area.s-recv { fill: var(--brand); opacity: .18; }
 .area-chart .line.s-sent { stroke: var(--sent, #8B5CF6); } .area-chart .area.s-sent { fill: var(--sent, #8B5CF6); opacity: .18; }
-.area-chart .mark.m-high { fill: var(--warn); } .area-chart .mark.m-crit { fill: var(--crit); }
+.area-chart .mark.m-high { fill: var(--bad); } .area-chart .mark.m-crit { fill: var(--crit); }
 .area-chart .ax-right { fill: var(--muted); }
 .bar-chart .bar.b-recv { fill: var(--brand); opacity: .85; } .bar-chart .bar.b-sent { fill: var(--sent, #8B5CF6); opacity: .85; } .bar-chart .bar.b-empty { fill: var(--line); }
-.bar-chart .hit { fill: transparent; } .bar-chart .mark.m-high { fill: var(--warn); } .bar-chart .mark.m-crit { fill: var(--crit); }
+.bar-chart .hit { fill: transparent; } .bar-chart .mark.m-high { fill: var(--bad); } .bar-chart .mark.m-crit { fill: var(--crit); }
 .chart-legend .lg.recv::before { background: var(--brand); } .chart-legend .lg.sent::before { background: var(--sent, #8B5CF6); }
-.chart-legend .lg.crit::before { background: var(--crit); } .chart-legend .lg.high::before { background: var(--warn); }
+.chart-legend .lg.crit::before { background: var(--crit); } .chart-legend .lg.high::before { background: var(--bad); }
 .chart-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
 .chart-legend .lg::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .chart-legend .lg.conn::before { background: var(--brand); } .chart-legend .lg.sus::before { background: var(--bad); }
