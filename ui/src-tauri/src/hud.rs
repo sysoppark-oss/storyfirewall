@@ -343,11 +343,11 @@ mod tests {
         let st = summarize(&ev(serde_json::json!([])), &serde_json::json!({"active": false}));
         assert_eq!(st.tone, Tone::Ok);
         // 소문자 수준·오늘 새 활동 없는 것(fresh=false)은 빼기
-        let st = summarize(&ev(serde_json::json!([
+        let st2 = summarize(&ev(serde_json::json!([
             {"level": "critical", "title": "c", "last_ts": 1},
             {"level": "Suspicious", "title": "old", "last_ts": 2, "fresh": false},
         ])), &serde_json::json!({}));
-        assert_eq!((st.critical, st.high), (1, 0));
+        assert_eq!((st2.critical, st2.high), (1, 0));
         // 응답 봉투에서 result 꺼내기 · error 는 None
         assert_eq!(result_of(serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": {"items": []}})), Some(serde_json::json!({"items": []})));
         assert_eq!(result_of(serde_json::json!({"jsonrpc": "2.0", "id": 1, "error": {"code": -1}})), None);
