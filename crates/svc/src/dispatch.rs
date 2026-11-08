@@ -202,6 +202,21 @@ fn summarize(
                     .into(),
             );
         }
+        Method::EmergencyExtend => {
+            let v: api::methods::EmergencyExtendParams = from(p)?;
+            let st = crate::emergency::status(world);
+            if st["active"] != serde_json::json!(true) {
+                return Err(RpcError::with(
+                    ErrorCode::InvalidParams,
+                    "걸린 긴급 차단이 없습니다",
+                ));
+            }
+            l.push(format!(
+                "긴급 차단을 {}분 늘립니다 (지금 남은 시간 {}분, 막는 범위는 그대로)",
+                v.minutes,
+                st["remaining_secs"].as_i64().unwrap_or(0) / 60
+            ));
+        }
         Method::EmergencyStop => {
             let st = crate::emergency::status(world);
             if st["active"] != serde_json::json!(true) {
@@ -1735,6 +1750,20 @@ fn handle(
                 .collect();
             j(serde_json::json!({ "items": items }))
         }
+        Method::ProcessFind => {
+            let v: api::methods::ProcessFindParams = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            // 읽기만. 호출자 범위 밖 프로세스는 뺀다(더 넓게 읽고 거른다)
+            let scope = caller.scope();
+            let items: Vec<_> =
+                graph::views::find_processes(&world.graph, &v.q, (v.limit as usize) * 3)
+                    .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?
+                    .into_iter()
+                    .filter(|f| scope.process_visible(&world.graph, f.node_id))
+                    .take(v.limit as usize)
+                    .collect();
+            j(serde_json::json!({ "items": items }))
+        }
         Method::ProcessDetail => {
             let v: NodeQuery = serde_json::from_value(p)
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
@@ -1861,6 +1890,16 @@ fn handle(
                 "policy_id": r.policy_id, "version": r.version, "filters": r.filters,
                 "confirm_deadline": r.confirm_deadline, "rdp_clients": inp.rdp_clients.iter().map(|i| i.to_string()).collect::<Vec<_>>(),
             }))
+        }
+        Method::EmergencyExtend => {
+            let v: api::methods::EmergencyExtendParams = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            let exp = world
+                .engine
+                .extend_emergency(v.minutes, &v.request_id, &actor(caller))
+                .map_err(engine_err)?;
+            crate::runtime::flush_events(world);
+            j(serde_json::json!({ "ok": true, "expires_at": exp }))
         }
         Method::EmergencyStop => {
             let _: RequestOnly = serde_json::from_value(p)

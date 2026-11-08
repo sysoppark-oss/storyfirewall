@@ -26,6 +26,8 @@ pub enum Method {
     GraphRewind,
     GraphTimeline,
     ProcessDetail,
+    /// 프로그램 이름으로 프로세스 찾기(UI 명세 4판 3-9 명령 팔레트). 조회(사용자), 읽기만
+    ProcessFind,
     StoryToday,
     StoryExplain,
     /// 자동 조사(사용자 "지금과 같은 것을 할 수 있는 분석이 프로그램에 필요함" 2026-11-07): 사건 주인공의 실물 확인(PID·생성 시각·경로·명령줄),
@@ -57,6 +59,8 @@ pub enum Method {
     /// 긴급 차단(대시보드 개편안 3판 1-1): 전체 차단 + 좁은 예외, 기한부, 60초 확인
     EmergencyStart,
     EmergencyStop,
+    /// 긴급 차단 연장(만료 시각만, 필터 그대로). 관리자, 승인 도우미
+    EmergencyExtend,
     EmergencyStatus,
     /// 지금 열린 연결(UI 명세 4판 3-4): 연결 테이블을 요청 때 읽는다(DB 를 읽지 않음). 조회(사용자)
     ConnectionsOpen,
@@ -96,6 +100,7 @@ impl Method {
         ("graph.rewind", Method::GraphRewind),
         ("graph.timeline", Method::GraphTimeline),
         ("process.detail", Method::ProcessDetail),
+        ("process.find", Method::ProcessFind),
         ("story.today", Method::StoryToday),
         ("story.explain", Method::StoryExplain),
         ("story.investigate", Method::StoryInvestigate),
@@ -126,6 +131,7 @@ impl Method {
         ("cut.apply", Method::CutApply),
         ("emergency.start", Method::EmergencyStart),
         ("emergency.stop", Method::EmergencyStop),
+        ("emergency.extend", Method::EmergencyExtend),
         ("emergency.status", Method::EmergencyStatus),
         ("connections.open", Method::ConnectionsOpen),
         ("connections.kill", Method::ConnectionsKill),
@@ -168,6 +174,7 @@ impl Method {
             | Method::CutApply
             | Method::EmergencyStart
             | Method::EmergencyStop
+            | Method::EmergencyExtend
             | Method::ConnectionsKill
             | Method::RetentionSet
             | Method::SettingsSet
@@ -193,6 +200,7 @@ impl Method {
                 | Method::CutApply
                 | Method::EmergencyStart
                 | Method::EmergencyStop
+                | Method::EmergencyExtend
                 | Method::ConnectionsKill
                 | Method::RetentionSet
                 | Method::SettingsSet
@@ -343,6 +351,18 @@ pub struct TriageLogParams {
 impl TriageLogParams {
     fn default_limit() -> usize {
         50
+    }
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProcessFindParams {
+    /// 찾을 글자(실행 파일 이름 일부). 대소문자 무시
+    pub q: String,
+    #[serde(default = "ProcessFindParams::default_limit")]
+    pub limit: u32,
+}
+impl ProcessFindParams {
+    fn default_limit() -> u32 {
+        10
     }
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -587,6 +607,13 @@ pub fn validate_params(
             let _: InvestigateParams = serde_json::from_value(p.clone())
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
         }
+        Method::ProcessFind => {
+            let v: ProcessFindParams = serde_json::from_value(p.clone())
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            let n = v.q.trim().chars().count();
+            check((2..=64).contains(&n), "q 는 2~64자")?;
+            check((1..=20).contains(&v.limit), "limit 은 1~20")?;
+        }
         Method::GraphNeighbors | Method::GraphRewind | Method::ProcessDetail => {
             let v: NodeQuery = serde_json::from_value(p.clone())
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
@@ -635,6 +662,11 @@ pub fn validate_params(
         Method::EmergencyStop => {
             let _: RequestOnly = serde_json::from_value(p.clone())
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+        }
+        Method::EmergencyExtend => {
+            let v: EmergencyExtendParams = serde_json::from_value(p.clone())
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            check((1..=120).contains(&v.minutes), "minutes 는 1~120")?;
         }
         Method::ConnectionsList
         | Method::ListenersList
@@ -798,6 +830,13 @@ pub struct ConnKillParams {
     pub raddr: String,
     pub rport: u16,
     pub pid: u32,
+}
+
+/// 긴급 차단 연장
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmergencyExtendParams {
+    pub request_id: String,
+    pub minutes: u32,
 }
 
 /// request_id 만 받는 변경(emergency.stop)

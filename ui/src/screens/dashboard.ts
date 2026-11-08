@@ -68,6 +68,7 @@ const FEED_TITLE: Record<string, string> = {
   auto_destroy_skipped: "파괴 행위가 있었지만 자동 대응하지 않았습니다(허용 서명자·Microsoft 서명)",
   emergency_on: "긴급 차단을 걸었습니다",
   emergency_off: "긴급 차단을 풀었습니다",
+  emergency_extended: "긴급 차단 기한을 늘렸습니다",
   conn_killed: "연결을 끊었습니다",
   time_changed: "PC 시계가 바뀌었습니다",
 };
@@ -489,10 +490,11 @@ export function dashboard(): HTMLElement {
       ? cardFail(ev.error, "미조치 인시던트")
       : stalledNow && !sus.length
         ? el("div", undefined, el("div", "big muted", "—"), el("div", "warn small", "기록이 없어 셀 수 없음"))
-        : el("div", undefined, el("div", "big " + (sus.length ? "bad" : "ok"), String(groups.length)));
+        : el("div", undefined, el("div", "big " + (sus.length ? "bad" : "ok"), String(sus.length)));
     // 검수 B1: 기록이 멈췄는데 이미 찾은 의심 사건이 있으면 숫자는 그대로 두되(찾은 경보를 숨기지 않는다) 그 뒤는 세지 못했다고 밝힌다
     if (ev.ok && stalledNow && sus.length) susBody.append(el("div", "warn small", "기록이 멈췄을 수 있어 그 뒤 일은 세지 못했을 수 있음"));
-    if (ev.ok && groups.length !== sus.length) susBody.append(el("div", "muted small", `사건 ${sus.length}건`));
+    // 검수 122 덧붙임: 큰 숫자는 도넛·HUD 와 같은 "사건 수". 같은 일로 묶인 카드 수는 보조 줄로
+    if (ev.ok && groups.length !== sus.length) susBody.append(el("div", "muted small", `같은 일 묶음 ${groups.length}개`));
     if (staleN) susBody.append(el("div", "muted small", `그 밖에 수집 전부터 실행 중 ${staleN}건`));
     // 사건 추적: story.events 기본(triage=open)이라 조치함·닫힘은 빠진다 — 제목도 그렇게
     status.append(clickable(card("미조치 심각·높음", susBody, sus.length ? "card alert alert-bad" : "card", "shield", sus.length ? "bad" : "ok", susSpark), () => state.go("story", { level: "suspicious", triage: "open" }), "미조치 심각·높음 인시던트 보기"));

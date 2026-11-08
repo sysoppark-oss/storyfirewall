@@ -97,6 +97,31 @@ impl Store {
             [],
         );
         let _ = conn.execute("ALTER TABLE origins ADD COLUMN sha256_ts INTEGER", []);
+        // 검수 122-1 한 번 정리: 생성 시각을 못 읽은 스냅샷 프로세스(노드 시각 = 스냅샷 시각)에 이어 둔 부모 선은
+        // PID 재사용으로 엉뚱한 프로세스가 부모로 잡혔을 수 있다(wininit ← UI 실측). 근거 원시 이벤트가 남은 것만 가린다
+        let done: bool = conn
+            .query_row(
+                "SELECT 1 FROM meta WHERE key = 'fix_122_unknown_ct'",
+                [],
+                |_| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false);
+        if !done {
+            conn.execute(
+                "DELETE FROM edges WHERE id IN (
+                   SELECT e.id FROM edges e
+                   JOIN nodes n ON n.id = e.dst
+                   JOIN raw_events r ON r.id = e.evidence_id
+                   WHERE e.rel = 'spawned' AND r.source = 'snapshot' AND r.ts = n.first_ts
+                     AND json_extract(n.attrs_json, '$.preexisting') = 1)",
+                [],
+            )?;
+            conn.execute(
+                "INSERT OR IGNORE INTO meta(key, value) VALUES ('fix_122_unknown_ct', '1')",
+                [],
+            )?;
+        }
         conn.execute(
             "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?1)",
             params![SCHEMA_VERSION.to_string()],

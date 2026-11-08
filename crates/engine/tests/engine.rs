@@ -1359,3 +1359,69 @@ fn emergency_filters_lost_on_reboot_are_not_restored() {
     );
     assert!(e.events.iter().any(|ev| ev.kind == "emergency_off"));
 }
+
+/// UI 명세 4판 3-1 [연장 30분]: 확인된 긴급 차단의 만료만 늦춘다. 필터는 그대로, 확인 전에는 거부, 하루 상한, 같은 요청은 한 번만
+#[test]
+fn emergency_extend_moves_only_expiry() {
+    let clock = FakeClock::new(MONDAY_0000);
+    let mut wfp = FakeWfp::default();
+    let specs = policy::emergency::plan(&policy::emergency::Input {
+        own_images: vec![r"C:\Program Files\Story Firewall\story-firewall-svc.exe".into()],
+        remote_tools: vec![],
+        rdp_clients: vec![],
+        ..Default::default()
+    });
+    let mut e = Engine::new(
+        rusqlite::Connection::open_in_memory().unwrap(),
+        &mut wfp,
+        &NoGraph,
+        &clock,
+        &R,
+        &[],
+    )
+    .unwrap();
+    // 걸린 것이 없으면 거부
+    assert!(e.extend_emergency(30, "x0", "ui").is_err());
+    let r = e.apply_emergency(&specs, 30, "a1", "ui").unwrap();
+    // 60초 확인 전에는 늘리지 않는다
+    assert!(matches!(
+        e.extend_emergency(30, "x1", "ui"),
+        Err(EngineError::BadState(_))
+    ));
+    e.confirm(r.policy_id, r.version, "ui").unwrap();
+    let before: Vec<u64> = e
+        .store
+        .filters_of(r.policy_id)
+        .unwrap()
+        .iter()
+        .map(|f| f.filter_id)
+        .collect();
+    let exp = e.extend_emergency(30, "x2", "ui").unwrap();
+    assert_eq!(exp, MONDAY_0000 + 3600);
+    // 같은 요청 번호 다시 = 같은 결과, 두 번 늘리지 않음
+    assert_eq!(e.extend_emergency(30, "x2", "ui").unwrap(), exp);
+    let (_, ver, exp2, st) = e.emergency_status().unwrap().unwrap();
+    assert_eq!(
+        (exp2, st, ver),
+        (exp, State::Confirmed, r.version),
+        "판·상태 그대로"
+    );
+    let after: Vec<u64> = e
+        .store
+        .filters_of(r.policy_id)
+        .unwrap()
+        .iter()
+        .map(|f| f.filter_id)
+        .collect();
+    assert_eq!(before, after, "필터는 바꾸지 않는다");
+    // 범위 밖 분
+    assert!(e.extend_emergency(0, "x3", "ui").is_err());
+    assert!(e.extend_emergency(121, "x4", "ui").is_err());
+    // 하루 상한: 여러 번 늘려도 지금 + 1440분을 넘지 않는다
+    for i in 0..30 {
+        let _ = e.extend_emergency(120, &format!("y{i}"), "ui");
+    }
+    let (_, _, exp3, _) = e.emergency_status().unwrap().unwrap();
+    assert_eq!(exp3, MONDAY_0000 + 1440 * 60);
+    assert!(e.extend_emergency(30, "z", "ui").is_err(), "이미 최대");
+}

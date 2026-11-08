@@ -701,3 +701,49 @@ pub fn image_file_of(store: &Store, process_id: i64) -> Option<Node> {
         .ok()?;
     store.node(id).ok()
 }
+
+/// 명령 팔레트(UI 명세 4판 3-9): 실행 파일 이름에 글자가 든 프로세스. 같은 실행 파일은 가장 최근 것 하나만. 최신 먼저. 읽기만
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FoundProcess {
+    pub node_id: i64,
+    pub label: String,
+    pub image: Option<String>,
+    pub first_ts: i64,
+}
+
+pub fn find_processes(store: &Store, q: &str, limit: usize) -> Result<Vec<FoundProcess>> {
+    let q = q.trim().to_lowercase();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut st = store.conn().prepare_cached(
+        "SELECT id, label, json_extract(attrs_json, '$.image'), first_ts FROM nodes
+         WHERE kind = 'process' AND instr(lower(label), ?1) > 0
+         ORDER BY first_ts DESC LIMIT 2000",
+    )?;
+    let rows = st.query_map(rusqlite::params![q], |r| {
+        Ok(FoundProcess {
+            node_id: r.get(0)?,
+            label: r.get(1)?,
+            image: r.get(2)?,
+            first_ts: r.get(3)?,
+        })
+    })?;
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for r in rows {
+        let f = r?;
+        let k = f
+            .image
+            .clone()
+            .unwrap_or_else(|| f.label.clone())
+            .to_lowercase();
+        if seen.insert(k) {
+            out.push(f);
+            if out.len() >= limit {
+                break;
+            }
+        }
+    }
+    Ok(out)
+}

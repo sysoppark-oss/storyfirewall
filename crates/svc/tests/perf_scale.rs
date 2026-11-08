@@ -332,6 +332,11 @@ fn screen_queries_within_two_seconds() {
         graph::query::rewind(&r, busy, 8).unwrap()
     });
     screen.push(("process.detail", ms));
+    // 명령 팔레트 프로그램 찾기(UI 명세 4판 3-9): 프로세스 노드 전체를 이름으로 훑는다
+    let (_, ms) = time("process.find(\"ch\")", || {
+        graph::views::find_processes(&r, "ch", 30).unwrap()
+    });
+    screen.push(("process.find", ms));
     let (_, ms) = time("collector.health gaps(24h)", || {
         graph::views::gaps_between(&r, now_ft - 86_400 * SEC, i64::MAX).unwrap()
     });

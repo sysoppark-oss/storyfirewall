@@ -222,6 +222,9 @@ impl<'a> Ingester<'a> {
             attrs["create_time_uncertain"] = serde_json::json!(true);
             attrs["create_time_raw"] = serde_json::json!(key_ts);
         }
+        if preexisting && key_ts == ev_ts {
+            attrs["create_time_unknown"] = serde_json::json!(true);
+        }
         let attrs = attrs.to_string();
         // 이하 노드·선·부모 찾기는 보정된 시각으로(부모도 같은 규칙으로 보정돼 first_ts 비교가 맞는다)
         let key_ts = shown_ts;
@@ -264,7 +267,12 @@ impl<'a> Ingester<'a> {
         let mut n = 0;
         // 부모: 스냅샷 프로세스는 부모가 이미 종료됐을 수 있다. 있을 때만 잇는다.
         // 2026-11-08 노트북: 재부팅 전 노드(종료 기록 없음)가 같은 PID 로 잡혀 wininit 의 부모가 됐다 → 이번 부팅 것만
-        let parent = if preexisting {
+        // 검수 122-1: 스냅샷에서 생성 시각을 못 읽은 프로세스(수집기가 스냅샷 시각을 대신 넣음, key_ts == ev_ts)는
+        // 부모를 시각으로 가를 수 없다 — 그 사이 같은 PID 를 받은 나중 프로세스(예: UI)가 "부모"로 잡힌다(wininit ← UI 실측). 잇지 않는다
+        let ct_unknown = preexisting && key_ts == ev_ts;
+        let parent = if ct_unknown {
+            None
+        } else if preexisting {
             match self.store.latest_process_by_pid(ppid, key_ts)? {
                 Some(id) if self.same_boot(id, shown_ts)? => Some(id),
                 _ => None,

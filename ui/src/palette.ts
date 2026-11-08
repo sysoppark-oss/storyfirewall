@@ -166,7 +166,27 @@ export function openPalette(): void {
     // 대화상자를 닫은 뒤 실행해야 새 대화상자(긴급 차단)의 포커스가 남는다
     window.setTimeout(() => run(it), 0);
   };
-  input.addEventListener("input", () => { sel = 0; paint(); });
+  // 검수 122-10: 끝난 프로그램도 이름으로 — 입력이 멈추면(250ms) 서비스의 process.find(읽기만)로 찾는다
+  let findT = 0;
+  let findSeq = 0;
+  const findProgs = (q: string) => {
+    window.clearTimeout(findT);
+    const t = q.trim();
+    if (t.startsWith(">") || [...t].length < 2) return;
+    const seq = ++findSeq;
+    findT = window.setTimeout(async () => {
+      const r = await rpc<{ items: { node_id: number; label: string; image?: string | null }[] }>("process.find", { q: t.slice(0, 64), limit: 8 });
+      if (!r.ok || seq !== findSeq || !open) return;
+      const found: PaletteItem[] = r.result.items.map((f) => ({
+        kind: "program", label: sanitize(f.label, 120).text, hint: "프로그램 상세", target: f.node_id, keys: sanitize(f.image ?? f.label, 300).text,
+      }));
+      // 지금 연결이 열린 프로그램(먼저 읽은 것)과 이름이 같으면 하나만
+      const names = new Set(found.map((x) => x.label.toLowerCase()));
+      dyn = { ...dyn, programs: [...found, ...dyn.programs.filter((x) => !names.has(x.label.toLowerCase()))] };
+      paint();
+    }, 250);
+  };
+  input.addEventListener("input", () => { sel = 0; paint(); findProgs(input.value); });
   input.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(items.length - 1, sel + 1); mark(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); sel = Math.max(0, sel - 1); mark(); }

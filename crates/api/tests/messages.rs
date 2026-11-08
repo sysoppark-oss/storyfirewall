@@ -76,6 +76,7 @@ fn method_table_roles_and_idempotency_keys() {
             "cut.apply",
             "emergency.start",
             "emergency.stop",
+            "emergency.extend",
             "connections.kill",
             "retention.set",
             "settings.set",

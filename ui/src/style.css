@@ -734,3 +734,4 @@ dialog.palette input { width: 100%; box-sizing: border-box; border: 0; border-bo
 .pal-item.k-command .pal-label::before { content: "> "; color: var(--muted); }
 .pal-empty { padding: 10px 14px; }
 .pal-foot { border-top: 1px solid var(--line); padding: 6px 14px; }
+.tb-menu-actions { display: flex; gap: 8px; }

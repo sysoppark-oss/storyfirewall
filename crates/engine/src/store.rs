@@ -162,6 +162,20 @@ impl EngineStore {
         Ok((id, version))
     }
 
+    /// 지금 판의 일정만 바꾼다(긴급 차단 연장 — 필터는 그대로). 정책 행과 그 판의 기록 행을 함께
+    pub fn set_schedule(&self, id: i64, version: i64, schedule: &Schedule) -> Result<()> {
+        let sj = serde_json::to_string(schedule).unwrap();
+        self.conn.execute(
+            "UPDATE policies SET schedule_json = ?1 WHERE id = ?2",
+            params![sj, id],
+        )?;
+        self.conn.execute(
+            "UPDATE policy_versions SET schedule_json = ?1 WHERE policy_id = ?2 AND version = ?3",
+            params![sj, id, version],
+        )?;
+        Ok(())
+    }
+
     pub fn set_state(&self, id: i64, state: State, confirm_deadline: Option<i64>) -> Result<()> {
         self.conn.execute(
             "UPDATE policies SET state = ?1, confirm_deadline = ?2 WHERE id = ?3",

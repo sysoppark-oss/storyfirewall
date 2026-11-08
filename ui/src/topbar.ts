@@ -219,7 +219,17 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
         window.dispatchEvent(new Event(EMERGENCY_EVENT));
         void refresh();
       }, "btn small danger");
-      menu.append(off, el("p", "muted small", "기한이 지나거나 재부팅하면 저절로 풀립니다."));
+      // UI 명세 4판 3-1: [연장 30분] — 막는 범위는 그대로, 만료만 늦춘다(승인 창). 확인(유지) 전에는 서비스가 거부한다
+      const ext30 = button("30분 연장…", async () => {
+        ext30.disabled = true;
+        const r = await mutation("emergency.extend", { minutes: 30 });
+        ext30.disabled = false;
+        if (!r.ok) return menu.append(el("p", "error small", `연장: ${r.error.message}`));
+        window.dispatchEvent(new Event(EMERGENCY_EVENT));
+        void refresh();
+      }, "btn small");
+      ext30.dataset["cmd"] = "emg-extend";
+      menu.append(el("div", "tb-menu-actions", ext30, off), el("p", "muted small", "기한이 지나거나 재부팅하면 저절로 풀립니다. 연장은 한 번에 30분, 지금부터 하루를 넘지 않습니다."));
       emg.replaceChildren(stat, menu);
     } else if (er.ok) {
       const start = button("긴급 차단…", () => emergencyDialog(() => { window.dispatchEvent(new Event(EMERGENCY_EVENT)); void refresh(); }, st?.suggested_tools ?? []), "btn small danger");

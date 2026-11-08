@@ -559,6 +559,71 @@ impl<'a> Engine<'a> {
         Ok(result)
     }
 
+    /// 긴급 차단 연장(UI 명세 4판 3-1 [연장 30분]): 필터는 그대로 두고 만료 시각만 늦춘다.
+    /// - 확인(유지)된 긴급 차단에만. 60초 확인 중이면 거부(확인 전 상태를 늘리지 않는다)
+    /// - 한 번에 1~120분. 새 만료는 지금부터 1440분(하루)을 넘지 않는다(처음 걸 때 상한과 같음)
+    /// - 멱등: 같은 request_id 면 처음 결과(새 만료 시각)를 돌려준다
+    pub fn extend_emergency(&mut self, minutes: u32, request_id: &str, actor: &str) -> Result<i64> {
+        if let Some(prev) = self.store.idempotent_lookup(request_id)? {
+            // 연장 결과는 confirm_deadline 칸에 새 만료 시각을 담아 둔다(같은 멱등 표를 쓴다)
+            return Ok(prev.confirm_deadline);
+        }
+        if !(1..=120).contains(&minutes) {
+            return Err(EngineError::Invalid(vec!["연장은 1~120분".into()]));
+        }
+        let Some((id, version, exp, st)) = self.emergency_status()? else {
+            return Err(EngineError::Invalid(vec![
+                "걸린 긴급 차단이 없습니다".into()
+            ]));
+        };
+        if st != State::Confirmed {
+            return Err(EngineError::BadState(
+                "확인(유지) 전에는 연장하지 않습니다".into(),
+            ));
+        }
+        let row = self.store.policy(id)?.ok_or(EngineError::NotFound(id))?;
+        let mut sch = row.schedule.clone().unwrap_or(Schedule {
+            minutes: vec![],
+            days: vec![],
+            expires_at: None,
+            notify_on_expire: true,
+        });
+        let now = self.clock.wall();
+        let cap = now + 1440 * 60;
+        let new_exp = (exp.max(now) + i64::from(minutes) * 60).min(cap);
+        if new_exp <= exp {
+            return Err(EngineError::Invalid(vec![
+                "이미 최대 기한(하루)입니다".into()
+            ]));
+        }
+        sch.expires_at = Some(new_exp);
+        self.store.set_schedule(id, version, &sch)?;
+        self.store.history(
+            now,
+            id,
+            "extend",
+            actor,
+            &format!("emergency until {exp} -> {new_exp}"),
+        )?;
+        self.event(
+            "emergency_extended",
+            2,
+            format!("긴급 차단을 {minutes}분 늘렸습니다 — {new_exp} 까지"),
+        )?;
+        self.store.idempotent_save(
+            request_id,
+            &ApplyResult {
+                policy_id: id,
+                version,
+                filters: 0,
+                confirm_deadline: new_exp,
+                warnings: vec![],
+                address_block_notice: None,
+            },
+        )?;
+        Ok(new_exp)
+    }
+
     /// 지금 걸린 긴급 차단(Applied·Confirmed): (정책 번호, 판, 만료 시각, 상태)
     pub fn emergency_status(&self) -> Result<Option<(i64, i64, i64, State)>> {
         for st in [State::Applied, State::Confirmed] {
