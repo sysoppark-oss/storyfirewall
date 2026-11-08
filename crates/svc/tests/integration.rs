@@ -2206,6 +2206,9 @@ fn emergency_block_start_confirm_expire_and_stop() {
         "emergency.start",
         serde_json::json!({"request_id": rid(2), "minutes": 30, "remote_tools": [r"C:\Program Files\TeamViewer\TeamViewer.exe"]}),
     );
+    // 없는 경로 → 거부(A30: 없는 경로 하나가 WFP 0x2 로 긴급 차단 전체를 실패시켰다)
+    assert!(v["error"]["message"].as_str().unwrap_or("").contains("경로가 없습니다"), "{v}");
+    let v = a.call("emergency.start", serde_json::json!({"request_id": rid(8), "minutes": 30}));
     assert!(v["result"]["policy_id"].is_i64(), "{v}");
     assert!(v["result"]["filters"].as_u64().unwrap() >= 10, "{v}");
     let pid = v["result"]["policy_id"].as_i64().unwrap();

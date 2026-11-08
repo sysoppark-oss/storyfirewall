@@ -4,13 +4,17 @@
 use crate::runtime::World;
 use std::net::IpAddr;
 
-/// 이 앱 실행 파일: 서비스 자신 + 같은 폴더의 화면(UI)
+/// 이 앱 실행 파일: 서비스 자신 + 같은 폴더의 화면(UI). **있는 것만** — 없는 경로는 WFP 가
+/// FwpmGetAppIdFromFileName0 에서 0x2 로 실패해 긴급 차단 전체가 걸리지 않는다(A30 첫 실행: 러너 빌드 폴더에 UI 없음)
 pub fn own_images() -> Vec<String> {
     let mut v = Vec::new();
     if let Ok(me) = std::env::current_exe() {
         v.push(me.to_string_lossy().into_owned());
         if let Some(dir) = me.parent() {
-            v.push(dir.join("story-firewall-ui.exe").to_string_lossy().into_owned());
+            let ui = dir.join("story-firewall-ui.exe");
+            if ui.is_file() {
+                v.push(ui.to_string_lossy().into_owned());
+            }
         }
     }
     v
@@ -46,9 +50,14 @@ pub fn check_tools(tools: &[String]) -> Result<Vec<String>, String> {
 }
 
 pub fn input(world: &World, remote_tools: &[String]) -> Result<policy::emergency::Input, String> {
+    let tools = check_tools(remote_tools)?;
+    // 사용자가 적은 경로가 없으면 그 경로를 알려 주고 거부(조용히 빼면 그 도구가 막힌 줄 모른다)
+    if let Some(missing) = tools.iter().find(|t| !std::path::Path::new(t.as_str()).is_file()) {
+        return Err(format!("원격 도구 경로가 없습니다: {missing}"));
+    }
     Ok(policy::emergency::Input {
         own_images: own_images(),
-        remote_tools: check_tools(remote_tools)?,
+        remote_tools: tools,
         rdp_clients: rdp_clients(&world.host.rdp_sessions()),
     })
 }
