@@ -185,7 +185,7 @@ export function settings(): HTMLElement {
     el("div", "form",
       el("label", undefined, "화면 테마 ", theme),
       el("label", undefined, "보호 상태 표시(HUD) ", hudSel, " ", hudNote),
-      el("p", "muted small", "트레이 아이콘의 점 색: 빨강 = 미조치 심각, 주황 = 미조치 높음, 초록 = 없음, 회색 = 서비스 연결 끊김. 아이콘에 마우스를 올리면 수와 최근 사건이 나옵니다. 상시 창은 화면 오른쪽 아래에 늘 떠 있고 끌어서 옮길 수 있습니다."),
+      el("p", "muted small", "트레이 아이콘의 점 색: 진한 빨강 = 미조치 심각, 빨강 = 미조치 높음, 초록 = 없음, 회색 = 서비스 연결 끊김. 아이콘에 마우스를 올리면 수와 최근 인시던트가 나옵니다. 상시 창은 화면 오른쪽 아래에 늘 떠 있고, 누르면 본 창이 열리며 끌어서 옮길 수 있습니다."),
       el("h3", undefined, "알림"),
       el("label", undefined, toastBox, " 새 인시던트(높음 이상)를 Windows 알림으로 알리기(기본)"),
       el("p", "muted small", "앱 창을 닫아 두어도(트레이) 사건이 한 장 더 나아갈 때마다 한 번 알립니다. 원격 제어 시작 알림은 이 설정과 상관없이 늘 뜹니다."),

@@ -114,8 +114,9 @@ pub fn state_json(st: &HudState) -> serde_json::Value {
 /// 점 색(RGBA). 색만으로 뜻을 전하지 않도록 툴팁에 같은 내용이 있다
 pub fn tone_color(t: Tone) -> [u8; 4] {
     match t {
-        Tone::Critical => [0xE5, 0x48, 0x4D, 0xFF],
-        Tone::High => [0xF5, 0x9E, 0x0B, 0xFF],
+        Tone::Critical => [0xC8, 0x10, 0x2E, 0xFF],
+        // 검수 2026-11-08: 높음은 빨강 계열(대시보드 --bad), 주황은 "주의"에만(UI 명세 2판 2-1). 점 색 + 툴팁 글자로 구분
+        Tone::High => [0xFF, 0x6B, 0x6B, 0xFF],
         Tone::Ok => [0x22, 0xC5, 0x5E, 0xFF],
         Tone::Down => [0x8A, 0x8F, 0x98, 0xFF],
     }
@@ -197,7 +198,7 @@ pub fn apply_mode(app: &tauri::AppHandle, mode: &str) {
     }
     // install-109 실측: "index.html#hud" 는 앱 URL 에서 해시가 경로로 바뀌어 빈 창이 됐다 → 주소는 그대로, 창 이름(hud…)으로 알아본다.
     // 위치는 만들 때 논리 좌표로(만든 뒤 set_position 은 왼쪽 위에 그대로 있었다)
-    let (w_l, h_l) = (300.0, 92.0);
+    let (w_l, h_l) = (340.0, 84.0); // 검수: 최근 인시던트 줄이 잘려 넓힘([열기] 단추 없앰 — 창을 누르면 열림)
     let label = format!("hud-{}", HUD_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
     let mut b = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::App("index.html".into()))
         .title("Story Firewall HUD")
