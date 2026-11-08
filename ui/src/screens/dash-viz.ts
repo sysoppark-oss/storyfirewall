@@ -14,7 +14,23 @@ const ICONS: Record<string, string> = {
   list: "M5 7h14M5 12h14M5 17h9",
   heart: "M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z",
   eye: "M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+  // 조치 단추 아이콘(UI 명세 4판 3-5)
+  "shield-check": "M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3zM9 12l2 2 4-4",
+  scissors: "M6 6a2.5 2.5 0 1 0 0 .1M6 18a2.5 2.5 0 1 0 0 .1M8 7.5L20 18M8 16.5L20 6",
+  ban: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM5.6 5.6l12.8 12.8",
+  "check-circle": "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM8 12l3 3 5-6",
+  rewind: "M11 7l-6 5 6 5zM19 7l-6 5 6 5z",
+  copy: "M8 8h11v12H8zM5 16V4h11",
+  cog: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1",
+  file: "M6 3h8l4 4v14H6zM14 3v4h4",
 };
+
+/// 단추에 아이콘을 앞에 붙인다(글자는 그대로 — 아이콘만으로 뜻을 전하지 않는다)
+export function withIcon<T extends HTMLElement>(b: T, name: string): T {
+  b.prepend(icon(name), " ");
+  b.classList.add("has-icon");
+  return b;
+}
 
 export function icon(name: string): SVGElement {
   const s = document.createElementNS(NS, "svg");

@@ -422,6 +422,16 @@ fn summarize(
                 _ => v.state.clone(),
             };
             l.push(format!("사건 #{} {} 를 {}", v.root, label, what));
+            // 일괄 처리: 함께 바꿀 사건을 모두 보인다(승인 창에서 무엇이 바뀌는지 확인)
+            for r in &v.also {
+                let lb = world
+                    .graph
+                    .node(*r)
+                    .ok()
+                    .map(|n| n.label.clone())
+                    .unwrap_or_default();
+                l.push(format!("  + 사건 #{r} {lb}"));
+            }
             if let Some(n) = v.note.as_deref().filter(|n| !n.is_empty()) {
                 l.push(format!("  메모: {n}"));
             }
@@ -1010,6 +1020,18 @@ fn handle(
             } else {
                 None
             };
+            // 일괄(also): 모두 먼저 확인한 뒤 바꾼다 — 하나라도 없거나 범위 밖이면 아무것도 바꾸지 않는다
+            for r in &v.also {
+                if world.graph.node(*r).is_err() {
+                    return Err(RpcError::with(
+                        ErrorCode::InvalidParams,
+                        format!("없음: {r}"),
+                    ));
+                }
+                if !caller.scope().process_visible(&world.graph, *r) {
+                    return Err(out_of_scope());
+                }
+            }
             let rec = set_triage(
                 world,
                 v.root,
@@ -1018,7 +1040,17 @@ fn handle(
                 &actor(caller),
                 v.note.as_deref(),
             )?;
-            j(serde_json::to_value(rec).unwrap_or_default())
+            let mut also_done = 0usize;
+            for r in &v.also {
+                if set_triage(world, *r, state, action, &actor(caller), v.note.as_deref()).is_ok() {
+                    also_done += 1;
+                }
+            }
+            let mut out = serde_json::to_value(rec).unwrap_or_default();
+            if !v.also.is_empty() {
+                out["also_done"] = serde_json::json!(also_done);
+            }
+            j(out)
         }
         Method::StoryTriageLog => {
             let v: TriageLogParams = serde_json::from_value(p)

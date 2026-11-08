@@ -1,3 +1,4 @@
+import { withIcon } from "./dash-viz";
 import { parseFilter, matches, filterChips, dropChip, type StoryFilter } from "./story-filter";
 import { STAGES, STAGE_NAMES_4, TRIAGE_STATE, TRIAGE_ACTION, ACT, LEVEL, isHigh } from "../terms";
 import { mutation, rpc, uuid, type RpcResult, type RpcError } from "../rpc";
@@ -353,6 +354,52 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     chipRow.hidden = !cs.length;
   };
   paintChips();
+  // 4판 3-5: 일괄 처리 — 카드 왼쪽 체크칸, 2개 이상이면 아래 고정 바(처리 상태만: 분석 완료·지켜보기·예외 처리. 끊기·허용은 두지 않는다)
+  const selected = new Set<number>();
+  const bulk = el("div", "bulk-bar");
+  bulk.setAttribute("role", "region");
+  bulk.setAttribute("aria-label", "선택한 인시던트 일괄 처리");
+  bulk.hidden = true;
+  const paintBulk = () => {
+    const n = selected.size;
+    bulk.hidden = n < 2;
+    if (n < 2) return clear(bulk);
+    const roots = [...selected];
+    const out = el("span", "muted small");
+    const done = () => { selected.clear(); paintBulk(); void load(); };
+    const viaSet = async (state: "acted" | "closed", action?: "watch") => {
+      const note = state === "closed" ? (prompt("예외 처리 이유(선택, 200자까지)") ?? undefined) : undefined;
+      const r = await mutation("story.triage_set", { root: roots[0], state, ...(action ? { action } : {}), ...(note ? { note: note.slice(0, 200) } : {}), also: roots.slice(1) });
+      if (!r.ok) return void out.replaceChildren(el("span", "error", `실패: ${r.error.message}`));
+      done();
+    };
+    bulk.replaceChildren(el("b", undefined, `${n}개 선택`),
+      button("분석 완료", async () => {
+        // 조사됨은 조회 권한(승인 창 없음) — 새 인시던트만 바뀐다
+        await Promise.all(roots.map((root) => rpc("story.triage", { root, state: "investigated" })));
+        done();
+      }, "btn small"),
+      withIcon(button(`${ACT.watch} (승인 창 1번)`, () => void viaSet("acted", "watch"), "btn small"), "eye"),
+      withIcon(button(`${ACT.close}… (승인 창 1번)`, () => void viaSet("closed"), "btn small"), "check-circle"),
+      button("선택 해제", () => { selected.clear(); for (const b of cards.querySelectorAll<HTMLInputElement>("input.pick")) b.checked = false; paintBulk(); }, "btn small"),
+      out);
+  };
+  const pickBox = (root: number): HTMLInputElement => {
+    const b = el("input", "pick") as HTMLInputElement;
+    b.type = "checkbox";
+    b.checked = selected.has(root);
+    b.setAttribute("aria-label", `인시던트 #${root} 선택`);
+    b.addEventListener("change", () => { if (b.checked) selected.add(root); else selected.delete(root); paintBulk(); });
+    return b;
+  };
+  // 4판 3-3: [지켜보는 중] 칩 — 조치 완료 · 지켜보기만
+  const watchChip = button("지켜보는 중", () => {
+    filt = filt.watching ? dropChip(filt, "watching") : { ...filt, watching: true, triage: "done" };
+    if (filt.watching) triageSel.value = "done";
+    paintChips();
+    void load();
+  }, "chip filter-chip watch-chip");
+  watchChip.title = "조치 완료 · 모니터링으로 표시한 인시던트만";
   const countsLine = el("div", "muted small triage-counts");
   // 사건 추적 개수(화면이 새 사건을 조사됨으로 올릴 때 서비스를 다시 부르지 않고 이 값을 고쳐 보인다)
   let counts: TriageCounts | undefined;
@@ -367,7 +414,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     range.append(o);
   }
   range.addEventListener("change", () => void load());
-  root.append(el("div", "toolbar", "심각도 ", level, " 처리 상태 ", triageSel), chipRow, countsLine, cards, el("h2", "today-head", "엔드포인트 활동 타임라인 ", range), today);
+  root.append(el("div", "toolbar", "심각도 ", level, " 처리 상태 ", triageSel, " ", watchChip), chipRow, countsLine, cards, bulk, el("h2", "today-head", "엔드포인트 활동 타임라인 ", range), today);
 
   const explain = async (edgeId: number, into: HTMLElement) => {
     clear(into);
@@ -380,6 +427,8 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
 
   explainFn = explain;
   const load = async () => {
+    selected.clear();
+    paintBulk();
     clear(cards);
     clear(today);
     cards.append(loadingBox());
@@ -565,7 +614,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       }
       h3.title = chainTitle(name, ch);
       if (members.length > 1) h3.append(el("span", "badge count", `${members.length}번`));
-      const head = el("div", "card-head", levelChip(ev.level), triageChip(ev.triage), h3, when);
+      const head = el("div", "card-head", pickBox(ev.root), levelChip(ev.level), triageChip(ev.triage), h3, when);
       card.append(head);
       if (members.length > 1) {
         const first = members.reduce((a, m) => Math.min(a, m.last_ts || a), Infinity);
@@ -585,19 +634,19 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       const actions = el("div", "actions");
       let normalBtn: HTMLButtonElement | null = null;
       if (ev.feedback_ok !== false) {
-        normalBtn = button(ACT.normal, async () => {
+        normalBtn = withIcon(button(ACT.normal, async () => {
           // 프로세스에서 시작한 사건: 정상으로 보는 범위(조합)를 먼저 보이고 확인받는다 — 도구 전체가 아니라 이 조합만
           if (ev.feedback_unit && !confirm(feedbackUnitText(ev.feedback_unit))) return;
           const r2 = await mutation("judge.feedback_normal", { root: ev.root });
           if (!r2.ok) return alert(`실패: ${r2.error.message}`);
           // 정상 처리 = 조치함(정상)으로 서비스가 적는다 — 이 카드만 옮긴다(39차 Q5)
           settleCard({ state: "acted", action: "normal", chapter: ev.triage?.chapter ?? 0, updated_ts: Math.floor(Date.now() / 1000) });
-        });
+        }), "shield-check");
       }
       // D020-1: 핵심 프로세스는 끝내지 않는다 — 같은 자리에 "이 접속지만 차단"
       const cutBtn = ev.root_core
-        ? button(ACT.cutAddrOnly, () => void cutDialog(ev.root, card, "접속지만 차단"), "btn danger-outline")
-        : button(ACT.cut, () => void cutDialog(ev.root, card), "btn danger-outline");
+        ? withIcon(button(ACT.cutAddrOnly, () => void cutDialog(ev.root, card, "접속지만 차단"), "btn danger-outline"), "ban")
+        : withIcon(button(ACT.cut, () => void cutDialog(ev.root, card), "btn danger-outline"), "scissors");
       card.append(investigateBox(ev.root, ev.destroy?.cmdline ?? null, (rec) => {
         // D1: 빨간 채움 단추는 쓰지 않는다 — 권장이면 테두리를 굵게 하고 "권장" 표시만
         if (rec === "cut") { cutBtn.classList.add("recommended"); cutBtn.prepend("권장 · "); }
@@ -649,9 +698,9 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
         }
       };
       const st = ev.triage?.state ?? "new";
-      const watchBtn = button(ACT.watch, () => void triageSet("acted", "watch"), "btn");
+      const watchBtn = withIcon(button(ACT.watch, () => void triageSet("acted", "watch"), "btn"), "eye");
       watchBtn.title = ACT.watchTip;
-      const closeBtn = button(ACT.close, () => void triageSet("closed"), "btn");
+      const closeBtn = withIcon(button(ACT.close, () => void triageSet("closed"), "btn"), "check-circle");
       closeBtn.title = ACT.closeTip;
       // 3) 조치 + 4) 자세히(탭 단추: 누르면 아래 한 칸에 하나만)
       const panel = el("div", "detail-panel");
@@ -660,12 +709,16 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
         const b = button(label, () => {
           const open = panel.dataset["tab"] === key;
           clear(panel);
-          tabs.forEach((t) => t.classList.remove("on"));
+          tabs.forEach((t) => { t.classList.remove("on"); t.setAttribute("aria-selected", "false"); });
           if (open) { delete panel.dataset["tab"]; return; }
           panel.dataset["tab"] = key;
           b.classList.add("on");
+          b.setAttribute("aria-selected", "true");
           panel.append(make());
-        }, "btn tab-btn");
+        }, "u-tab tab-btn");
+        // UI 명세 4판 3-5: 밑줄 탭(한 번에 하나, 다시 누르면 닫힘)
+        b.setAttribute("role", "tab");
+        b.setAttribute("aria-selected", "false");
         b.dataset["tab"] = key;
         tabs.push(b);
         return b;
@@ -696,6 +749,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
           await triageSet("investigated");
           undo.remove();
         }, "btn");
+        withIcon(undo, "rewind");
         undo.title = auto.policyId > 0 ? `자동 대응 정책 ${auto.policyId}:${auto.version} 을 되돌립니다` : "되돌릴 정책이 없습니다(종료만 했음) — 사건만 다시 엽니다";
         actions.append(undo);
       }

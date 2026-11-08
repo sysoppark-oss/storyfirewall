@@ -543,8 +543,9 @@ details.where-panel { border-radius: 16px; }
 .card-head h3 .chain-part { color: var(--muted); font-weight: 500; }
 .card-head h3 .chain-arrow { color: var(--muted); font-weight: 400; }
 .card-head h3 .hero-name { font-weight: 700; }
-.actions .tab-btn { padding: 4px 10px; font-size: 13px; }
-.actions .tab-btn.on { border-color: var(--brand-strong); color: var(--brand-strong); }
+/* UI 명세 4판 3-5: 카드 자세히 = 밑줄 탭 */
+.actions .tab-btn { padding: 4px 8px; font-size: 13px; }
+.actions .tab-btn.on { color: var(--fg); border-bottom-color: var(--brand-strong); font-weight: 600; }
 .detail-panel:empty { display: none; }
 .detail-panel { margin-top: 8px; }
 .facts-panel { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
@@ -674,3 +675,10 @@ body.hud-body #app { display: block; }
 .conn.live .c-act { white-space: nowrap; text-align: right; }
 .chip.level-link { border: 1px solid var(--bad); color: var(--bad); background: transparent; font: inherit; font-size: 11px; padding: 0 8px; border-radius: 999px; cursor: pointer; }
 .conn-quick { margin: 0 0 8px; } .btn.link-btn { border: 0; background: transparent; color: var(--brand-strong); padding: 0; }
+
+/* 4판 3-5: 조치 단추 아이콘 · 일괄 처리 바 · 카드 체크칸 */
+.btn.has-icon { display: inline-flex; align-items: center; gap: 4px; } .btn.has-icon .kpi-icon { width: 15px; height: 15px; }
+.card-head input.pick { width: 16px; height: 16px; margin: 0 4px 0 0; flex: none; }
+.bulk-bar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; margin-top: 10px; background: var(--card); border: 1px solid var(--brand-strong); border-radius: 10px; box-shadow: 0 -4px 16px rgba(0,0,0,.25); }
+.bulk-bar[hidden] { display: none; }
+.watch-chip[aria-pressed="true"] { background: color-mix(in srgb, var(--brand-strong) 15%, transparent); }

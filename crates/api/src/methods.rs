@@ -329,6 +329,9 @@ pub struct TriageSetParams {
     /// 사용자 메모(200자까지)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// 일괄 처리(UI 명세 4판 3-5): 같은 상태로 함께 바꿀 다른 뿌리들(50개까지) — 승인 창 한 번
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also: Vec<i64>,
 }
 /// story.triage_log
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -535,6 +538,7 @@ pub fn validate_params(
                     || matches!(v.action.as_deref(), Some("normal" | "cut" | "watch")),
                 "acted 는 action(normal|cut|watch) 필수",
             )?;
+            check(v.also.len() <= 50, "also 는 50개까지")?;
             check(
                 v.note.as_ref().is_none_or(|n| n.chars().count() <= 200),
                 "note 는 200자까지",
