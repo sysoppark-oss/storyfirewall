@@ -2184,3 +2184,60 @@ fn auto_destroy_response_cuts_unsigned_origin_without_asking() {
     assert_eq!(killed.lock().unwrap().len(), n);
     rt.shutdown();
 }
+
+/// 대시보드 개편안 3판 1-1(9단계) 긴급 차단: 시작 → 상태(확인 대기) → 유지(confirm) → 기한 만료 / 해제.
+/// 예외에 시스템 핵심 프로세스(svchost)를 넣으면 거부. 60초 안에 유지하지 않으면 자동으로 되돌아간다.
+#[test]
+fn emergency_block_start_confirm_expire_and_stop() {
+    let (rt, wall, mono) = boot();
+    let mut a = Client::connect(&rt, 100, 1);
+    a.hello();
+    let rid = |n: u32| format!("0f3c2a1e-9b7d-4c6a-8e5f-{n:012x}");
+    // 꺼진 상태
+    assert_eq!(a.call("emergency.status", serde_json::json!({}))["result"]["active"], false);
+    // svchost 를 원격 도구 예외로 → 거부
+    let v = a.call(
+        "emergency.start",
+        serde_json::json!({"request_id": rid(1), "minutes": 30, "remote_tools": [r"C:\Windows\System32\svchost.exe"]}),
+    );
+    assert!(v["error"].is_object(), "{v}");
+    // 시작: 필터가 들어가고 확인 대기
+    let v = a.call(
+        "emergency.start",
+        serde_json::json!({"request_id": rid(2), "minutes": 30, "remote_tools": [r"C:\Program Files\TeamViewer\TeamViewer.exe"]}),
+    );
+    assert!(v["result"]["policy_id"].is_i64(), "{v}");
+    assert!(v["result"]["filters"].as_u64().unwrap() >= 10, "{v}");
+    let pid = v["result"]["policy_id"].as_i64().unwrap();
+    let ver = v["result"]["version"].as_i64().unwrap();
+    let st = a.call("emergency.status", serde_json::json!({}));
+    assert_eq!(st["result"]["active"], true, "{st}");
+    assert_eq!(st["result"]["confirmed"], false, "{st}");
+    assert_eq!(st["result"]["remaining_secs"], 1800, "{st}");
+    // 유지
+    let v = a.call("policy.confirm", serde_json::json!({"request_id": rid(3), "policy_id": pid, "version": ver}));
+    assert_eq!(v["result"]["ok"], true, "{v}");
+    assert_eq!(a.call("emergency.status", serde_json::json!({}))["result"]["confirmed"], true);
+    // 기한 지나면 풀린다
+    wall.fetch_add(1801, Ordering::SeqCst);
+    mono.fetch_add(1801, Ordering::SeqCst);
+    rt.tx.send(Command::Tick).unwrap();
+    let st = a.call("emergency.status", serde_json::json!({}));
+    assert_eq!(st["result"]["active"], false, "{st}");
+    // 다시 걸고 해제(stop)
+    let v = a.call("emergency.start", serde_json::json!({"request_id": rid(4), "minutes": 5}));
+    assert!(v["result"]["policy_id"].is_i64(), "{v}");
+    let v = a.call("emergency.stop", serde_json::json!({"request_id": rid(5)}));
+    assert_eq!(v["result"]["ok"], true, "{v}");
+    assert_eq!(a.call("emergency.status", serde_json::json!({}))["result"]["active"], false);
+    // 없는데 해제 → 오류
+    let v = a.call("emergency.stop", serde_json::json!({"request_id": rid(6)}));
+    assert!(v["error"].is_object(), "{v}");
+    // 60초 안에 유지 안 하면 자동 롤백
+    let v = a.call("emergency.start", serde_json::json!({"request_id": rid(7), "minutes": 30}));
+    assert!(v["result"]["policy_id"].is_i64(), "{v}");
+    mono.fetch_add(61, Ordering::SeqCst);
+    rt.tx.send(Command::Tick).unwrap();
+    assert_eq!(a.call("emergency.status", serde_json::json!({}))["result"]["active"], false);
+    rt.shutdown();
+}

@@ -1273,3 +1273,51 @@ fn reconcile_rebinds_interface_filters_to_current_luid() {
     drop(e);
     assert_eq!(iface_id(&wfp), before);
 }
+
+/// 대시보드 개편안 3판 1-1: 긴급 차단 필터는 영구가 아니라 재부팅하면 사라진다. 재시작 대조(reconcile)는
+/// 그 필터를 되살리지 않고 정책을 만료로 닫아야 한다(자가 치유가 PC 를 다시 가두지 않게).
+/// 다른 정책의 사라진 필터는 지금처럼 되살린다.
+#[test]
+fn emergency_filters_lost_on_reboot_are_not_restored() {
+    let clock = FakeClock::new(MONDAY_0000);
+    let mut wfp = FakeWfp::default();
+    let dir = std::env::temp_dir().join(format!("engine-emg-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("engine.db");
+    let _ = std::fs::remove_file(&path);
+    let specs = policy::emergency::plan(&policy::emergency::Input {
+        own_images: vec![r"C:\Program Files\Story Firewall\story-firewall-svc.exe".into()],
+        remote_tools: vec![],
+        rdp_clients: vec![],
+    });
+    let (emg_ids, other_ids) = {
+        let mut e = Engine::new(rusqlite::Connection::open(&path).unwrap(), &mut wfp, &NoGraph, &clock, &R, &[]).unwrap();
+        e.apply(SIMPLE, &[], "r1", "ui").unwrap();
+        e.confirm(1, 1, "ui").unwrap();
+        // 조건 없는 허용이 섞이면 거부
+        let mut bad = specs.clone();
+        let mut open = bad[0].clone();
+        open.action = policy::spec::Action::Permit;
+        bad.push(open);
+        assert!(matches!(e.apply_emergency(&bad, 30, "r0", "ui"), Err(EngineError::Guard(_))));
+        // 기한 범위 밖 거부
+        assert!(e.apply_emergency(&specs, 0, "r9", "ui").is_err());
+        let r = e.apply_emergency(&specs, 30, "r2", "ui").unwrap();
+        e.confirm(r.policy_id, r.version, "ui").unwrap();
+        let (id, _, exp, st) = e.emergency_status().unwrap().unwrap();
+        assert_eq!((id, st, exp), (r.policy_id, State::Confirmed, MONDAY_0000 + 1800));
+        let emg: Vec<u64> = e.store.filters_of(r.policy_id).unwrap().iter().map(|f| f.filter_id).collect();
+        let other: Vec<u64> = e.store.filters_of(1).unwrap().iter().map(|f| f.filter_id).collect();
+        (emg, other)
+    };
+    // 재부팅: 긴급 차단 필터는 전부 사라짐(비영구), 다른 정책 필터 하나도 외부 삭제
+    for id in &emg_ids {
+        assert!(wfp.external_delete(*id));
+    }
+    assert!(wfp.external_delete(other_ids[0]));
+    let mut e = Engine::new(rusqlite::Connection::open(&path).unwrap(), &mut wfp, &NoGraph, &clock, &R, &[]).unwrap();
+    let (restored, _) = e.reconcile().unwrap();
+    assert_eq!(restored, 1, "다른 정책 필터만 되살림");
+    assert!(e.emergency_status().unwrap().is_none(), "긴급 차단은 만료로 닫힘");
+    assert!(e.events.iter().any(|ev| ev.kind == "emergency_off"));
+}

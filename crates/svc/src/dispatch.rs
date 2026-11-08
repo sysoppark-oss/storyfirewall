@@ -171,6 +171,20 @@ fn summarize(
     use api::methods::*;
     let mut l: Vec<String> = Vec::new();
     match method {
+        Method::EmergencyStart => {
+            let v: EmergencyStartParams = from(p)?;
+            let inp = crate::emergency::input(world, &v.remote_tools)
+                .map_err(|e| RpcError::with(ErrorCode::GuardRejected, e))?;
+            l.push(format!("긴급 차단 {}분", v.minutes));
+            l.extend(policy::emergency::summary(&inp));
+        }
+        Method::EmergencyStop => {
+            let st = crate::emergency::status(world);
+            if st["active"] != serde_json::json!(true) {
+                return Err(RpcError::with(ErrorCode::InvalidParams, "걸린 긴급 차단이 없습니다"));
+            }
+            l.push(format!("긴급 차단을 풉니다 (남은 시간 {}분)", st["remaining_secs"].as_i64().unwrap_or(0) / 60));
+        }
         Method::CutApply => {
             let v: CutParams = from(p)?;
             let plan =
@@ -1649,6 +1663,38 @@ fn handle(
                 out["validation"] = serde_json::json!({ "errors": val.errors.iter().map(|e| e.to_string()).collect::<Vec<_>>(), "warnings": val.warnings });
             }
             j(out)
+        }
+        Method::EmergencyStatus => j(crate::emergency::status(world)),
+        Method::EmergencyStart => {
+            let v: EmergencyStartParams = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            let inp = crate::emergency::input(world, &v.remote_tools)
+                .map_err(|e| RpcError::with(ErrorCode::GuardRejected, e))?;
+            let specs = policy::emergency::plan(&inp);
+            let r = world
+                .engine
+                .apply_emergency(&specs, v.minutes, &v.request_id, &actor(caller))
+                .map_err(engine_err)?;
+            crate::runtime::flush_events(world);
+            world.notify(
+                api::methods::NOTIFY_EVENT,
+                serde_json::json!({"kind": "emergency_on", "severity": 3, "policy_id": r.policy_id, "minutes": v.minutes}),
+            );
+            j(serde_json::json!({
+                "policy_id": r.policy_id, "version": r.version, "filters": r.filters,
+                "confirm_deadline": r.confirm_deadline, "rdp_clients": inp.rdp_clients.iter().map(|i| i.to_string()).collect::<Vec<_>>(),
+            }))
+        }
+        Method::EmergencyStop => {
+            let _: RequestOnly = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            let Some((id, _, _, _)) = world.engine.emergency_status().map_err(engine_err)? else {
+                return Err(RpcError::with(ErrorCode::InvalidParams, "걸린 긴급 차단이 없습니다"));
+            };
+            world.engine.rollback(id, None, &actor(caller)).map_err(engine_err)?;
+            let _ = world.engine.record_event("emergency_off", 2, "긴급 차단을 풀었습니다".into());
+            crate::runtime::flush_events(world);
+            j(serde_json::json!({ "ok": true, "policy_id": id }))
         }
         Method::CutApply => {
             let v: CutParams = serde_json::from_value(p)

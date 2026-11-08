@@ -80,6 +80,14 @@ pub struct BlockSpec {
     /// 엔진은 백엔드에 넘기기 전에 `split_family` 로 나눠 1:1 을 지킨다.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ip_family: Option<IpFamily>,
+    /// 긴급 차단(대시보드 개편안 3판 1-1) 필터: 전용 Sublayer, 영구(PERSISTENT) 아님 — 재부팅하면 풀린다(안전판).
+    /// 전용 Sublayer 라 이 안의 허용(예외)은 다른 Sublayer 의 차단(끊기 등)을 뚫지 못한다.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub emergency: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,6 +130,7 @@ impl BlockSpec {
             protocols: Vec::new(),
             weight: None,
             ip_family: None,
+            emergency: false,
         }
     }
 

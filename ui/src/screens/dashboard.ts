@@ -98,6 +98,60 @@ interface Health {
   wfp_filters?: number;
   db_bytes?: number | null;
 }
+/// 긴급 차단 상태(emergency.status) — 대시보드 개편안 3판 1-1
+export interface EmergencyStatus {
+  active: boolean;
+  policy_id?: number;
+  version?: number;
+  expires_at?: number;
+  remaining_secs?: number;
+  confirmed?: boolean;
+}
+/// 상단 띠의 긴급 차단 문구(순수 함수 — 시험용). 걸려 있지 않으면 null
+export function emergencyText(st: EmergencyStatus | null): string | null {
+  if (!st || !st.active) return null;
+  const left = Math.max(0, st.remaining_secs ?? 0);
+  const m = Math.ceil(left / 60);
+  const when = m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분 남음` : `${m}분 남음`;
+  return st.confirmed === false ? `긴급 차단 · 유지 확인 대기` : `긴급 차단 중 · ${when}`;
+}
+
+/// 긴급 차단 대화상자: 기한·원격 도구 예외를 고르고 승인 창으로 보낸다(서비스가 RDP 세션은 자동으로 예외)
+function emergencyDialog(done: () => void) {
+  const dlg = el("dialog", "ack");
+  dlg.append(el("h3", undefined, "긴급 차단"));
+  dlg.append(el("p", undefined, "이 PC 의 나가는·들어오는 통신을 모두 막습니다. 예외: 이 PC 안 통신(루프백) · DNS · DHCP · 이 앱 · 지금 접속한 원격 데스크톱 세션의 상대 IP · 아래에 적은 원격 도구."));
+  dlg.append(el("p", "muted small", "승인 창에서 확인한 뒤 60초 안에 [유지]를 눌러야 유지됩니다(원격으로 접속해 있다가 끊기면 자동으로 되돌아갑니다). 재부팅하면 풀립니다. 이미 열려 있는 연결도 끊길 수 있습니다."));
+  const mins = el("select") as HTMLSelectElement;
+  for (const [v, t] of [[15, "15분"], [30, "30분 (기본)"], [60, "1시간"], [120, "2시간"], [480, "8시간"]] as const) {
+    const o = el("option", undefined, t) as HTMLOptionElement;
+    o.value = String(v);
+    if (v === 30) o.selected = true;
+    mins.append(o);
+  }
+  dlg.append(el("label", undefined, "기한 ", mins));
+  const tools = el("textarea") as HTMLTextAreaElement;
+  tools.rows = 3;
+  tools.placeholder = "예외로 둘 원격 도구 실행 파일 경로(한 줄에 하나, 8개까지)\n예: C:\\Program Files\\TeamViewer\\TeamViewer.exe";
+  tools.style.width = "100%";
+  dlg.append(el("label", "block", "원격 도구 예외", tools));
+  const out = el("div");
+  const go = button("승인 창 열기", async () => {
+    go.disabled = true;
+    const list = tools.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).slice(0, 8);
+    const r = await mutation("emergency.start", { minutes: Number(mins.value), remote_tools: list });
+    go.disabled = false;
+    if (!r.ok) return out.replaceChildren(el("p", "error", `긴급 차단: ${r.error.message}`));
+    dlg.close();
+    dlg.remove();
+    done();
+  }, "btn danger");
+  const cancel = button("취소", () => { dlg.close(); dlg.remove(); }, "btn");
+  dlg.append(out, el("div", "actions", go, cancel));
+  document.body.append(dlg);
+  dlg.showModal();
+}
+
 /// 개편안 2판 3-2 상단 띠 뱃지 문구(순수 함수 — 시험용). 수치가 없으면 그 뱃지는 뺀다
 export function engineBadges(h: Health | null, policies: number, pending: number): string[] {
   const out: string[] = [];
@@ -465,6 +519,27 @@ export function dashboard(): HTMLElement {
     svcBadge.title = (svcBody.textContent ?? "").trim();
     strip.append(svcBadge);
     for (const t of engineBadges(hr.ok ? hr.result : null, applied, pend)) strip.append(el("span", "badge", t));
+    // 대시보드 개편안 3판 1-1: 긴급 차단 상태·단추(상태 조회가 늦어도 띠는 먼저 그린다)
+    const emgSlot = el("span", "emg-slot");
+    strip.append(emgSlot);
+    void (async () => {
+      const er = await rpc<EmergencyStatus>("emergency.status", {});
+      const st = er.ok ? er.result : null;
+      const t = emergencyText(st);
+      if (t) {
+        const b = el("span", "badge badge-crit", icon("shield"), ` ${t}`);
+        const off = button("해제…", async () => {
+          off.disabled = true;
+          const r = await mutation("emergency.stop", {});
+          off.disabled = false;
+          if (r.ok) void refresh();
+          else b.title = r.error.message;
+        }, "btn small");
+        emgSlot.replaceChildren(b, off);
+      } else if (er.ok) {
+        emgSlot.replaceChildren(button("긴급 차단…", () => emergencyDialog(() => void refresh()), "btn small danger"));
+      }
+    })();
     const more = el("a", "badge-link", "진단 ›");
     more.href = "#";
     more.addEventListener("click", (e) => { e.preventDefault(); state.go("settings", {}); });

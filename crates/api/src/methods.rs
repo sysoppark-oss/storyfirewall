@@ -54,6 +54,10 @@ pub enum Method {
     PolicyList,
     CutPreview,
     CutApply,
+    /// 긴급 차단(대시보드 개편안 3판 1-1): 전체 차단 + 좁은 예외, 기한부, 60초 확인
+    EmergencyStart,
+    EmergencyStop,
+    EmergencyStatus,
     RetentionGet,
     RetentionSet,
     SettingsGet,
@@ -116,6 +120,9 @@ impl Method {
         ("policy.list", Method::PolicyList),
         ("cut.preview", Method::CutPreview),
         ("cut.apply", Method::CutApply),
+        ("emergency.start", Method::EmergencyStart),
+        ("emergency.stop", Method::EmergencyStop),
+        ("emergency.status", Method::EmergencyStatus),
         ("retention.get", Method::RetentionGet),
         ("retention.set", Method::RetentionSet),
         ("settings.get", Method::SettingsGet),
@@ -153,6 +160,8 @@ impl Method {
             | Method::PolicyPause
             | Method::PolicyReleaseAddressBlocks
             | Method::CutApply
+            | Method::EmergencyStart
+            | Method::EmergencyStop
             | Method::RetentionSet
             | Method::SettingsSet
             | Method::ChangeGet
@@ -175,6 +184,8 @@ impl Method {
                 | Method::PolicyPause
                 | Method::PolicyReleaseAddressBlocks
                 | Method::CutApply
+                | Method::EmergencyStart
+                | Method::EmergencyStop
                 | Method::RetentionSet
                 | Method::SettingsSet
         )
@@ -591,6 +602,23 @@ pub fn validate_params(
                 "also 는 terminate|terminate_injected|quarantine|remove_autorun",
             )?;
         }
+        Method::EmergencyStart => {
+            let v: EmergencyStartParams = serde_json::from_value(p.clone())
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            check((1..=1440).contains(&v.minutes), "minutes 는 1~1440")?;
+            check(v.remote_tools.len() <= 8, "remote_tools 는 8개까지")?;
+            check(
+                v.remote_tools.iter().all(|t| {
+                    let l = t.to_ascii_lowercase();
+                    t.len() <= 260 && l.ends_with(".exe") && (l.as_bytes().get(1) == Some(&b':') || l.starts_with("\\\\"))
+                }),
+                "remote_tools 는 실행 파일 절대 경로(.exe)",
+            )?;
+        }
+        Method::EmergencyStop => {
+            let _: RequestOnly = serde_json::from_value(p.clone())
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+        }
         Method::ConnectionsList
         | Method::ListenersList
         | Method::NetInterfaces
@@ -605,7 +633,8 @@ pub fn validate_params(
         | Method::RetentionGet
         | Method::SettingsGet
         | Method::CollectorHealth
-        | Method::TrafficHourly => {}
+        | Method::TrafficHourly
+        | Method::EmergencyStatus => {}
         Method::ServiceEvents => {
             let v: ServiceEventsParams = serde_json::from_value(p.clone())
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
@@ -717,4 +746,26 @@ fn default_install_days() -> u32 {
 }
 fn default_install_limit() -> u32 {
     30
+}
+
+/// emergency.start (대시보드 개편안 3판 1-1)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmergencyStartParams {
+    pub request_id: String,
+    /// 기한(분). 기본 30
+    #[serde(default = "default_emergency_minutes")]
+    pub minutes: u32,
+    /// 예외로 둘 원격 도구 실행 파일 경로(양방향 허용). RDP 는 지금 접속한 세션에서 자동으로 채운다
+    #[serde(default)]
+    pub remote_tools: Vec<String>,
+}
+
+fn default_emergency_minutes() -> u32 {
+    30
+}
+
+/// request_id 만 받는 변경(emergency.stop)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestOnly {
+    pub request_id: String,
 }

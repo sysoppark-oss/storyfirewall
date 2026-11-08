@@ -332,6 +332,7 @@ impl<'a> Engine<'a> {
                 protocols: vec![proto],
                 weight: None,
                 ip_family: None,
+                emergency: false,
             });
         }
         if !addr_specs.is_empty() {
@@ -471,6 +472,89 @@ impl<'a> Engine<'a> {
         };
         self.store.idempotent_save(request_id, &result)?;
         Ok(result)
+    }
+
+    /// 긴급 차단(대시보드 개편안 3판 1-1): `policy::emergency::plan` 명세를 기한부 정책 하나로 건다.
+    /// - DSL·가드를 거치지 않는 유일한 "전체 차단" 경로. 명세는 모두 `emergency`(전용 Sublayer, 비영구)여야 하고,
+    ///   허용은 프로그램·포트·주소 조건이 있어야 한다(전체 허용 금지) — 여기서 다시 확인한다.
+    /// - 60초 확인(유지) 대상: 원격으로 접속한 관리자가 스스로를 잠갔으면 확인을 못 해 자동으로 되돌아간다.
+    /// - 기한: `minutes`(1~1440). 연장은 같은 이름으로 다시 걸기(새 판).
+    pub fn apply_emergency(
+        &mut self,
+        specs: &[BlockSpec],
+        minutes: u32,
+        request_id: &str,
+        actor: &str,
+    ) -> Result<ApplyResult> {
+        if let Some(prev) = self.store.idempotent_lookup(request_id)? {
+            return Ok(prev);
+        }
+        if !(1..=1440).contains(&minutes) {
+            return Err(EngineError::Invalid(vec!["긴급 차단 기한은 1~1440분".into()]));
+        }
+        if specs.is_empty() || !specs.iter().all(|s| s.emergency) {
+            return Err(EngineError::Invalid(vec!["긴급 차단 명세가 아님".into()]));
+        }
+        if specs.iter().any(|s| s.action == Action::Permit && s.is_empty_match()) {
+            return Err(EngineError::Guard("긴급 차단 예외에 조건 없는 전체 허용".into()));
+        }
+        if !specs.iter().any(|s| s.action == Action::Block) {
+            return Err(EngineError::Invalid(vec!["긴급 차단에 차단 명세가 없음".into()]));
+        }
+        let now = self.clock.wall();
+        let expires_at = now + i64::from(minutes) * 60;
+        let schedule = Schedule {
+            minutes: vec![],
+            days: vec![],
+            expires_at: Some(expires_at),
+            notify_on_expire: true,
+        };
+        let name = policy::emergency::POLICY_NAME;
+        let note = format!("긴급 차단 {minutes}분 (예외 {}건)", specs.iter().filter(|s| s.action == Action::Permit).count());
+        let (policy_id, version) = self.store.new_version(name, &note, specs, Some(&schedule), now, actor)?;
+        let prev_ids: Vec<u64> = self
+            .store
+            .filters_of(policy_id)?
+            .iter()
+            .map(|r| r.filter_id)
+            .collect();
+        let n = self.swap(policy_id, version, &prev_ids, specs)?;
+        let confirm_deadline = now + CONFIRM_SECS;
+        self.confirm_mono
+            .insert(policy_id, self.clock.mono() + CONFIRM_SECS);
+        self.store
+            .set_state(policy_id, State::Applied, Some(confirm_deadline))?;
+        self.store.history(
+            now,
+            policy_id,
+            "apply",
+            actor,
+            &format!("version {version}, emergency until {expires_at}, filters {n}"),
+        )?;
+        self.event("emergency_on", 3, format!("{note} — {expires_at} 까지"))?;
+        let result = ApplyResult {
+            policy_id,
+            version,
+            filters: n,
+            confirm_deadline,
+            warnings: vec![],
+            address_block_notice: None,
+        };
+        self.store.idempotent_save(request_id, &result)?;
+        Ok(result)
+    }
+
+    /// 지금 걸린 긴급 차단(Applied·Confirmed): (정책 번호, 판, 만료 시각, 상태)
+    pub fn emergency_status(&self) -> Result<Option<(i64, i64, i64, State)>> {
+        for st in [State::Applied, State::Confirmed] {
+            for row in self.store.policies_in(st)? {
+                if row.name == policy::emergency::POLICY_NAME {
+                    let exp = row.schedule.as_ref().and_then(|s| s.expires_at).unwrap_or(0);
+                    return Ok(Some((row.id, row.version, exp, st)));
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// 확인된 우산 정책 아래에 기한부 경로 차단을 더한다 (자동 집행). 새 정책을 만들지 않는다 — 사람이 확인한 우산의 범위 안에서만.
@@ -1387,6 +1471,27 @@ impl<'a> Engine<'a> {
             .collect();
         let mut db_ids: HashSet<u64> = HashSet::new();
         let mut restored = 0;
+        // 긴급 차단 필터는 영구가 아니라 재부팅하면 사라진다(안전판, 3판 1-1). 그 필터가 하나도 살아 있지 않으면
+        // 되살리지 않고 정책을 만료로 닫는다 — 자가 치유가 재부팅 뒤 PC 를 다시 가두지 않게.
+        if let Some((eid, _, _, _)) = self.emergency_status()? {
+            let ef = self.store.filters_of(eid)?;
+            if !ef.is_empty() && !ef.iter().any(|r| live.contains(&r.filter_id)) {
+                self.removing.extend(ef.iter().map(|r| r.filter_id));
+                let tx = self.store.conn.unchecked_transaction()?;
+                for r in &ef {
+                    tx.execute("DELETE FROM wfp_filters WHERE filter_id = ?1", [r.filter_id as i64])?;
+                }
+                tx.commit()?;
+                for r in &ef {
+                    self.removing.remove(&r.filter_id);
+                }
+                self.confirm_mono.remove(&eid);
+                self.store.set_state(eid, State::Expired, None)?;
+                self.store
+                    .history(self.clock.wall(), eid, "expire", "system:reboot", "재부팅으로 해제")?;
+                self.event("emergency_off", 2, "긴급 차단이 재부팅으로 풀렸습니다(다시 걸지 않음)".into())?;
+            }
+        }
         for row in self.store.all_filters()? {
             db_ids.insert(row.filter_id);
             let active = self.store.policy(row.policy_id)?.map_or(false, |p| {

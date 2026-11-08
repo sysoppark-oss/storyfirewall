@@ -74,6 +74,8 @@ fn method_table_roles_and_idempotency_keys() {
             "policy.pause",
             "policy.release_address_blocks",
             "cut.apply",
+            "emergency.start",
+            "emergency.stop",
             "retention.set",
             "settings.set",
             "change.get",

@@ -12,6 +12,7 @@
 //! 수집기는 `Event` 채널. Linux 에서는 가짜로 통합 테스트.
 
 pub mod auto_respond;
+pub mod emergency;
 pub mod blocked;
 pub mod change;
 pub mod cut;

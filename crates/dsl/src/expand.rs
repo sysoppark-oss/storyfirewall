@@ -330,6 +330,7 @@ pub fn expand(p: &Policy, resolver: &dyn Resolver) -> Result<Expanded> {
         } else {
             None
         },
+        emergency: false,
     };
     for dir in &dirs {
         if targets.is_empty() {

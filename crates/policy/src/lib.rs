@@ -7,6 +7,7 @@
 //! - 가드(규칙 8·자기 차단·러너 에이전트)는 엔진에 닿기 전에 `guard` 에서 거부한다.
 //! - 자가 치유: 필터·Sublayer·Provider 삭제 구독 → 재등록. 차단 이벤트는 1초마다 200건 상한으로 읽는다.
 
+pub mod emergency;
 pub mod guard;
 pub mod spec;
 #[cfg(any(windows, feature = "host-check"))]

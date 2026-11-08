@@ -44,3 +44,17 @@ describe("hourlyFromSummary — 차단 통신", () => {
     expect(r.blocked[9]).toBe(3); expect(r.blocked[11]).toBe(2); expect(r.lost).toBe(5);
   });
 });
+
+import { emergencyText } from "./dashboard";
+describe("emergencyText (대시보드 개편안 3판 1-1 긴급 차단 상태)", () => {
+  it("걸려 있지 않으면 null", () => {
+    expect(emergencyText(null)).toBeNull();
+    expect(emergencyText({ active: false })).toBeNull();
+  });
+  it("유지 확인 전·남은 시간", () => {
+    expect(emergencyText({ active: true, confirmed: false, remaining_secs: 1800 })).toBe("긴급 차단 · 유지 확인 대기");
+    expect(emergencyText({ active: true, confirmed: true, remaining_secs: 719 })).toBe("긴급 차단 중 · 12분 남음");
+    expect(emergencyText({ active: true, confirmed: true, remaining_secs: 7200 })).toBe("긴급 차단 중 · 2시간 0분 남음");
+    expect(emergencyText({ active: true, confirmed: true, remaining_secs: -5 })).toBe("긴급 차단 중 · 0분 남음");
+  });
+});

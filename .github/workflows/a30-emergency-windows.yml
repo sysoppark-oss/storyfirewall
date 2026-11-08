@@ -1,0 +1,157 @@
+name: A30 emergency block (stage 9, real WFP)
+
+# 대시보드 개편안 3판 1-1(9단계) 긴급 차단 실집행 시험. 러너 = 일회용 VM.
+# 제품 서비스(실제 WFP)를 설치하고 emergency.start(3분, 러너 에이전트를 원격 도구 예외로) → 유지 →
+#   ① 바깥 HTTPS(curl.exe) 실패  ② 루프백 TCP 성공  ③ DNS 클라이언트(Resolve-DnsName, svchost) 성공
+#   ④ 러너 에이전트 통신 유지(이 작업이 끝까지 돈다)  ⑤ 필터가 우리 긴급 차단 Sublayer 에, 영구 아님
+# → emergency.stop → ⑥ 바깥 HTTPS 다시 성공. RDP 예외는 러너에 세션이 없어 단위·통합 시험으로만.
+on:
+  push:
+    paths:
+      - "crates/policy/src/emergency.rs"
+      - "crates/policy/src/wfp.rs"
+      - "crates/svc/src/emergency.rs"
+      - "crates/engine/src/lib.rs"
+      - ".github/workflows/a30-emergency-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  run:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: a30-windows-2025-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build service and test client
+        shell: pwsh
+        run: |
+          cargo build --release --locked -p svc --features test-signer --bin svc-poc --bin story-firewall-svc 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Sign the test client with a self-signed test certificate
+        shell: pwsh
+        run: |
+          $exe = ".\target\release\svc-poc.exe"
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=StoryFirewall Test" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddDays(2)
+          $cer = Join-Path $env:RUNNER_TEMP "test.cer"
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
+          $r = Set-AuthenticodeSignature -FilePath $exe -Certificate $cert -HashAlgorithm SHA256
+          "sign status: $($r.Status)"
+
+      - name: Run scenario
+        shell: pwsh
+        run: |
+          $prod = (Resolve-Path ".\target\release\story-firewall-svc.exe").Path
+          $exe = (Resolve-Path ".\target\release\svc-poc.exe").Path
+          function Log($m) { $m | Tee-Object -FilePath run.out -Append }
+          function Rpc($method, $obj) {
+            $f = Join-Path $env:RUNNER_TEMP ("p-" + [guid]::NewGuid().ToString("N") + ".json")
+            ($obj | ConvertTo-Json -Depth 6 -Compress) | Set-Content -Path $f -Encoding ascii
+            $o = & $exe rpc $method $f 2>&1 | Out-String
+            Log ("[" + $method + "] " + $o.Trim())
+            $j = $o.Trim() -replace '^rpc: ', ''
+            try { return ($j | ConvertFrom-Json) } catch { return $null }
+          }
+          function Https() {
+            & "$env:SystemRoot\System32\curl.exe" -s -o NUL -m 8 -w "%{http_code}" https://www.rust-lang.org/ 2>$null
+          }
+          function Loopback() {
+            $l = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+            $l.Start()
+            $port = $l.LocalEndpoint.Port
+            $c = [System.Net.Sockets.TcpClient]::new()
+            $ok = $false
+            try { $t = $c.ConnectAsync("127.0.0.1", $port); $ok = $t.Wait(3000) -and $c.Connected } catch { $ok = $false }
+            $c.Dispose(); $l.Stop()
+            return $ok
+          }
+          function Dns() {
+            try { Clear-DnsClientCache; $r = Resolve-DnsName -Name "github.com" -Type A -DnsOnly -QuickTimeout -ErrorAction Stop; return [bool]$r } catch { return $false }
+          }
+          # 러너 에이전트(GitHub 과의 통신)를 예외로 — 빼면 이 작업 자체가 끊긴다
+          $agents = Get-Process -Name Runner.Listener, Runner.Worker -ErrorAction SilentlyContinue | ForEach-Object { $_.Path } | Where-Object { $_ } | Sort-Object -Unique
+          Log ("agents: " + ($agents -join "; "))
+
+          & $prod install --test-signer "StoryFirewall Test" 2>&1 | Tee-Object -FilePath run.out -Append
+          & $prod start 2>&1 | Tee-Object -FilePath run.out -Append
+          Start-Sleep -Seconds 8
+          Log ("before https=" + (Https) + " loopback=" + (Loopback) + " dns=" + (Dns))
+
+          $rid = { "0f3c2a1e-9b7d-4c6a-8e5f-" + ("{0:x12}" -f (Get-Random -Maximum 2147483647)) }
+          $s = Rpc "emergency.start" @{ request_id = (& $rid); minutes = 3; remote_tools = @($agents) }
+          if (-not $s.result) { Log "a30: start failed"; exit 1 }
+          $pid0 = $s.result.policy_id; $ver0 = $s.result.version
+          Log ("a30: started policy=" + $pid0 + " filters=" + $s.result.filters)
+          $c = Rpc "policy.confirm" @{ request_id = (& $rid); policy_id = $pid0; version = $ver0 }
+          $st = Rpc "emergency.status" @{}
+          Log ("a30: status active=" + $st.result.active + " confirmed=" + $st.result.confirmed + " remaining=" + $st.result.remaining_secs)
+          Start-Sleep -Seconds 2
+          $h = Https; $lb = Loopback; $d = Dns
+          Log ("a30: during https=" + $h + " loopback=" + $lb + " dns=" + $d)
+
+          # 필터 위치: 우리 긴급 차단 Sublayer, 영구 아님(FWPM_FILTER_FLAG_PERSISTENT 없음)
+          $xml = Join-Path $env:RUNNER_TEMP "filters.xml"
+          & netsh wfp show filters file="$xml" | Out-Null
+          [xml]$fx = Get-Content $xml -Raw
+          $mine = @($fx.wfpdiag.filters.item | Where-Object { $_.subLayerKey -eq "{5f1a2b3c-4d5e-4f60-8172-839405a6b7cb}" })
+          $persist = @($mine | Where-Object { $_.flags.item -contains "FWPM_FILTER_FLAG_PERSISTENT" })
+          Log ("a30: emergency sublayer filters=" + $mine.Count + " persistent=" + $persist.Count)
+
+          $o = Rpc "emergency.stop" @{ request_id = (& $rid) }
+          Start-Sleep -Seconds 2
+          $st = Rpc "emergency.status" @{}
+          $h2 = Https
+          Log ("a30: after stop active=" + $st.result.active + " https=" + $h2)
+          & netsh wfp show filters file="$xml" | Out-Null
+          [xml]$fx = Get-Content $xml -Raw
+          $left = @($fx.wfpdiag.filters.item | Where-Object { $_.subLayerKey -eq "{5f1a2b3c-4d5e-4f60-8172-839405a6b7cb}" }).Count
+          Log ("a30: emergency sublayer filters after stop=" + $left)
+          Log "--- product service.log (tail) ---"
+          Get-Content 'C:\ProgramData\StoryFirewall\service.log' -Tail 40 -ErrorAction SilentlyContinue | Tee-Object -FilePath run.out -Append
+          & $prod stop 2>&1 | Tee-Object -FilePath run.out -Append
+          & $prod uninstall 2>&1 | Tee-Object -FilePath run.out -Append
+
+      - name: Assert expected outcomes
+        if: always()
+        shell: pwsh
+        run: |
+          $log = Get-Content run.out -Raw -ErrorAction SilentlyContinue
+          $expect = @(
+            'before https=200'
+            'a30: started policy=\d+ filters=\d+'
+            'a30: status active=True confirmed=True remaining=1\d\d'
+            'a30: during https=000 loopback=True dns=True'
+            'a30: emergency sublayer filters=[1-9]\d* persistent=0'
+            'a30: after stop active=False https=200'
+            'a30: emergency sublayer filters after stop=0'
+          )
+          $fail = 0
+          foreach ($e in $expect) {
+            if ($log -match $e) { "PASS $e" } else { "FAIL $e"; $fail++ }
+          }
+          if ($fail -gt 0) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a30-logs
+          path: |
+            run.out
+            build.log

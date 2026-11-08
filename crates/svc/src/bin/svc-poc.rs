@@ -12,6 +12,7 @@
 //! svc-poc kill <pid> [create-filetime]       : 생성 시각이 같을 때만 TerminateProcess
 //! svc-poc probe | squat-hold <name> <secs> | squat-instance <name> | sddl-demo <secs> : A25 파이프 이름·DACL 시험
 //! svc-poc stress <n>                         : A24 파이프 읽기 경쟁 재현
+//! svc-poc rpc <method> <params.json>          : 연결 → rpc.hello → 메서드 한 번 → "rpc: <응답 JSON>" (A30 등 워크플로가 흐름을 짠다)
 
 #[cfg(any(windows, feature = "host-check"))]
 fn main() {
@@ -207,6 +208,42 @@ fn main() {
             let ok = conf["result"]["ok"] == serde_json::json!(true);
             println!("apply: policy_id={pid} version={ver} filters={} confirm={}", v["result"]["filters"], if ok { "ok" } else { "failed" });
             if !ok { println!("apply: confirm reply {conf}"); std::process::exit(5); }
+        }
+        "rpc" => {
+            let m = args.get(2).cloned().unwrap_or_default();
+            let params: serde_json::Value = args
+                .get(3)
+                .and_then(|f| std::fs::read_to_string(f).ok())
+                .and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok())
+                .unwrap_or_else(|| serde_json::json!({}));
+            let name = svc::win::pipe_name::resolve();
+            let mut tries = 0;
+            let mut c = loop {
+                match pipe::PipeClient::connect(&name) {
+                    Ok(c) => break c,
+                    Err(e) if tries < 40 && (e.contains("0x2") || e.contains("0xe7")) => { tries += 1; std::thread::sleep(std::time::Duration::from_millis(500)); }
+                    Err(e) => { println!("rpc: connect failed: {e}"); std::process::exit(3); }
+                }
+            };
+            let mut next = 0u64;
+            let mut call = |m: &str, p: serde_json::Value| -> serde_json::Value {
+                next += 1;
+                let line = format!("{}\n", serde_json::json!({"jsonrpc": "2.0", "id": next, "method": m, "params": p}));
+                if !c.send(&line) { return serde_json::json!({"error": "send"}); }
+                loop {
+                    match c.recv() {
+                        Some(r) => {
+                            let v: serde_json::Value = serde_json::from_str(&r).unwrap_or_default();
+                            if v.get("id").is_some() { return v; }
+                        }
+                        None => return serde_json::json!({"error": "closed"}),
+                    }
+                }
+            };
+            let _ = call("rpc.hello", serde_json::json!({"client_version": "0.1.0-poc", "api": [1, 0]}));
+            let v = call(&m, params);
+            println!("rpc: {v}");
+            if v.get("error").is_some() { std::process::exit(4); }
         }
         // A29(대시보드 개편안 2판 4-2, 8단계 실집행): 설정을 켜고, 서명 없는 시험 프로그램(args[2])이
         // cmd → vssadmin delete shadows 를 실행하게 한 뒤, 서비스가 묻지 않고 끊는지(사건 조치함·메모 auto:·
