@@ -12,16 +12,17 @@ $setup = "C:\sf\story-firewall-dev-setup.exe"
 $pinFile = "C:\sf\pin.txt"
 if (-not (Test-Path $setup) -or -not (Test-Path $pinFile)) { L "missing setup or pin - run an install job on the host first"; exit 1 }
 $pin = (Get-Content $pinFile -Raw).Trim()
-# L074: the sandbox has no WebView2 runtime and no network; the installer's embedBootstrapper downloads it, so the UI
-# could not start (sandbox-1). Install the offline runtime that the host job "webview2" staged (Microsoft-signed).
-$wv = "C:\sf\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
-if (Test-Path $wv) {
-    $s = Get-AuthenticodeSignature $wv
-    if ($s.Status -eq "Valid" -and [string]$s.SignerCertificate.Subject -match "O=Microsoft Corporation") {
-        $q = Start-Process -FilePath $wv -ArgumentList "/silent", "/install" -Wait -PassThru
-        L ("webview2 offline install exit=" + $q.ExitCode)
-    } else { L ("webview2 signature rejected: " + $s.Status) }
-} else { L "webview2: not staged (host job webview2) - UI will not start offline" }
+# L076: the offline WebView2 installer fails inside the sandbox (exit 0x80040902, sandbox-2). Use the host runtime
+# mapped read-only at C:\wv2 through WEBVIEW2_BROWSER_EXECUTABLE_FOLDER (honoured by the WebView2 loader).
+$wvExe = Get-ChildItem "C:\wv2" -Filter msedgewebview2.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($wvExe) {
+    $env:WEBVIEW2_BROWSER_EXECUTABLE_FOLDER = $wvExe.DirectoryName
+    L ("webview2 folder " + $wvExe.DirectoryName)
+} else { L "webview2: host runtime not mapped - UI will not start" }
+# L076: clean-image dependency check (sandbox-2: the service binary printed nothing at all)
+foreach ($d in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
+    L ("dll " + $d + " present=" + (Test-Path (Join-Path $env:SystemRoot ("System32\" + $d))))
+}
 if ($pin -notmatch '^[0-9a-f]{64}$') { L "bad pin"; exit 1 }
 # copy out of the read-only share first (setup writes next to itself in some NSIS builds)
 $work = Join-Path $env:TEMP "sf"
@@ -33,16 +34,17 @@ $svc = Join-Path $env:ProgramFiles "Story Firewall\story-firewall-svc.exe"
 if (-not (Test-Path $svc)) { L "svc not found after setup"; exit 1 }
 foreach ($a in @(@("install", "--test-signer-sha256", $pin), @("stop"), @("start"))) {
     $o = & $svc @a 2>&1 | Out-String
-    L ("svc " + $a[0] + ": " + $o.Trim())
+    L ("svc " + $a[0] + " exit=" + $LASTEXITCODE + ": " + $o.Trim())
 }
 Start-Sleep -Seconds 2
-L ("svc status: " + ((& $svc status 2>&1 | Out-String).Trim()))
+$o = (& $svc status 2>&1 | Out-String).Trim()
+L ("svc status exit=" + $LASTEXITCODE + ": " + $o)
 L ("os: " + (Get-CimInstance Win32_OperatingSystem).Caption + " build " + [Environment]::OSVersion.Version.Build + " free_mb " + [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1KB))
 # Sysmon: ground truth for the miss-rate comparison (B1/B2). Only if the host job "sysmon" staged it.
 $sm = "C:\sf\Sysmon64.exe"
 if ((Test-Path $sm) -and (Test-Path "C:\sf\sysmon.xml")) {
-    $o = & $sm -accepteula -i "C:\sf\sysmon.xml" 2>&1 | Out-String
-    L ("sysmon: " + ($o.Trim() -replace "\s+", " "))
+    $null = & $sm -accepteula -i "C:\sf\sysmon.xml" 2>&1
+    L ("sysmon exit=" + $LASTEXITCODE + " service=" + [bool](Get-Service Sysmon64 -ErrorAction SilentlyContinue))
 } else { L "sysmon: not staged (host job sysmon)" }
 $ui = Join-Path $env:ProgramFiles "Story Firewall\story-firewall-ui.exe"
 if (Test-Path $ui) { Start-Process -FilePath $ui; L "ui started" } else { L "ui not found" }

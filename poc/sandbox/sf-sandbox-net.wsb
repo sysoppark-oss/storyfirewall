@@ -1,6 +1,7 @@
 <Configuration>
   <!-- Story Firewall dev test sandbox (L073/L074). Double-click this file on the laptop to start. -->
   <!-- C:\sf = verified setup (read-only). C:\sfout = logs/results only (writable, data only - the host never runs anything from it). -->
+  <!-- C:\wv2 = the host WebView2 runtime, read-only (L076: the offline installer fails inside the sandbox, 0x80040902). -->
   <!-- Networking ON (NAT to host): for connection / block tests only. Default is sf-sandbox.wsb (offline). -->
   <Networking>Enable</Networking>
   <VGpu>Disable</VGpu>
@@ -19,6 +20,11 @@
       <HostFolder>C:\Program Files\StoryFirewallDev\sandbox-out</HostFolder>
       <SandboxFolder>C:\sfout</SandboxFolder>
       <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>C:\Program Files (x86)\Microsoft\EdgeWebView\Application</HostFolder>
+      <SandboxFolder>C:\wv2</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
     </MappedFolder>
   </MappedFolders>
   <LogonCommand>
