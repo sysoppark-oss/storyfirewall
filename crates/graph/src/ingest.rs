@@ -263,8 +263,12 @@ impl<'a> Ingester<'a> {
         };
         let mut n = 0;
         // 부모: 스냅샷 프로세스는 부모가 이미 종료됐을 수 있다. 있을 때만 잇는다.
+        // 2026-11-08 노트북: 재부팅 전 노드(종료 기록 없음)가 같은 PID 로 잡혀 wininit 의 부모가 됐다 → 이번 부팅 것만
         let parent = if preexisting {
-            self.store.latest_process_by_pid(ppid, key_ts)?
+            match self.store.latest_process_by_pid(ppid, key_ts)? {
+                Some(id) if self.same_boot(id, shown_ts)? => Some(id),
+                _ => None,
+            }
         } else {
             Some(self.resolve_proc(&ProcRef::new(ppid, None), ev_ts)?)
         };
@@ -819,6 +823,21 @@ impl<'a> Ingester<'a> {
 
     /// ProcRef → 프로세스 노드 id. 생성 시각을 알면 정확히, 모르면 같은 PID 의 가장 최근 프로세스.
     /// 둘 다 없으면 "기존 프로세스"로 새로 만든다 (수집 시작 전부터 살아 있던 프로세스).
+    /// 노드가 `ts` 와 같은 부팅의 것인가. 부팅 시각을 모르거나 `ts` 가 이번 부팅 이전이면 따지지 않는다.
+    /// 노드 시각이 이번 부팅보다 2분(BOOT_SLACK) 넘게 이르면 이전 부팅의 프로세스 — 같은 PID 라도 다른 프로세스다.
+    /// (L023: 부팅 직후 시계가 틀린 프로세스는 노드 시각을 부팅 시각으로 올려 두므로 여기서 걸리지 않는다)
+    fn same_boot(&self, id: i64, ts: i64) -> Result<bool> {
+        let Some(b) = self.boot_time else { return Ok(true) };
+        if ts < b - BOOT_SLACK {
+            return Ok(true);
+        }
+        let first: i64 = self
+            .store
+            .conn
+            .query_row("SELECT first_ts FROM nodes WHERE id = ?1", [id], |r| r.get(0))?;
+        Ok(first >= b - BOOT_SLACK)
+    }
+
     fn resolve_proc(&mut self, p: &ProcRef, ts: i64) -> Result<i64> {
         if let Some(st) = p.start_ts {
             let key = proc_key(p.pid, st);
@@ -827,7 +846,10 @@ impl<'a> Ingester<'a> {
             }
         }
         if let Some(id) = self.store.latest_process_by_pid(p.pid, ts)? {
-            return Ok(id);
+            // 재부팅 전 노드를 이번 부팅의 이벤트 주인으로 쓰지 않는다(PID 는 부팅마다 다시 쓰인다)
+            if self.same_boot(id, ts)? {
+                return Ok(id);
+            }
         }
         // 스냅샷에도 ProcessStart 에도 없던 프로세스: 첫 등장 시각으로 키를 만든다 (경로 미확인)
         let key = proc_key(p.pid, ts);
