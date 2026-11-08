@@ -667,7 +667,8 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
         const undo = button(ACT.undoAuto, async () => {
           if (!confirm("자동 대응으로 넣은 차단 정책을 되돌리고 사건을 다시 엽니다. 종료된 프로세스는 돌아오지 않습니다.")) return;
           if (auto.policyId > 0) {
-            const r = await mutation("policy.rollback", { policy_id: auto.policyId, version: auto.version });
+            // version 을 넘기면 "그 판으로 되돌리기"(판 1 → 판 1, 그대로 남음 — A29 실측). 빼야 제거된다
+            const r = await mutation("policy.rollback", { policy_id: auto.policyId });
             if (!r.ok) return alert(`실패: ${r.error.message}`);
           }
           await triageSet("investigated");

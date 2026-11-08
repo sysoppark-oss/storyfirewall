@@ -278,14 +278,18 @@ fn main() {
             let parts: Vec<i64> = note.trim_start_matches("auto:").split(':').filter_map(|x| x.parse().ok()).collect();
             let pl = call("policy.list", serde_json::json!({}));
             let items = pl["result"]["items"].as_array().cloned().unwrap_or_default();
-            println!("a29: policies {}", items.iter().map(|x| format!("{}:{}:{}", x["policy_id"], x["version"], x["state"])).collect::<Vec<_>>().join(","));
+            println!("a29: policies {}", items.iter().map(|x| format!("{}:{}:{}", x["id"], x["version"], x["state"])).collect::<Vec<_>>().join(","));
             let mut rolled = false;
             if parts.len() == 2 && parts[0] > 0 {
-                let v = call("policy.rollback", serde_json::json!({"request_id": rid(0xa29002), "policy_id": parts[0], "version": parts[1]}));
+                // version 없이 = 제거(version 을 주면 그 판으로 되돌리기라 그대로 남는다 — A29 첫 통과 판에서 발견)
+                let v = call("policy.rollback", serde_json::json!({"request_id": rid(0xa29002), "policy_id": parts[0]}));
                 println!("a29: rollback {v}");
-                rolled = v["result"]["ok"] == serde_json::json!(true);
                 let pl = call("policy.list", serde_json::json!({}));
-                println!("a29: policies after rollback {}", pl["result"]["items"].as_array().map(|a| a.iter().map(|x| format!("{}:{}:{}", x["policy_id"], x["version"], x["state"])).collect::<Vec<_>>().join(",")).unwrap_or_default());
+                let after = pl["result"]["items"].as_array().cloned().unwrap_or_default();
+                println!("a29: policies after rollback {}", after.iter().map(|x| format!("{}:{}:{}", x["id"], x["version"], x["state"])).collect::<Vec<_>>().join(","));
+                // 되돌리기 성공 = 응답 ok 이고 그 정책이 더 이상 Confirmed 가 아님
+                let still = after.iter().any(|x| x["id"].as_i64() == Some(parts[0]) && x["state"] == serde_json::json!("Confirmed"));
+                rolled = v["result"]["ok"] == serde_json::json!(true) && !still;
             }
             let h = call("service.events", serde_json::json!({"since_secs": 600, "limit": 30}));
             for e in h["result"]["items"].as_array().cloned().unwrap_or_default() {
