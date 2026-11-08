@@ -86,6 +86,10 @@ jobs:
       - name: Build service (test-signer) and signed test client
         shell: pwsh
         run: |
+          # 상태 줄 판 번호: 개발판은 "<소스 판>-dev.<커밋 7자리>"(예: 0.1.4-dev.cf7961c) — 공개판(0.1.4)과 구별되고 업데이트 뒤 바로 바뀐다
+          $src = (Select-String -Path crates\svc\Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          $env:SF_VERSION = "$src-dev.$("${{ github.sha }}".Substring(0,7))"
+          "SF_VERSION=$env:SF_VERSION"
           cargo build --release --locked -p svc --features test-signer --bin story-firewall-svc --bin svc-poc 2>&1 | Tee-Object -FilePath build-svc.log
           if ($LASTEXITCODE -ne 0) { exit 1 }
           New-Item -ItemType Directory -Force ui\src-tauri\binaries | Out-Null

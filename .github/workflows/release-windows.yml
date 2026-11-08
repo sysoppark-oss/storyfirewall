@@ -49,6 +49,9 @@ jobs:
         run: |
           # 서비스 판 번호 = 태그(상태 줄 "0.1.3판"). 없으면 크레이트 판
           $env:SF_VERSION = "${{ inputs.tag }}".TrimStart('v')
+          # 태그와 소스 판이 다르면 멈춘다(개발판 표기·업데이트 비교가 어긋나지 않게 — 2026-11-08 사용자 요청)
+          $src = (Select-String -Path crates\svc\Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          if ($src -ne $env:SF_VERSION) { throw "tag ${{ inputs.tag }} != source version $src (bump crates/svc, ui/src-tauri, ui/package.json, tauri.conf.json first)" }
           cargo build --release --locked -p svc --bin story-firewall-svc --bin svc-poc 2>&1 | Tee-Object -FilePath build-svc.log
           if ($LASTEXITCODE -ne 0) { exit 1 }
           New-Item -ItemType Directory -Force ui\src-tauri\binaries | Out-Null
