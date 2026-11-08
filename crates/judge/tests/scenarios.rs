@@ -1418,3 +1418,66 @@ fn auto_response_child_only_when_parent_is_core_process() {
         assert_eq!(respond::judge(&view, s, &[]), Verdict::NoDestroy);
     }
 }
+
+/// A29 러너 실측(2026-11-08): 끊기 대상은 명령을 일으킨 첫 Windows 밖 프로그램. 그 위의 Microsoft 서명(Edge)은
+/// 면제를 주지 않고, 그 위의 서명 미확인 프로세스(러너 에이전트처럼 서비스보다 먼저 켜진 것)는 끊기 대상이 아니다.
+#[test]
+fn auto_response_targets_first_non_windows_actor_only() {
+    use judge::respond::{self, Mode, Verdict};
+    let store = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&store);
+    let agent = r"C:\actions-runner\bin\Runner.Worker.exe"; // 서명 사실 없음(미확인)
+    let edge = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe";
+    let mal = r"C:\Users\u\Downloads\invoice-viewer.exe";
+    ing.ingest_all(&[
+        snap(T0, 900, 4, agent, &[]),
+        start(T0 + SEC, 1000, 900, edge),
+        sig(T0 + SEC, edge, Some("Microsoft Corporation"), "valid", false),
+        start(T0 + 2 * SEC, 4000, 1000, mal),
+        sig(T0 + 2 * SEC, mal, None, "nosignature", false),
+        start(T0 + 3 * SEC, 4100, 4000, CMD),
+        start(T0 + 4 * SEC, 4200, 4100, VSSADMIN),
+        cmd(T0 + 4 * SEC, 4200, "vssadmin delete shadows /all /quiet"),
+    ])
+    .unwrap();
+    let bl = Baseline::open(&store, T0 + DAY).unwrap();
+    let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
+    let view = judge::View::load(&store, 0, i64::MAX).unwrap();
+    let s = stories.iter().find(|s| s.chapter == Chapter::Destroy).expect("5장 사건");
+    match respond::judge(&view, s, &[]) {
+        Verdict::Respond(r) => {
+            assert_eq!(r.mode, Mode::Full);
+            let o = judge::rules::attr_str(view.node(r.origin), "image").unwrap_or_default();
+            assert!(o.ends_with("invoice-viewer.exe"), "끊기 대상은 시험 프로그램이어야 함(Edge·에이전트 아님): {o}");
+        }
+        v => panic!("Edge(Microsoft 서명) 위에 있어도 면제되면 안 됨: {v:?}"),
+    }
+}
+
+/// 명령을 일으킨 프로그램의 서명을 아직 모르면(서비스보다 먼저 켜짐) 끊지 않고 명령 실행 프로세스만 종료
+#[test]
+fn auto_response_child_only_when_actor_signature_unknown() {
+    use judge::respond::{self, Mode, Verdict};
+    let store = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&store);
+    let app = r"C:\Program Files\Acme\acme.exe";
+    ing.ingest_all(&[
+        snap(T0, 1000, 4, app, &[]),
+        start(T0 + SEC, 4100, 1000, CMD),
+        start(T0 + 2 * SEC, 4200, 4100, VSSADMIN),
+        cmd(T0 + 2 * SEC, 4200, "vssadmin delete shadows /all /quiet"),
+    ])
+    .unwrap();
+    let bl = Baseline::open(&store, T0 + DAY).unwrap();
+    let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
+    let view = judge::View::load(&store, 0, i64::MAX).unwrap();
+    let s = stories.iter().find(|s| s.chapter == Chapter::Destroy).expect("5장 사건");
+    match respond::judge(&view, s, &[]) {
+        Verdict::Respond(r) => {
+            assert_eq!(r.mode, Mode::ChildOnly, "{r:?}");
+            assert!(r.unsigned_chain.is_empty());
+            assert_eq!(r.origin, r.trigger_proc);
+        }
+        v => panic!("{v:?}"),
+    }
+}
