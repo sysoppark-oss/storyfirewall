@@ -1,0 +1,30 @@
+   Compiling story-firewall-ui v0.1.0 (D:\a\storyfirewall\storyfirewall\ui\src-tauri)
+   Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
+    Finished `release` profile [optimized] target(s) in 9.89s
+     Running unittests src\lib.rs (target\release\deps\story_firewall_ui_lib-3e319e92e7bf4127.exe)
+
+running 6 tests
+test hud::tests::badge_paints_bottom_right_only ... ok
+test approve::tests::uuid_and_args ... ok
+test hud::tests::tooltip_has_emergency_and_is_capped ... ok
+test tests::story_toast_only_for_suspicious_story_and_strips_control_chars ... ok
+test hud::tests::tone_and_counts_follow_open_critical_and_high ... FAILED
+test tray::tests::watchdog_notifies_once_after_threshold_and_probes ... ok
+
+failures:
+
+---- hud::tests::tone_and_counts_follow_open_critical_and_high stdout ----
+
+thread 'hud::tests::tone_and_counts_follow_open_critical_and_high' (1824) panicked at src\hud.rs:354:9:
+assertion `left == right` failed
+  left: "Story Firewall — 미조치 심각 1 · 높음 0\n최근: c"
+ right: "Story Firewall — 보호 중 · 미조치 심각·높음 없음"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    hud::tests::tone_and_counts_follow_open_critical_and_high
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.61s
+
+error: test failed, to rerun pass `--lib`
