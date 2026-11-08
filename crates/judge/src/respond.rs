@@ -61,11 +61,19 @@ pub fn is_windows_tool(path_lower: &str) -> bool {
     p.contains("\\windows\\")
 }
 
+/// 허용 목록 항목과 서명자 이름이 같은가(정확 일치 — 앞뒤 공백·대소문자·연속 공백만 정규화)
+pub fn signer_matches(allowed: &str, signer: &str) -> bool {
+    let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    let a = norm(allowed);
+    !a.is_empty() && a == norm(signer)
+}
+
 fn parent_of(view: &View, proc_id: i64) -> Option<i64> {
     view.ins(proc_id).find(|e| e.rel == "spawned").map(|e| e.src)
 }
 
-/// 사건 하나를 판정한다. `allow_signers`: 사용자 허용 목록 서명자(앞부분 일치, 대소문자 무시).
+/// 사건 하나를 판정한다. `allow_signers`: 사용자 허용 목록 서명자(**정확 일치**, 앞뒤 공백·대소문자만 무시).
+/// 44차 Q1-②: 앞부분 일치는 "Acme" 허용이 "Acme Evil Ltd"까지 통과시켰다.
 pub fn judge(view: &View, story: &Story, allow_signers: &[String]) -> Verdict {
     // (나) 사건의 선 가운데 T1490 `ran` 선 — 가장 이른 것 하나
     let mut trigger: Option<(i64, &'static str, i64)> = None; // (proc, what, ts)
@@ -113,7 +121,7 @@ pub fn judge(view: &View, story: &Story, allow_signers: &[String]) -> Verdict {
         let allowed = || {
             allow_signers
                 .iter()
-                .any(|a| !a.is_empty() && signer.to_ascii_lowercase().starts_with(&a.to_ascii_lowercase()))
+                .any(|a| signer_matches(a, &signer))
         };
         match rules::sig_of(file) {
             Some(Sig::Microsoft) => return Verdict::TrustedAncestor { proc_id: p, signer },

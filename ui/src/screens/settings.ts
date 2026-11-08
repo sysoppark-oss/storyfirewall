@@ -143,7 +143,7 @@ export function settings(): HTMLElement {
   adBox.type = "checkbox";
   adBox.disabled = true;
   const adAllow = el("input") as HTMLInputElement;
-  adAllow.placeholder = "예: Acme Software, Veeam";
+  adAllow.placeholder = "예: Acme Software Inc., Veeam Software Group GmbH";
   adAllow.disabled = true;
   adAllow.style.width = "100%";
   // 대시보드 개편안 3판 4-1 HUD: ② 트레이 아이콘만(기본) / ① 작은 상시 창(+트레이). 이 PC 사용자별(서비스 설정 아님)
@@ -204,7 +204,7 @@ export function settings(): HTMLElement {
       el("h3", undefined, "파괴 행위 자동 대응"),
       el("label", undefined, adBox, " 복구 수단 삭제(T1490) 명령을 서명 없는 프로그램이 실행하면 묻지 않고 끊기"),
       el("p", "muted small", "조건: 명령이 vssadmin delete shadows · wmic shadowcopy delete · bcdedit recoveryenabled no · wbadmin delete catalog 등이고, 부모 사슬에 Microsoft 서명이나 아래 허용 서명자가 없을 때만. 원인 프로그램·자손 종료 + 경로 차단 + 접속지 24시간 차단. 핵심 프로세스(svchost·explorer)가 부모면 명령을 실행한 프로세스만 종료. 인시던트 카드의 [자동 대응 되돌리기]로 정책을 되돌립니다. 한계: ETW 는 사후 통지라 피해를 줄이는 것이지 막는 것이 아닙니다."),
-      el("label", undefined, "허용 서명자(쉼표로 구분, 앞부분 일치) ", adAllow),
+      el("label", undefined, "허용 서명자(쉼표로 구분, 서명자 이름 전체를 정확히) ", adAllow),
       el("div", "actions", save)),
     out,
     // 33차 Gemini Q4: "신뢰하는 원격 제어 도구"(이 도구의 원격 세션 시작은 작은 알림). 표시는 대시보드 사건 줄에서, 지우기는 여기서

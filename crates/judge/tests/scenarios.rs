@@ -1360,8 +1360,11 @@ fn auto_response_skipped_when_ancestor_is_microsoft_or_allowlisted() {
         }
         v => panic!("{v:?}"),
     }
-    // 허용 목록에 서명자(앞부분, 대소문자 무시)가 있으면 대응하지 않는다
-    match respond::judge(&view, s, &["acme software".into()]) {
+    // 44차 Q1-②: 앞부분만 같은 항목("acme software")은 허용이 아니다 — 대응한다
+    assert!(matches!(respond::judge(&view, s, &["acme software".into()]), Verdict::Respond(_)));
+    assert!(matches!(respond::judge(&view, s, &["Acme".into()]), Verdict::Respond(_)));
+    // 허용 목록에 서명자 이름이 정확히(대소문자·앞뒤 공백 무시) 있으면 대응하지 않는다
+    match respond::judge(&view, s, &["  acme SOFTWARE inc. ".into()]) {
         Verdict::TrustedAncestor { signer, .. } => assert_eq!(signer, "Acme Software Inc."),
         v => panic!("{v:?}"),
     }
