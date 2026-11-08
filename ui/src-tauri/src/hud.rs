@@ -202,8 +202,10 @@ pub fn hud_mode(app: tauri::AppHandle) -> String {
     read_mode(&app)
 }
 
+/// install-110 실측: 동기 명령 안에서 창을 만들면 Windows(WebView2)에서 교착되어 빈 흰 창만 남는다
+/// (Tauri 문서 Known issues: "async 명령에서 창을 만들 것") → async 명령으로 둔다
 #[tauri::command]
-pub fn set_hud_mode(app: tauri::AppHandle, mode: String) -> Result<(), String> {
+pub async fn set_hud_mode(app: tauri::AppHandle, mode: String) -> Result<(), String> {
     if mode != "tray" && mode != "window" {
         return Err("mode 는 tray|window".into());
     }
