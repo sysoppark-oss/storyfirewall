@@ -1,6 +1,7 @@
 import { topbar } from "./topbar";
 import { connectionsScreen } from "./screens/live-conns";
-import { SCREEN_LABEL } from "./terms";
+import { SCREEN_LABEL, GLOSSARY } from "./terms";
+import { setGlossary } from "./ui";
 import { dashboard } from "./screens/dashboard";
 import { story } from "./screens/story";
 import { installs } from "./screens/installs";
@@ -41,6 +42,7 @@ const SCREENS = {
 } as const;
 type Key = keyof typeof SCREENS;
 
+setGlossary(GLOSSARY);
 const app = document.getElementById("app")!;
 // HUD ① 작은 상시 창(창 이름 "hud"): 본 화면을 만들지 않고 HUD 만 그린다.
 // install-109: URL 해시(#hud)는 Tauri 앱 주소에서 경로로 바뀌어 빈 창이 됐다 → 창 이름으로 알아본다

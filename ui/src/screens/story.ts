@@ -9,7 +9,7 @@ import { mindmap } from "./mindmap";
 import type { Where } from "./connections";
 import { summarizeGaps, groupStories, sumGroupSources } from "./story-group";
 import { openProcessDrawer } from "./process";
-import { el, ext, button, clear, fmtTs, fmtShort, fmtShortSec, fmtRange, filetimeToUnix, errorBox, extPath, dataPath } from "../ui";
+import { el, ext, button, clear, fmtTs, fmtShort, fmtShortSec, fmtRange, filetimeToUnix, errorBox, extPath, dataPath, term } from "../ui";
 import { loadingBox, failBox, isBusy, noDataBox, collectionStalled, type HealthLike } from "../list-state";
 import { state } from "../state";
 
@@ -160,7 +160,8 @@ export function chapterSteps(reached: number[], score: number, unrecorded: numbe
   CHAPTERS.forEach((name, i) => {
     const n = i + 1;
     const st = unrecorded.includes(n) && !reached.includes(n) ? "none" : reached.includes(n) ? "on" : "off";
-    const cell = el("span", `step ${st}`, el("span", "bar"), el("span", "lbl", name));
+    // 4판 3-11: 단계 이름에 용어 풀이(점선 밑줄)
+    const cell = el("span", `step ${st}`, el("span", "bar"), el("span", "lbl", term(name)));
     if (st === "none") cell.title = "Story Firewall 이 기록을 시작하기 전의 일이라 기록이 없습니다.";
     box.append(cell);
   });

@@ -128,3 +128,21 @@ export function extPath<K extends keyof HTMLElementTagNameMap>(tag: K, text: str
   }
   return e;
 }
+
+/** 용어 풀이 점선 밑줄(UI 명세 4판 3-11). 풀이가 없는 말이면 그냥 글자. 마우스 0.2초 뒤·키보드 포커스로 말풍선 */
+export function term(word: string, tip?: string): HTMLElement {
+  const t = tip ?? GLOSSARY_LOOKUP(word);
+  const span = document.createElement("span");
+  span.textContent = word;
+  if (!t) return span;
+  span.className = "term";
+  span.tabIndex = 0;
+  span.dataset["tip"] = t;
+  span.setAttribute("aria-label", `${word}: ${t}`);
+  return span;
+}
+let GLOSSARY_LOOKUP: (w: string) => string | undefined = () => undefined;
+/** terms.ts 를 ui.ts 가 직접 가져오지 않게(순환 방지) 시작할 때 사전을 꽂는다 */
+export function setGlossary(g: Record<string, string>): void {
+  GLOSSARY_LOOKUP = (w) => g[w];
+}

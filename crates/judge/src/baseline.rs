@@ -251,6 +251,29 @@ impl Baseline {
     }
 
     /// PC 기준선이 쓸 만큼 쌓였는가 (가장 오래된 프로그램이 14일 넘음)
+    /// 기준선 수집 남은 날(UI 명세 4판 8-4 "기준선 수집 중 · N일 남음"). 다 모았으면 0, 아직 아무것도 없으면 LEARN_DAYS
+    pub fn learn_days_left(&self, store: &Store) -> Result<i64> {
+        let oldest: Option<i64> = store
+            .conn()
+            .query_row("SELECT MIN(since_ts) FROM baseline_program", [], |r| {
+                r.get(0)
+            })
+            .ok()
+            .flatten();
+        Ok(match oldest {
+            None => LEARN_DAYS,
+            Some(s) => {
+                let left = LEARN_DAYS * DAY - (self.now_ts - s);
+                if left <= 0 {
+                    0
+                } else {
+                    // 남은 시간을 날로 올림(하루 미만 남아도 "1일")
+                    (left + DAY - 1) / DAY
+                }
+            }
+        })
+    }
+
     pub fn pc_learned(&self, store: &Store) -> Result<bool> {
         let oldest: Option<i64> = store
             .conn()
@@ -312,5 +335,43 @@ mod tests {
         assert_eq!(etld1("www.naver.co.kr"), "naver.co.kr");
         assert_eq!(etld1("a.b.c.github.com"), "github.com");
         assert_eq!(etld1("example.com"), "example.com");
+    }
+}
+
+#[cfg(test)]
+mod learn_tests {
+    use super::*;
+    /// UI 명세 4판 8-4: 기준선 남은 날 — 비었으면 14일, 하루 미만 남아도 1일, 다 모았으면 0
+    #[test]
+    fn learn_days_left_counts_up_by_day() {
+        let store = Store::open_in_memory().unwrap();
+        let now = 100 * DAY;
+        let b = Baseline::open(&store, now).unwrap();
+        assert_eq!(b.learn_days_left(&store).unwrap(), LEARN_DAYS);
+        store
+            .conn()
+            .execute(
+                "INSERT INTO baseline_program(program_key, since_ts, last_ts) VALUES ('a', ?1, ?1)",
+                [now - 3 * DAY],
+            )
+            .unwrap();
+        assert_eq!(b.learn_days_left(&store).unwrap(), LEARN_DAYS - 3);
+        store
+            .conn()
+            .execute(
+                "INSERT INTO baseline_program(program_key, since_ts, last_ts) VALUES ('b', ?1, ?1)",
+                [now - LEARN_DAYS * DAY + 60],
+            )
+            .unwrap();
+        assert_eq!(b.learn_days_left(&store).unwrap(), 1);
+        store
+            .conn()
+            .execute(
+                "INSERT INTO baseline_program(program_key, since_ts, last_ts) VALUES ('c', ?1, ?1)",
+                [now - LEARN_DAYS * DAY - 1],
+            )
+            .unwrap();
+        assert_eq!(b.learn_days_left(&store).unwrap(), 0);
+        assert!(b.pc_learned(&store).unwrap());
     }
 }

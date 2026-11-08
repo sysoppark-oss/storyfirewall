@@ -78,3 +78,12 @@ describe("공통 상단 띠(UI 명세 4판 3-1)", () => {
     expect(engineBadges({ now: 0, last_event_ft: null, timings: [{ name: "엔진: 주기 판정", last_ms: 400 }], wfp_filters: 4 }, 2, 1)).toEqual(["판정 지연 400ms", "필터 4개", "정책 2개 (확인 대기 1)"]);
   });
 });
+
+import { learnText } from "../topbar";
+describe("기준선 뱃지(UI 명세 4판 8-4)", () => {
+  it("다 모았으면 없음, 남은 날이 있으면 N일", () => {
+    expect(learnText({ pc_learned: true, days_left: 0 })).toBeNull();
+    expect(learnText({ pc_learned: false, days_left: 9 })).toBe("기준선 수집 중 · 9일 남음");
+    expect(learnText({ pc_learned: false })).toBe("기준선 수집 중");
+  });
+});

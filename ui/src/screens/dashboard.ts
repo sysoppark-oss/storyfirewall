@@ -185,6 +185,9 @@ export function dashboard(): HTMLElement {
   let triageCounts: TriageCounts | null = null;
   /// 방어 피드 재료(refresh 가 채움): 서비스 사건 전부(보호·정책·시계 등), 새것부터
   let feedItems: ServiceEvent[] = [];
+  // 빈 화면 사실 줄(4판 3-10): 오늘 기록·판정한 연결 수
+  let emptyConnLine = "오늘 기록한 연결 수를 세는 중…";
+  let emptyConnEl: HTMLElement | null = null;
   let highTs: number[] = [];
   // 수준별 수(의심·주의)와 4장 도달 수 — refresh 가 채운다(평범은 story.events 기본 수준에 안 들어와 세지 않는다)
   let levelN = { critical: 0, suspicious: 0, watch: 0 };
@@ -206,6 +209,10 @@ export function dashboard(): HTMLElement {
     const o = overview(conns, lr.ok ? lr.result.items : [], Date.now() / 1000);
     // 요약 표가 있으면(새 판) 그것을, 없으면(예전 서비스) 연결 기록의 마지막 접속 시각 기준 집계로
     const th = tr.ok ? hourlyFromSummary(tr.result.items, Date.now() / 1000) : null;
+    // 빈 화면 사실 줄(4판 3-10)
+    const connsToday = th ? th.conns.reduce((a, b) => a + b, 0) : null;
+    emptyConnLine = connsToday == null ? "오늘 연결 기록 수를 읽지 못했습니다." : `오늘 연결 ${connsToday.toLocaleString("ko-KR")}건을 기록하고 판정했습니다.`;
+    if (emptyConnEl) emptyConnEl.textContent = emptyConnLine;
     // 검수 2: "처음 본 나라·망" 수는 아래 막대의 "오늘 처음" 배지와 같은 기준(bars)으로 센다
     const newCc = bars(conns, "country", 999).bars.filter((b) => b.isNew).length;
     const newOrg = bars(conns, "org", 999).bars.filter((b) => b.isNew).length;
@@ -560,7 +567,14 @@ export function dashboard(): HTMLElement {
       const st = listState(ev, hr.ok ? hr.result : null);
       if (st === "error" && !ev.ok) body.append(failBox(ev.error, () => void refresh(), "인시던트 목록"));
       else if (st === "nodata") body.append(noDataBox(() => state.go("settings", { tab: "diag" })));
-      else body.append(el("p", "muted", "오늘은 조용합니다. 미조치 인시던트가 없습니다."), checkedLine(hr.ok ? hr.result : null));
+      else {
+        // UI 명세 4판 3-10: 의미 있는 빈 화면 — 사실만(안심 색·축하 없음). 오늘 연결 수는 개요(drawOverview)가 채운다
+        const box = el("div", "empty-state", icon("shield"));
+        const facts = el("div", undefined, el("p", undefined, "미조치 심각·높음 인시던트가 없습니다."), el("p", "muted small", emptyConnLine), checkedLine(hr.ok ? hr.result : null));
+        emptyConnEl = facts.querySelector("p.muted.small");
+        box.append(facts);
+        body.append(box);
+      }
     }
     clear(foot);
     if (protBox) foot.append(protBox);

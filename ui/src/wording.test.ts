@@ -13,4 +13,8 @@ describe("D026 나라 표기 문구", () => {
     const bad = Object.entries(ts).flatMap(([f, s]) => code(s).filter((l) => /보임|보입니다/.test(l)).map((l) => `${f}: ${l.trim()}`));
     expect(bad).toEqual([]);
   });
+  it("UI 명세 4판 3-10: 빈 화면에 증명할 수 없는 안심 말 0건(안전·완벽·보호받고 있·정상 통신·축하)", () => {
+    const bad = Object.entries(ts).flatMap(([f, s]) => code(s).filter((l) => /안전합니다|안전하게|완벽|보호받고 있|정상 통신|🎉/.test(l)).map((l) => `${f}: ${l.trim()}`));
+    expect(bad).toEqual([]);
+  });
 });

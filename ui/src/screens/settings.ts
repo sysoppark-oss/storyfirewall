@@ -1,5 +1,5 @@
 import { mutation, rpc } from "../rpc";
-import { el, ext, button, errorBox, clear } from "../ui";
+import { el, ext, button, errorBox, clear, term } from "../ui";
 import { state } from "../state";
 import { loadTheme, setTheme, type Theme } from "../theme";
 import { autoCheck, setAutoCheck, checkUpdate, updateBanner, updaterEnabled, storyToast, setStoryToast } from "../update";
@@ -184,13 +184,13 @@ export function settings(args: Record<string, unknown> = {}): HTMLElement {
   // UI 명세 4판 7-1: 위 밑줄 탭 4개. 주소 매개변수 tab 으로 바로 연다(상단 띠 뱃지 → 데이터·진단)
   const engineTab = el("div", "form",
     loadNote,
-    el("h3", undefined, "샌드박스 관찰(첫 실행)"),
+    el("h3", undefined, term("샌드박스 관찰"), "(첫 실행)"),
     el("label", undefined, "샌드박스 관찰(첫 실행) ", frMode),
     frModeTip,
     frUmb,
     el("label", undefined, "관찰 기간 ", frMin),
     el("p", "muted", FIRST_RUN_MINUTES_SENTENCE),
-    el("h3", undefined, "파괴 행위 자동 대응"),
+    el("h3", undefined, term("파괴 행위"), " 자동 대응"),
     el("label", undefined, adBox, " 복구 수단 삭제(T1490) 명령을 서명 없는 프로그램이 실행하면 묻지 않고 끊기"),
     el("p", "muted small", "조건: 명령이 vssadmin delete shadows · wmic shadowcopy delete · bcdedit recoveryenabled no · wbadmin delete catalog 등이고, 그 명령을 실행한 쪽의 첫 Windows 밖 프로그램이 Microsoft 서명이나 아래 허용 서명자가 아닐 때만. 원인 프로그램·자손 종료 + 경로 차단 + 접속지 24시간 차단. 원인을 모르면 명령을 실행한 프로세스만 종료. 인시던트 카드의 [자동 대응 되돌리기]로 정책을 되돌립니다. 한계: ETW 는 사후 통지라 피해를 줄이는 것이지 막는 것이 아닙니다."),
     el("label", undefined, "허용 서명자(쉼표로 구분, 서명자 이름 전체를 정확히) ", adAllow),

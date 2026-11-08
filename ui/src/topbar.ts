@@ -63,6 +63,13 @@ export function serviceWord(connected: boolean, stalled: boolean, stuck: boolean
   return { word: "작동 중", tone: "ok" };
 }
 
+/// 기준선 뱃지 문구(순수 함수 — 시험용). 다 모았으면 null
+export function learnText(b: { pc_learned: boolean; days_left?: number }): string | null {
+  if (b.pc_learned) return null;
+  const d = b.days_left;
+  return typeof d === "number" && d > 0 ? `기준선 수집 중 · ${d}일 남음` : "기준선 수집 중";
+}
+
 /// 긴급 차단·해제가 끝났다고 화면들에 알린다(대시보드 등이 다시 그림)
 export const EMERGENCY_EVENT = "sf-emergency";
 
@@ -146,10 +153,11 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
       root.classList.remove("emg-on");
       return;
     }
-    const [hr, pol, er] = await Promise.all([
+    const [hr, pol, er, bl] = await Promise.all([
       rpc<TopHealth>("collector.health", {}),
       rpc<{ items: { state: string }[] }>("policy.list", {}),
       rpc<EmergencyStatus>("emergency.status", {}),
+      rpc<{ pc_learned: boolean; days_left?: number }>("judge.baseline_status", {}),
     ]);
     if (my !== gen) return; // 더 새 갱신이 시작됐다(겹침 방지 — 대시보드 KPI 중복 결함과 같은 원인)
     const h = hr.ok ? hr.result : null;
@@ -175,6 +183,9 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
     }, "tb-badge tb-more");
     more.setAttribute("aria-expanded", String(root.classList.contains("tb-expanded")));
     more.title = "접힌 상태 뱃지 보기";
+    // 4판 8-4: 기준선 수집 중 · N일 남음(애니메이션 없음). 탐지는 그대로 돈다는 것을 툴팁에 분명히
+    const left = bl.ok ? learnText(bl.result) : null;
+    if (left) row.push(badgeBtn("tb-learn", left, toDiag, "이 PC 의 프로그램별 평소 행동(기준선)을 모으는 기간입니다. 이 기간에는 '처음 보는' 판정이 많을 수 있습니다. 탐지는 그대로 동작합니다."));
     row.push(more);
     badges.replaceChildren(...row);
 

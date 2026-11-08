@@ -686,3 +686,14 @@ body.hud-body #app { display: block; }
 /* 4판 7-2: 설정 저장 바(서비스 설정을 바꿨을 때만) */
 .save-bar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 10px 14px; margin-top: 12px; background: var(--card); border: 1px solid var(--warn); border-radius: 10px; box-shadow: 0 -4px 16px rgba(0,0,0,.25); }
 .save-bar[hidden] { display: none; } .save-bar .spacer { flex: 1; }
+
+/* 4판 3-10: 빈 화면(사실형) — 방패는 회색(안심 색 아님) */
+.empty-state { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border: 1px dashed var(--line); border-radius: 10px; color: var(--fg); }
+.empty-state > .kpi-icon { width: 28px; height: 28px; color: var(--muted); flex: none; }
+.empty-state p { margin: 0 0 2px; }
+.tb-badge.tb-learn { border-style: dashed; color: var(--muted); }
+
+/* 4판 3-11: 용어 풀이 — 점선 밑줄, 0.2초 뒤 말풍선(hover·focus) */
+.term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
+.term::after { content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 6px); z-index: 30; width: max-content; max-width: 280px; padding: 8px 10px; border-radius: 8px; background: var(--card); color: var(--fg); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0,0,0,.3); font-size: 12px; font-weight: 400; line-height: 1.5; white-space: normal; text-align: left; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .1s ease .2s, visibility 0s linear .2s; }
+.term:hover::after, .term:focus-visible::after { opacity: 1; visibility: visible; }

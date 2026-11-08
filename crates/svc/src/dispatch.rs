@@ -1293,8 +1293,9 @@ fn handle(
                 .baseline
                 .pc_learned(&world.graph)
                 .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
+            let left = world.baseline.learn_days_left(&world.graph).unwrap_or(0);
             j(
-                serde_json::json!({ "pc_learned": learned, "learn_days": judge::baseline::LEARN_DAYS }),
+                serde_json::json!({ "pc_learned": learned, "learn_days": judge::baseline::LEARN_DAYS, "days_left": left }),
             )
         }
         Method::SettingsGet => {
