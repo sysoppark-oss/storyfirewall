@@ -201,6 +201,11 @@ pub fn apply_mode(app: &tauri::AppHandle, mode: &str) {
         .always_on_top(true)
         .skip_taskbar(true)
         .focused(false);
+    // install-112 실측: 0x8007139F(올바른 상태 아님) — 본 창은 additionalBrowserArgs(외부 통신 줄임)를 쓰는데
+    // 같은 사용자 데이터 폴더에서 다른 인자로 WebView2 환경을 만들면 실패한다 → 본 창 설정의 인자를 그대로 쓴다
+    if let Some(args) = app.config().app.windows.first().and_then(|w| w.additional_browser_args.clone()) {
+        b = b.additional_browser_args(&args);
+    }
     let mut pos = String::from("위치 기본값");
     if let Ok(Some(m)) = app.primary_monitor() {
         let sc = m.scale_factor();
