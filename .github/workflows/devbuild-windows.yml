@@ -16,6 +16,7 @@ on:
       - "third_party/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - ".cargo/**"
       - ".github/workflows/devbuild-windows.yml"
   workflow_dispatch:
 
