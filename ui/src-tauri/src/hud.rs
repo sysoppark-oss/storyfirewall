@@ -6,8 +6,10 @@
 //! - 문장에는 외부에서 온 이름(파일명)이 섞일 수 있어 길이를 자르고 제어 문자를 뺀다. 툴팁 상한 127자(NOTIFYICONDATAW.szTip).
 
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use tauri::{Emitter, Manager};
 
 /// 갱신 간격(서비스가 붙어 있을 때)
 pub const REFRESH_EVERY: Duration = Duration::from_secs(20);
@@ -92,6 +94,17 @@ pub fn tooltip(st: &HudState) -> String {
     t
 }
 
+/// 작은 상시 창(HUD ①)에 보낼 상태 JSON
+pub fn state_json(st: &HudState) -> serde_json::Value {
+    serde_json::json!({
+        "tone": match st.tone { Tone::Critical => "critical", Tone::High => "high", Tone::Ok => "ok", Tone::Down => "down" },
+        "critical": st.critical,
+        "high": st.high,
+        "latest": st.latest,
+        "emergency_left_min": st.emergency_left_min,
+    })
+}
+
 /// 점 색(RGBA). 색만으로 뜻을 전하지 않도록 툴팁에 같은 내용이 있다
 pub fn tone_color(t: Tone) -> [u8; 4] {
     match t {
@@ -128,6 +141,87 @@ pub fn badge_rgba(base: &[u8], w: u32, h: u32, color: [u8; 4]) -> Vec<u8> {
     out
 }
 
+/// 마지막 상태(상시 창이 처음 열릴 때 바로 그리게)
+static LAST: Mutex<Option<HudState>> = Mutex::new(None);
+
+/// HUD 방식: "tray"(② 트레이 아이콘만, 기본) | "window"(① 작은 상시 창 + 트레이). 사용자별 설정 파일에 둔다(자동 시작 때도 적용)
+fn mode_file(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("hud-mode.txt"))
+}
+
+pub fn read_mode(app: &tauri::AppHandle) -> String {
+    mode_file(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| s == "window")
+        .unwrap_or_else(|| "tray".into())
+}
+
+/// 상시 창을 열거나 닫는다. 창은 서비스에 붙지 않고 `hud-state` 이벤트만 그린다(권한 최소)
+pub fn apply_mode(app: &tauri::AppHandle, mode: &str) {
+    let existing = app.get_webview_window("hud");
+    if mode != "window" {
+        if let Some(w) = existing {
+            let _ = w.close();
+        }
+        return;
+    }
+    if existing.is_some() {
+        return;
+    }
+    let b = tauri::WebviewWindowBuilder::new(app, "hud", tauri::WebviewUrl::App("index.html#hud".into()))
+        .title("Story Firewall HUD")
+        .inner_size(300.0, 92.0)
+        .resizable(false)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false);
+    if let Ok(w) = b.build() {
+        // 기본 위치: 주 모니터 오른쪽 아래(작업 표시줄 위). 끌어서 옮길 수 있다
+        if let Ok(Some(m)) = w.primary_monitor() {
+            let sz = m.size();
+            let sc = m.scale_factor();
+            let x = sz.width as f64 - 316.0 * sc;
+            let y = sz.height as f64 - 160.0 * sc;
+            let _ = w.set_position(tauri::PhysicalPosition::new(x.max(0.0) as i32, y.max(0.0) as i32));
+        }
+    }
+}
+
+#[tauri::command]
+pub fn hud_state() -> serde_json::Value {
+    LAST.lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(state_json))
+        .unwrap_or_else(|| serde_json::json!({"tone": "down", "critical": 0, "high": 0, "latest": null, "emergency_left_min": null}))
+}
+
+#[tauri::command]
+pub fn hud_mode(app: tauri::AppHandle) -> String {
+    read_mode(&app)
+}
+
+#[tauri::command]
+pub fn set_hud_mode(app: tauri::AppHandle, mode: String) -> Result<(), String> {
+    if mode != "tray" && mode != "window" {
+        return Err("mode 는 tray|window".into());
+    }
+    if let Some(p) = mode_file(&app) {
+        if let Some(d) = p.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        std::fs::write(&p, &mode).map_err(|e| e.to_string())?;
+    }
+    apply_mode(&app, &mode);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_main(app: tauri::AppHandle) {
+    crate::tray::show_main(&app);
+}
+
 /// 갱신 스레드: 서비스가 붙어 있으면 REFRESH_EVERY 마다 상태를 묻고 아이콘·툴팁을 바꾼다. 상태가 같으면 그대로 둔다
 pub fn spawn(app: tauri::AppHandle, link: Arc<crate::tray::Link>) {
     std::thread::spawn(move || {
@@ -140,6 +234,10 @@ pub fn spawn(app: tauri::AppHandle, link: Arc<crate::tray::Link>) {
             };
             if last.as_ref() != Some(&st) {
                 apply(&app, &st);
+                if let Ok(mut g) = LAST.lock() {
+                    *g = Some(st.clone());
+                }
+                let _ = app.emit("hud-state", state_json(&st));
                 last = Some(st);
             }
             std::thread::sleep(REFRESH_EVERY);

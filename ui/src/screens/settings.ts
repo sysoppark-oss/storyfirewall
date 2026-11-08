@@ -146,10 +146,37 @@ export function settings(): HTMLElement {
   adAllow.placeholder = "예: Acme Software, Veeam";
   adAllow.disabled = true;
   adAllow.style.width = "100%";
+  // 대시보드 개편안 3판 4-1 HUD: ② 트레이 아이콘만(기본) / ① 작은 상시 창(+트레이). 이 PC 사용자별(서비스 설정 아님)
+  const hudSel = el("select") as HTMLSelectElement;
+  for (const [v, t] of [["tray", "트레이 아이콘만 (기본)"], ["window", "작은 상시 창 + 트레이 아이콘"]] as const) {
+    const o = el("option", undefined, t) as HTMLOptionElement;
+    o.value = v;
+    hudSel.append(o);
+  }
+  const hudNote = el("span", "muted small");
+  if ("__TAURI_INTERNALS__" in window) {
+    void import("@tauri-apps/api/core").then(async ({ invoke }) => {
+      try {
+        hudSel.value = (await invoke("hud_mode")) as string;
+      } catch {
+        hudSel.disabled = true;
+      }
+      hudSel.addEventListener("change", async () => {
+        try {
+          await invoke("set_hud_mode", { mode: hudSel.value });
+          hudNote.textContent = "";
+        } catch (e) {
+          hudNote.textContent = `바꾸지 못했습니다: ${String(e)}`;
+        }
+      });
+    });
+  } else hudSel.disabled = true;
   const upLine = el("div", "update-line", el("label", undefined, upAuto, " 켤 때 새 판이 있는지 확인(기본)"), " ", upBtn, upNote);
   root.append(
     el("div", "form",
       el("label", undefined, "화면 테마 ", theme),
+      el("label", undefined, "보호 상태 표시(HUD) ", hudSel, " ", hudNote),
+      el("p", "muted small", "트레이 아이콘의 점 색: 빨강 = 미조치 심각, 주황 = 미조치 높음, 초록 = 없음, 회색 = 서비스 연결 끊김. 아이콘에 마우스를 올리면 수와 최근 사건이 나옵니다. 상시 창은 화면 오른쪽 아래에 늘 떠 있고 끌어서 옮길 수 있습니다."),
       el("h3", undefined, "알림"),
       el("label", undefined, toastBox, " 새 인시던트(높음 이상)를 Windows 알림으로 알리기(기본)"),
       el("p", "muted small", "앱 창을 닫아 두어도(트레이) 사건이 한 장 더 나아갈 때마다 한 번 알립니다. 원격 제어 시작 알림은 이 설정과 상관없이 늘 뜹니다."),

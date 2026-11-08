@@ -41,10 +41,12 @@ const SCREENS = {
 type Key = keyof typeof SCREENS;
 
 const app = document.getElementById("app")!;
+// HUD ① 작은 상시 창(index.html#hud): 본 화면을 만들지 않고 HUD 만 그린다
+const isHud = location.hash === "#hud";
 const nav = el("nav", "nav");
 const main = el("main", "main");
 const status = el("div", "status");
-app.append(nav, main, status);
+if (!isHud) app.append(nav, main, status);
 
 let current: HTMLElement | undefined;
 function go(key: Key, args?: Record<string, unknown>) {
@@ -138,4 +140,5 @@ async function boot() {
     wasStuck = stuck;
   }, 10_000);
 }
-void boot();
+if (isHud) void import("./hud").then((m) => m.hudMain(app));
+else void boot();

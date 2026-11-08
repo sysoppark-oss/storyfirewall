@@ -611,3 +611,19 @@ details.where-panel { border-radius: 16px; }
 .kpi.tone-warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); background: color-mix(in srgb, var(--warn) 6%, var(--card)); }
 /* 제목과 범례: 한 줄 flex, 좁으면 범례가 다음 줄로(실기기 660px 에서 겹침) */
 .hour-card .chart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 14px; margin-bottom: 10px; } .hour-card .chart-head h3 { margin: 0; }
+
+/* HUD ① 작은 상시 창 (대시보드 개편안 3판 4-1) */
+body.hud-body { margin: 0; background: transparent; overflow: hidden; }
+body.hud-body #app { display: block; }
+.hud-card { box-sizing: border-box; height: 92px; padding: 10px 12px; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: 8px; font-size: 12px; position: relative; cursor: default; user-select: none; }
+.hud-card[data-tone="critical"] { border-left-color: var(--crit); }
+.hud-card[data-tone="high"] { border-left-color: var(--warn); }
+.hud-card[data-tone="down"] { border-left-color: var(--muted); }
+.hud-row { display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.hud-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); flex: none; }
+.hud-card[data-tone="critical"] .hud-dot { background: var(--crit); }
+.hud-card[data-tone="high"] .hud-dot { background: var(--warn); }
+.hud-card[data-tone="down"] .hud-dot { background: var(--muted); }
+.hud-top { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-sub { margin-top: 6px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 48px; pointer-events: none; }
+.hud-open { position: absolute; right: 8px; bottom: 8px; font-size: 11px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--fg); cursor: pointer; }

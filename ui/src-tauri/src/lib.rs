@@ -212,7 +212,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![connect, rpc, endpoint, elevated, approve, update_enabled, update_check, update_install, set_story_toast])
+        .invoke_handler(tauri::generate_handler![connect, rpc, endpoint, elevated, approve, update_enabled, update_check, update_install, set_story_toast, hud::hud_state, hud::hud_mode, hud::set_hud_mode, hud::open_main])
         .on_window_event(|w, e| {
             // 닫기(X) = 트레이로 숨김. 끝내기는 트레이 메뉴 (A28)
             if let tauri::WindowEvent::CloseRequested { api, .. } = e {
@@ -233,6 +233,9 @@ pub fn run() {
             tray::spawn_watchdog(app.handle().clone(), link.clone());
             // 대시보드 개편안 3판 4-1 HUD ②: 트레이 아이콘 점 색·툴팁(미조치 심각·높음, 최근 사건, 긴급 차단)
             hud::spawn(app.handle().clone(), link);
+            // HUD ①(작은 상시 창)을 고른 사용자면 바로 연다
+            let mode = hud::read_mode(app.handle());
+            hud::apply_mode(app.handle(), &mode);
             // L061: 브라우저 금고 경비의 미끼 폴더를 **사용자 권한**으로 만든다(서비스는 읽기만 해서 등록).
             // 실제 프로그램 폴더가 있으면 건드리지 않고, 나중에 그 프로그램이 들어오면 우리 파일만 지우고 물러난다
             std::thread::spawn(|| {
