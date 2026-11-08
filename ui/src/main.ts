@@ -41,8 +41,9 @@ const SCREENS = {
 type Key = keyof typeof SCREENS;
 
 const app = document.getElementById("app")!;
-// HUD ① 작은 상시 창(index.html#hud): 본 화면을 만들지 않고 HUD 만 그린다
-const isHud = location.hash === "#hud";
+// HUD ① 작은 상시 창(창 이름 "hud"): 본 화면을 만들지 않고 HUD 만 그린다.
+// install-109: URL 해시(#hud)는 Tauri 앱 주소에서 경로로 바뀌어 빈 창이 됐다 → 창 이름으로 알아본다
+const isHud = (window as unknown as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } }).__TAURI_INTERNALS__?.metadata?.currentWindow?.label === "hud";
 const nav = el("nav", "nav");
 const main = el("main", "main");
 const status = el("div", "status");

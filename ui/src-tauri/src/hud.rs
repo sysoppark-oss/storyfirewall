@@ -161,32 +161,32 @@ pub fn read_mode(app: &tauri::AppHandle) -> String {
 pub fn apply_mode(app: &tauri::AppHandle, mode: &str) {
     let existing = app.get_webview_window("hud");
     if mode != "window" {
+        // close() 는 빈 창(페이지를 못 읽은 창)에서 듣지 않았다(install-109 실측) → destroy
         if let Some(w) = existing {
-            let _ = w.close();
+            let _ = w.destroy();
         }
         return;
     }
     if existing.is_some() {
         return;
     }
-    let b = tauri::WebviewWindowBuilder::new(app, "hud", tauri::WebviewUrl::App("index.html#hud".into()))
+    // install-109 실측: "index.html#hud" 는 앱 URL 에서 해시가 경로로 바뀌어 빈 창이 됐다 → 주소는 그대로, 창 이름(hud)으로 알아본다.
+    // 위치는 만들 때 논리 좌표로(만든 뒤 set_position 은 왼쪽 위에 그대로 있었다)
+    let (w_l, h_l) = (300.0, 92.0);
+    let mut b = tauri::WebviewWindowBuilder::new(app, "hud", tauri::WebviewUrl::App("index.html".into()))
         .title("Story Firewall HUD")
-        .inner_size(300.0, 92.0)
+        .inner_size(w_l, h_l)
         .resizable(false)
         .decorations(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .focused(false);
-    if let Ok(w) = b.build() {
-        // 기본 위치: 주 모니터 오른쪽 아래(작업 표시줄 위). 끌어서 옮길 수 있다
-        if let Ok(Some(m)) = w.primary_monitor() {
-            let sz = m.size();
-            let sc = m.scale_factor();
-            let x = sz.width as f64 - 316.0 * sc;
-            let y = sz.height as f64 - 160.0 * sc;
-            let _ = w.set_position(tauri::PhysicalPosition::new(x.max(0.0) as i32, y.max(0.0) as i32));
-        }
+    if let Ok(Some(m)) = app.primary_monitor() {
+        let sc = m.scale_factor();
+        let (mw, mh) = (m.size().width as f64 / sc, m.size().height as f64 / sc);
+        b = b.position((mw - w_l - 16.0).max(0.0), (mh - h_l - 64.0).max(0.0));
     }
+    let _ = b.build();
 }
 
 #[tauri::command]

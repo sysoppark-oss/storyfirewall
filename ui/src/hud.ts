@@ -1,4 +1,4 @@
-// HUD ① 작은 상시 창 (대시보드 개편안 3판 4-1). 서비스에 직접 붙지 않는다 — Rust(hud.rs)가 20초마다 보내는
+// HUD ① 작은 상시 창(창 이름 "hud", 대시보드 개편안 3판 4-1). 서비스에 직접 붙지 않는다 — Rust(hud.rs)가 20초마다 보내는
 // `hud-state` 이벤트만 그린다. 누르면 본 창을 연다. 끌어서 옮길 수 있다(data-tauri-drag-region).
 import { el } from "./ui";
 
