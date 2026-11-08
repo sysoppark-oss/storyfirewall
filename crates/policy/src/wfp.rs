@@ -129,14 +129,21 @@ unsafe fn drop_event_from(e: &FWPM_NET_EVENT2) -> Option<DropEvent> {
     }
     let h = &e.header;
     let ts = ((h.timeStamp.dwHighDateTime as i64) << 32) | h.timeStamp.dwLowDateTime as i64;
-    let remote_v4 = if h.flags & FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET != 0 && h.ipVersion == FWP_IP_VERSION_V4 {
-        Some(std::net::Ipv4Addr::from(h.Anonymous2.remoteAddrV4))
-    } else {
-        None
-    };
-    let app_id = if h.flags & FWPM_NET_EVENT_FLAG_APP_ID_SET != 0 && h.appId.size >= 2 && !h.appId.data.is_null() {
-        let u16s = std::slice::from_raw_parts(h.appId.data as *const u16, (h.appId.size / 2) as usize);
-        String::from_utf16_lossy(u16s).trim_end_matches('\0').to_string()
+    let remote_v4 =
+        if h.flags & FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET != 0 && h.ipVersion == FWP_IP_VERSION_V4 {
+            Some(std::net::Ipv4Addr::from(h.Anonymous2.remoteAddrV4))
+        } else {
+            None
+        };
+    let app_id = if h.flags & FWPM_NET_EVENT_FLAG_APP_ID_SET != 0
+        && h.appId.size >= 2
+        && !h.appId.data.is_null()
+    {
+        let u16s =
+            std::slice::from_raw_parts(h.appId.data as *const u16, (h.appId.size / 2) as usize);
+        String::from_utf16_lossy(u16s)
+            .trim_end_matches('\0')
+            .to_string()
     } else {
         String::new()
     };
@@ -146,12 +153,19 @@ unsafe fn drop_event_from(e: &FWPM_NET_EVENT2) -> Option<DropEvent> {
         layer_id: d.layerId,
         protocol: h.ipProtocol,
         remote_v4,
-        remote_port: if h.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET != 0 { h.remotePort } else { 0 },
+        remote_port: if h.flags & FWPM_NET_EVENT_FLAG_REMOTE_PORT_SET != 0 {
+            h.remotePort
+        } else {
+            0
+        },
         app_id,
     })
 }
 
-unsafe extern "system" fn on_net_event(context: *mut core::ffi::c_void, event: *const FWPM_NET_EVENT2) {
+unsafe extern "system" fn on_net_event(
+    context: *mut core::ffi::c_void,
+    event: *const FWPM_NET_EVENT2,
+) {
     if context.is_null() || event.is_null() {
         return;
     }
@@ -314,7 +328,9 @@ impl Engine {
             };
             if ok == 0 || sd_ptr.is_null() {
                 if !app_blob.is_null() {
-                    unsafe { FwpmFreeMemory0(&mut app_blob as *mut _ as *mut *mut core::ffi::c_void) };
+                    unsafe {
+                        FwpmFreeMemory0(&mut app_blob as *mut _ as *mut *mut core::ffi::c_void)
+                    };
                 }
                 return Err(PolicyError::Wfp(
                     unsafe { windows_sys::Win32::Foundation::GetLastError() },
@@ -466,7 +482,11 @@ impl Engine {
         let mut f: FWPM_FILTER0 = unsafe { std::mem::zeroed() };
         f.displayData.name = name.as_ptr() as *mut u16;
         // 긴급 차단은 영구가 아니다 — 재부팅하면 풀린다(안전판, 3판 1-1)
-        f.flags = if spec.emergency { 0 } else { FWPM_FILTER_FLAG_PERSISTENT };
+        f.flags = if spec.emergency {
+            0
+        } else {
+            FWPM_FILTER_FLAG_PERSISTENT
+        };
         let mut pk = PROVIDER_KEY;
         f.providerKey = &mut pk;
         f.layerKey = layer;
@@ -780,7 +800,9 @@ impl Engine {
         sub.enumTemplate = std::ptr::null_mut(); // 전부(종류는 콜백에서 거른다)
         let ctx = Box::into_raw(Box::new(sink));
         let mut eh: HANDLE = std::ptr::null_mut();
-        let rc = unsafe { FwpmNetEventSubscribe1(self.h, &sub, Some(on_net_event), ctx as *const _, &mut eh) };
+        let rc = unsafe {
+            FwpmNetEventSubscribe1(self.h, &sub, Some(on_net_event), ctx as *const _, &mut eh)
+        };
         if rc != 0 {
             unsafe { drop(Box::from_raw(ctx)) };
             return Err(PolicyError::Wfp(rc, "FwpmNetEventSubscribe1"));

@@ -759,7 +759,8 @@ fn process_start(
 /// ① 처음 의심 등급(70점)을 넘은 때: 장이 그대로여도 알린다 — 기록이 없으므로 prev=None
 /// ② 이미 알린 뒤에는 장이 올라갈 때만
 pub fn should_notify(prev: Option<i64>, level: judge::Level, chapter: i64) -> bool {
-    matches!(level, judge::Level::Suspicious | judge::Level::Critical) && chapter > prev.unwrap_or(0)
+    matches!(level, judge::Level::Suspicious | judge::Level::Critical)
+        && chapter > prev.unwrap_or(0)
 }
 
 /// 우리 WFP 필터 id 집합을 차단 집계 스레드와 맞춘다(엔진 장부 기준, 주기 판정마다)
@@ -900,12 +901,22 @@ pub fn judge_and_notify(world: &mut World) {
         let mut quiet = false;
         if let Some(rec) = triage.get(&s.root).filter(|r| !r.state.is_open()) {
             let dst = crate::dispatch::story_dst(&world.graph, s);
-            let Some(why) = crate::triage::recur_if_escalated(&world.graph, s.root, rec, ch, s.score, &dst, now) else {
+            let Some(why) = crate::triage::recur_if_escalated(
+                &world.graph,
+                s.root,
+                rec,
+                ch,
+                s.score,
+                &dst,
+                now,
+            ) else {
                 continue;
             };
             world.notified.remove(&s.root);
             let text = match why {
-                crate::triage::Recur::Escalated { from, to } => format!("{from}장에서 조치했는데 {to}장까지 이어짐"),
+                crate::triage::Recur::Escalated { from, to } => {
+                    format!("{from}장에서 조치했는데 {to}장까지 이어짐")
+                }
                 crate::triage::Recur::NewDst(k) => format!("조치 뒤 새 접속지·등록 {k}곳"),
             };
             let _ = world.engine.record_event(
@@ -929,7 +940,9 @@ pub fn judge_and_notify(world: &mut World) {
     let t = std::time::Instant::now();
     let n = crate::auto_respond::run_after_judge(world, &stories);
     if n > 0 {
-        world.timings.record("엔진: 파괴 행위 자동 대응", t.elapsed());
+        world
+            .timings
+            .record("엔진: 파괴 행위 자동 대응", t.elapsed());
     }
 }
 

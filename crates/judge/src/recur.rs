@@ -51,7 +51,9 @@ pub fn keys_of(view: &View, root: i64, procs: &[i64], kind: RootKind) -> Keys {
             });
             // 통신 양식: 유입 종류 + 목적 포트 + 직전 접속과의 간격(10분 단위) — 같은 모양이면 같은 키
             let port = dst.key.rsplit(':').next().unwrap_or("").to_string();
-            let gap_bucket = last_ts.map(|t| ((e.ts - t) / (600 * 10_000_000)).max(0)).unwrap_or(-1);
+            let gap_bucket = last_ts
+                .map(|t| ((e.ts - t) / (600 * 10_000_000)).max(0))
+                .unwrap_or(-1);
             last_ts = Some(e.ts);
             shapes.insert(format!("s:{:?}:{}:{}", kind, port, gap_bucket));
         }
@@ -72,7 +74,12 @@ pub fn apply(stories: &mut [Story], keys: &[Keys], ts_of: &[i64], now: i64) -> u
             continue;
         }
         let k = &keys[i];
-        for key in k.origin.iter().chain(k.remotes.iter()).chain(k.shapes.iter()) {
+        for key in k
+            .origin
+            .iter()
+            .chain(k.remotes.iter())
+            .chain(k.shapes.iter())
+        {
             by_key.entry(key.as_str()).or_default().insert(s.root);
         }
     }
@@ -82,8 +89,18 @@ pub fn apply(stories: &mut [Story], keys: &[Keys], ts_of: &[i64], now: i64) -> u
             continue;
         }
         let k = &keys[i];
-        let hit = |keys: &[String]| keys.iter().filter_map(|x| by_key.get(x.as_str())).map(|set| set.len()).max().unwrap_or(0);
-        let origin_n = k.origin.as_ref().map(|o| by_key.get(o.as_str()).map_or(0, |s| s.len())).unwrap_or(0);
+        let hit = |keys: &[String]| {
+            keys.iter()
+                .filter_map(|x| by_key.get(x.as_str()))
+                .map(|set| set.len())
+                .max()
+                .unwrap_or(0)
+        };
+        let origin_n = k
+            .origin
+            .as_ref()
+            .map(|o| by_key.get(o.as_str()).map_or(0, |s| s.len()))
+            .unwrap_or(0);
         let remote_n = hit(&k.remotes);
         let shape_n = hit(&k.shapes);
         let (axis, n): (&'static str, usize) = if origin_n >= THRESHOLD {
@@ -101,7 +118,12 @@ pub fn apply(stories: &mut [Story], keys: &[Keys], ts_of: &[i64], now: i64) -> u
             s.score = target;
         }
         s.level = Level::Watch;
-        s.reasons.push(Reason { points: delta.max(0), what: axis, edge_id: None, node_id: Some(s.root) });
+        s.reasons.push(Reason {
+            points: delta.max(0),
+            what: axis,
+            edge_id: None,
+            node_id: Some(s.root),
+        });
         let _ = n;
         raised += 1;
     }

@@ -46,7 +46,14 @@ impl Sink {
 pub fn channel() -> (Sink, Receiver<Drop>, Arc<AtomicU64>) {
     let (tx, rx) = sync_channel(CHANNEL_CAP);
     let lost = Arc::new(AtomicU64::new(0));
-    (Sink { tx, lost: lost.clone() }, rx, lost)
+    (
+        Sink {
+            tx,
+            lost: lost.clone(),
+        },
+        rx,
+        lost,
+    )
 }
 
 /// 시간대별 (차단 수, 유실 수) 누적 — 순수 로직(시험용)
@@ -70,7 +77,13 @@ impl Agg {
 }
 
 /// 집계 스레드 본체: rx 에서 받아 모았다가 FLUSH_EVERY 마다 store 에 쓴다. rx 가 닫히면 끝
-pub fn run(rx: Receiver<Drop>, lost: Arc<AtomicU64>, ours: OurFilters, db_path: String, log: impl Fn(String)) {
+pub fn run(
+    rx: Receiver<Drop>,
+    lost: Arc<AtomicU64>,
+    ours: OurFilters,
+    db_path: String,
+    log: impl Fn(String),
+) {
     let store = match graph::Store::open(&db_path) {
         Ok(s) => s,
         Err(e) => {
@@ -100,7 +113,10 @@ pub fn run(rx: Receiver<Drop>, lost: Arc<AtomicU64>, ours: OurFilters, db_path: 
             continue;
         }
         let now_hour = graph::Store::hour_bucket(crate::runtime::unix_to_filetime(
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0),
         ));
         for (h, n) in hours {
             if let Err(e) = store.add_blocked_hour(h, n, 0) {
@@ -122,10 +138,34 @@ mod tests {
         let ours: HashSet<u64> = [10u64, 11].into_iter().collect();
         let mut a = Agg::default();
         let t0 = crate::runtime::unix_to_filetime(1_794_009_600);
-        assert!(a.add(Drop { ts_ft: t0, filter_id: 10 }, &ours));
-        assert!(a.add(Drop { ts_ft: t0 + 5 * 10_000_000, filter_id: 11 }, &ours));
-        assert!(!a.add(Drop { ts_ft: t0, filter_id: 99 }, &ours));
-        assert!(a.add(Drop { ts_ft: t0 + 3600 * 10_000_000, filter_id: 10 }, &ours));
+        assert!(a.add(
+            Drop {
+                ts_ft: t0,
+                filter_id: 10
+            },
+            &ours
+        ));
+        assert!(a.add(
+            Drop {
+                ts_ft: t0 + 5 * 10_000_000,
+                filter_id: 11
+            },
+            &ours
+        ));
+        assert!(!a.add(
+            Drop {
+                ts_ft: t0,
+                filter_id: 99
+            },
+            &ours
+        ));
+        assert!(a.add(
+            Drop {
+                ts_ft: t0 + 3600 * 10_000_000,
+                filter_id: 10
+            },
+            &ours
+        ));
         let h = a.take();
         assert_eq!(h.get(&1_794_009_600), Some(&2));
         assert_eq!(h.get(&(1_794_009_600 + 3600)), Some(&1));
@@ -136,7 +176,10 @@ mod tests {
     fn full_channel_counts_lost_instead_of_blocking() {
         let (sink, rx, lost) = channel();
         for i in 0..(CHANNEL_CAP + 5) as u64 {
-            sink.push(Drop { ts_ft: 0, filter_id: i });
+            sink.push(Drop {
+                ts_ft: 0,
+                filter_id: i,
+            });
         }
         assert_eq!(lost.load(Ordering::Relaxed), 5);
         assert_eq!(rx.try_iter().count(), CHANNEL_CAP);

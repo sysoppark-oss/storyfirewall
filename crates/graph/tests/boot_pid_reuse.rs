@@ -8,12 +8,28 @@ use graph::ingest::{proc_key, Ingester};
 use graph::{NodeKind, Store};
 
 fn snap(now: i64, pid: u32, ppid: u32, img: &str, ct: i64) -> Event {
-    Event::new(now, "snapshot", EventKind::ProcessSnapshot { pid, ppid, image: img.into(), create_time: ct, services: vec![] })
+    Event::new(
+        now,
+        "snapshot",
+        EventKind::ProcessSnapshot {
+            pid,
+            ppid,
+            image: img.into(),
+            create_time: ct,
+            services: vec![],
+        },
+    )
 }
 
 fn parents_of(store: &Store, id: i64) -> Vec<i64> {
-    let mut st = store.conn().prepare("SELECT src FROM edges WHERE dst = ?1 AND rel = 'spawned'").unwrap();
-    st.query_map([id], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+    let mut st = store
+        .conn()
+        .prepare("SELECT src FROM edges WHERE dst = ?1 AND rel = 'spawned'")
+        .unwrap();
+    st.query_map([id], |r| r.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect()
 }
 
 #[test]
@@ -27,23 +43,66 @@ fn parent_from_previous_boot_is_not_linked_after_reboot() {
     {
         let mut ing = Ingester::new(&store);
         ing.set_boot_time(boot0);
-        ing.ingest(&snap(boot0 + 60 * min, 900, 800, r"C:\Program Files\Story Firewall\story-firewall-ui.exe", boot0 + 30 * min)).unwrap();
+        ing.ingest(&snap(
+            boot0 + 60 * min,
+            900,
+            800,
+            r"C:\Program Files\Story Firewall\story-firewall-ui.exe",
+            boot0 + 30 * min,
+        ))
+        .unwrap();
     }
     // 재부팅 뒤: wininit(부모 PID 900 = 끝난 smss 인스턴스) → services → TeamViewer_Service
     let mut ing = Ingester::new(&store);
     ing.set_boot_time(boot1);
     let now = boot1 + 10 * min;
-    ing.ingest(&snap(now, 600, 900, r"C:\Windows\System32\wininit.exe", boot1 + 20_000_000)).unwrap();
-    ing.ingest(&snap(now, 700, 600, r"C:\Windows\System32\services.exe", boot1 + 25_000_000)).unwrap();
-    ing.ingest(&snap(now, 5720, 700, r"C:\Program Files\TeamViewer\TeamViewer_Service.exe", boot1 + 60_000_000)).unwrap();
+    ing.ingest(&snap(
+        now,
+        600,
+        900,
+        r"C:\Windows\System32\wininit.exe",
+        boot1 + 20_000_000,
+    ))
+    .unwrap();
+    ing.ingest(&snap(
+        now,
+        700,
+        600,
+        r"C:\Windows\System32\services.exe",
+        boot1 + 25_000_000,
+    ))
+    .unwrap();
+    ing.ingest(&snap(
+        now,
+        5720,
+        700,
+        r"C:\Program Files\TeamViewer\TeamViewer_Service.exe",
+        boot1 + 60_000_000,
+    ))
+    .unwrap();
 
-    let wininit = store.find_node(NodeKind::Process, &proc_key(600, boot1 + 20_000_000)).unwrap().unwrap();
-    let old_ui = store.find_node(NodeKind::Process, &proc_key(900, boot0 + 30 * min)).unwrap().unwrap();
-    assert!(!parents_of(&store, wininit).contains(&old_ui), "재부팅 전 UI 가 wininit 의 부모로 이어짐");
+    let wininit = store
+        .find_node(NodeKind::Process, &proc_key(600, boot1 + 20_000_000))
+        .unwrap()
+        .unwrap();
+    let old_ui = store
+        .find_node(NodeKind::Process, &proc_key(900, boot0 + 30 * min))
+        .unwrap()
+        .unwrap();
+    assert!(
+        !parents_of(&store, wininit).contains(&old_ui),
+        "재부팅 전 UI 가 wininit 의 부모로 이어짐"
+    );
     // 이번 부팅 안의 부모는 그대로 잇는다
-    let services = store.find_node(NodeKind::Process, &proc_key(700, boot1 + 25_000_000)).unwrap().unwrap();
+    let services = store
+        .find_node(NodeKind::Process, &proc_key(700, boot1 + 25_000_000))
+        .unwrap()
+        .unwrap();
     assert_eq!(parents_of(&store, services), vec![wininit]);
-    let tv = store.find_node(NodeKind::Process, &proc_key(5720, boot1 + 60_000_000)).unwrap().unwrap();
+    let tv = store
+        .find_node(NodeKind::Process, &proc_key(5720, boot1 + 60_000_000))
+        .unwrap()
+        .unwrap();
     assert_eq!(parents_of(&store, tv), vec![services]);
 }
 
@@ -58,13 +117,39 @@ fn live_start_does_not_adopt_previous_boot_parent() {
     {
         let mut ing = Ingester::new(&store);
         ing.set_boot_time(boot0);
-        ing.ingest(&snap(boot0 + 60 * min, 4444, 800, r"C:\Users\u\old.exe", boot0 + 30 * min)).unwrap();
+        ing.ingest(&snap(
+            boot0 + 60 * min,
+            4444,
+            800,
+            r"C:\Users\u\old.exe",
+            boot0 + 30 * min,
+        ))
+        .unwrap();
     }
     let mut ing = Ingester::new(&store);
     ing.set_boot_time(boot1);
     let t = boot1 + 30 * min;
-    ing.ingest(&Event::new(t, "etw:process", EventKind::ProcessStart { pid: 5000, ppid: 4444, image: r"C:\Users\u\new.exe".into(), create_time: Some(t) })).unwrap();
-    let child = store.find_node(NodeKind::Process, &proc_key(5000, t)).unwrap().unwrap();
-    let old = store.find_node(NodeKind::Process, &proc_key(4444, boot0 + 30 * min)).unwrap().unwrap();
-    assert!(!parents_of(&store, child).contains(&old), "재부팅 전 old.exe 가 부모로 이어짐");
+    ing.ingest(&Event::new(
+        t,
+        "etw:process",
+        EventKind::ProcessStart {
+            pid: 5000,
+            ppid: 4444,
+            image: r"C:\Users\u\new.exe".into(),
+            create_time: Some(t),
+        },
+    ))
+    .unwrap();
+    let child = store
+        .find_node(NodeKind::Process, &proc_key(5000, t))
+        .unwrap()
+        .unwrap();
+    let old = store
+        .find_node(NodeKind::Process, &proc_key(4444, boot0 + 30 * min))
+        .unwrap()
+        .unwrap();
+    assert!(
+        !parents_of(&store, child).contains(&old),
+        "재부팅 전 old.exe 가 부모로 이어짐"
+    );
 }

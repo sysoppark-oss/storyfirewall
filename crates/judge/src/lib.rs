@@ -406,7 +406,14 @@ pub(crate) fn assemble(
                 .map(|(eid, ch)| (*eid, ch.map(|c| c as i64))),
         );
         recur_keys.push(crate::recur::keys_of(view, root, &chain.procs, kind));
-        recur_ts.push(chain.edges.iter().filter_map(|(id, _)| view.by_id.get(id).map(|&i| view.edges[i].ts)).max().unwrap_or(0));
+        recur_ts.push(
+            chain
+                .edges
+                .iter()
+                .filter_map(|(id, _)| view.by_id.get(id).map(|&i| view.edges[i].ts))
+                .max()
+                .unwrap_or(0),
+        );
         stories.push(Story {
             root,
             root_label: view.node(root).label.clone(),

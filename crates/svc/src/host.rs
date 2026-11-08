@@ -11,6 +11,18 @@ pub struct Listener {
     pub any_addr: bool,
 }
 
+/// 지금 열린 TCP 연결 하나(UI 명세 4판 3-4). LISTEN·PID 0(TIME_WAIT 등)은 빼고 돌려준다
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenConn {
+    pub laddr: String,
+    pub lport: u16,
+    pub raddr: String,
+    pub rport: u16,
+    /// MIB_TCP_STATE 숫자(5 = ESTABLISHED)
+    pub state: u32,
+    pub pid: u32,
+}
+
 /// ACL 정책 관리: 네트워크 인터페이스 한 개(정책 화면의 "인터페이스 선택")
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct NetIf {
@@ -55,6 +67,14 @@ pub trait Host: Send {
     /// 지금 열린 리스닝 소켓. 지원하지 않는 환경이면 Err
     fn listeners(&self) -> Result<Vec<Listener>, String> {
         Err("이 환경에서는 리스닝 포트를 볼 수 없습니다".into())
+    }
+    /// 지금 열린 TCP 연결(LISTEN 제외). 지원하지 않는 환경이면 Err
+    fn open_connections(&self) -> Result<Vec<OpenConn>, String> {
+        Err("이 환경에서는 열린 연결을 볼 수 없습니다".into())
+    }
+    /// IPv4 TCP 연결 하나 끊기(관리자). 지원하지 않는 환경이면 Err
+    fn kill_tcp(&self, _c: &OpenConn) -> Result<(), String> {
+        Err("이 환경에서는 연결을 끊을 수 없습니다".into())
     }
     /// (PID, 생성 시각 FILETIME) 이 일치할 때만 종료. 결과 설명을 돌려준다
     fn terminate(&self, _pid: u32, _create_ft: Option<i64>) -> String {

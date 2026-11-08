@@ -32,7 +32,12 @@ pub fn allow_signers(world: &World) -> Vec<String> {
         .settings
         .get(SETTING_ALLOW)
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.trim().to_string())).filter(|s| !s.is_empty()).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -69,7 +74,10 @@ pub fn run_after_judge(world: &mut World, stories: &[judge::Story]) -> usize {
                 let _ = world.engine.record_event(
                     "auto_destroy_skipped",
                     1,
-                    format!("뿌리 {} {} — 부모 사슬에 서명 예외({signer}), 자동 대응 안 함", s.root, s.root_label),
+                    format!(
+                        "뿌리 {} {} — 부모 사슬에 서명 예외({signer}), 자동 대응 안 함",
+                        s.root, s.root_label
+                    ),
                 );
             }
             Verdict::Respond(r) => {
@@ -93,12 +101,19 @@ fn execute(world: &mut World, s: &judge::Story, r: &respond::AutoResponse) {
     let mut notes = Vec::new();
     match r.mode {
         Mode::Full => {
-            let plan = match crate::cut::plan_with(&world.graph, r.origin, &["terminate".to_string()], &|pid, ft, seen| {
-                world.host.live_image(pid, ft, seen)
-            }) {
+            let plan = match crate::cut::plan_with(
+                &world.graph,
+                r.origin,
+                &["terminate".to_string()],
+                &|pid, ft, seen| world.host.live_image(pid, ft, seen),
+            ) {
                 Ok(p) => p,
                 Err(e) => {
-                    let _ = world.engine.record_event("auto_destroy_failed", 2, format!("뿌리 {} 끊기 계획 실패: {e}", s.root));
+                    let _ = world.engine.record_event(
+                        "auto_destroy_failed",
+                        2,
+                        format!("뿌리 {} 끊기 계획 실패: {e}", s.root),
+                    );
                     return;
                 }
             };
@@ -106,10 +121,24 @@ fn execute(world: &mut World, s: &judge::Story, r: &respond::AutoResponse) {
                 let extra: Vec<(String, String, u16, u8)> = plan
                     .addresses
                     .iter()
-                    .map(|a| (format!("{} ({})", a.who, a.why), a.ip.clone(), a.port, a.proto))
+                    .map(|a| {
+                        (
+                            format!("{} ({})", a.who, a.why),
+                            a.ip.clone(),
+                            a.port,
+                            a.proto,
+                        )
+                    })
                     .collect();
                 // 순서: 막고 → 끊는다
-                match world.engine.apply_full(&plan.yaml, &[], &rid, ACTOR, Some(dsl::model::Source::Cut), &extra) {
+                match world.engine.apply_full(
+                    &plan.yaml,
+                    &[],
+                    &rid,
+                    ACTOR,
+                    Some(dsl::model::Source::Cut),
+                    &extra,
+                ) {
                     Ok(ar) => {
                         // 60초 확인 창 없이 바로 확정 — 되돌리기는 policy.rollback(policy_id, version)
                         if let Err(e) = world.engine.confirm(ar.policy_id, ar.version, ACTOR) {
@@ -126,17 +155,28 @@ fn execute(world: &mut World, s: &judge::Story, r: &respond::AutoResponse) {
             }
             for t in &plan.terminate {
                 let outcome = world.host.terminate(t.pid, Some(t.create_ts));
-                let _ = world.engine.record_event("cut_terminate", 2, format!("pid {} {} → {outcome}", t.pid, t.image));
+                let _ = world.engine.record_event(
+                    "cut_terminate",
+                    2,
+                    format!("pid {} {} → {outcome}", t.pid, t.image),
+                );
                 killed += 1;
             }
             if !plan.autoruns.is_empty() {
-                notes.push(format!("자리잡기 등록 {}건은 사람이 지워야 함", plan.autoruns.len()));
+                notes.push(format!(
+                    "자리잡기 등록 {}건은 사람이 지워야 함",
+                    plan.autoruns.len()
+                ));
             }
         }
         Mode::ChildOnly => {
             if let Some((pid, ct, image)) = proc_ident(world, r.trigger_proc) {
                 let outcome = world.host.terminate(pid, Some(ct));
-                let _ = world.engine.record_event("cut_terminate", 2, format!("pid {pid} {image} → {outcome}"));
+                let _ = world.engine.record_event(
+                    "cut_terminate",
+                    2,
+                    format!("pid {pid} {image} → {outcome}"),
+                );
                 killed += 1;
             }
             notes.push("핵심 프로세스·Windows 도구가 부모 — 명령 실행 프로세스만 종료".into());
@@ -147,15 +187,31 @@ fn execute(world: &mut World, s: &judge::Story, r: &respond::AutoResponse) {
         s.root,
         s.root_label,
         r.what,
-        match r.mode { Mode::Full => "원인 프로그램부터 끊기", Mode::ChildOnly => "자식만" },
+        match r.mode {
+            Mode::Full => "원인 프로그램부터 끊기",
+            Mode::ChildOnly => "자식만",
+        },
         policies,
         killed,
-        if notes.is_empty() { String::new() } else { format!(" · {}", notes.join(" · ")) }
+        if notes.is_empty() {
+            String::new()
+        } else {
+            format!(" · {}", notes.join(" · "))
+        }
     );
-    let _ = world.engine.record_event("auto_destroy_response", 3, detail.clone());
+    let _ = world
+        .engine
+        .record_event("auto_destroy_response", 3, detail.clone());
     let (pid_, ver_) = applied.unwrap_or((0, 0));
     let note = format!("{NOTE_PREFIX}{pid_}:{ver_}");
-    let _ = crate::dispatch::set_triage(world, s.root, crate::triage::State::Acted, Some(crate::triage::Action::Cut), ACTOR, Some(&note));
+    let _ = crate::dispatch::set_triage(
+        world,
+        s.root,
+        crate::triage::State::Acted,
+        Some(crate::triage::Action::Cut),
+        ACTOR,
+        Some(&note),
+    );
     world.notify(
         api::methods::NOTIFY_EVENT,
         serde_json::json!({"kind": "auto_destroy_response", "severity": 3, "root": s.root, "label": s.root_label, "request_id": rid, "detail": detail}),
@@ -173,6 +229,9 @@ fn proc_ident(world: &World, node: i64) -> Option<(u32, i64, String)> {
     if pid == 0 {
         return None;
     }
-    let image = n.attr("image").and_then(|v| v.as_str().map(|s| s.to_string())).unwrap_or_default();
+    let image = n
+        .attr("image")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_default();
     Some((pid, ct, image))
 }

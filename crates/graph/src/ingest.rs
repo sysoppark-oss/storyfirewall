@@ -827,14 +827,18 @@ impl<'a> Ingester<'a> {
     /// 노드 시각이 이번 부팅보다 2분(BOOT_SLACK) 넘게 이르면 이전 부팅의 프로세스 — 같은 PID 라도 다른 프로세스다.
     /// (L023: 부팅 직후 시계가 틀린 프로세스는 노드 시각을 부팅 시각으로 올려 두므로 여기서 걸리지 않는다)
     fn same_boot(&self, id: i64, ts: i64) -> Result<bool> {
-        let Some(b) = self.boot_time else { return Ok(true) };
+        let Some(b) = self.boot_time else {
+            return Ok(true);
+        };
         if ts < b - BOOT_SLACK {
             return Ok(true);
         }
-        let first: i64 = self
-            .store
-            .conn
-            .query_row("SELECT first_ts FROM nodes WHERE id = ?1", [id], |r| r.get(0))?;
+        let first: i64 =
+            self.store
+                .conn
+                .query_row("SELECT first_ts FROM nodes WHERE id = ?1", [id], |r| {
+                    r.get(0)
+                })?;
         Ok(first >= b - BOOT_SLACK)
     }
 

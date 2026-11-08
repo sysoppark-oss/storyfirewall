@@ -192,7 +192,7 @@ function segmented<T extends string>(opts: [T, string, string?][], value: T, on:
 }
 
 /// ACL 표 편집기. onApply(yaml) 는 정책 화면의 적용 흐름(확인·승인 창·60초 유지)을 그대로 쓴다
-export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: string) => void): { root: HTMLElement; load: (yaml: string | null, active?: string | null) => void; markApplied: (yaml: string) => void; setActive: (yaml: string | null) => void } {
+export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: string) => void): { root: HTMLElement; load: (yaml: string | null, active?: string | null) => void; markApplied: (yaml: string) => void; setActive: (yaml: string | null) => void; prefill: (r: Partial<AclRule>) => void } {
   const root = el("section", "card acl");
   let rules: AclRule[] = [];
   let applied = "";
@@ -287,8 +287,8 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
     foot.append(state, el("span", "spacer"), button("검증", () => onValidate(aclToYaml(rules))), applyBtn);
   };
 
-  const openDialog = (idx: number) => {
-    const r: AclRule = { ...(idx >= 0 ? rules[idx]! : EMPTY) };
+  const openDialog = (idx: number, preset?: Partial<AclRule>) => {
+    const r: AclRule = { ...(idx >= 0 ? rules[idx]! : EMPTY), ...(preset ?? {}) };
     const dlg = el("dialog", "acl-dialog");
     const n = idx >= 0 ? idx + 1 : rules.length + 1;
     dlg.append(el("div", "acl-dlg-head", el("h3", undefined, idx >= 0 ? `규칙 ${n} 수정` : `새 규칙 (${n}번째 줄)`), el("p", "muted small", "빈 칸은 ‘모두’입니다. 여러 값은 쉼표로 나눕니다.")));
@@ -449,5 +449,7 @@ export function aclEditor(onApply: (yaml: string) => void, onValidate: (yaml: st
       draw();
     }
   };
-  return { root, load, markApplied, setActive };
+  /// 다른 화면(지금 열린 연결 › 접속지 차단…)이 채워 준 새 규칙 대화상자 — 표에 넣고 적용하는 것은 사용자(UI 명세 4판 3-4)
+  const prefill = (p: Partial<AclRule>) => openDialog(-1, p);
+  return { root, load, markApplied, setActive, prefill };
 }

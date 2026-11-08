@@ -1292,7 +1292,15 @@ fn emergency_filters_lost_on_reboot_are_not_restored() {
         ..Default::default()
     });
     let (emg_ids, other_ids) = {
-        let mut e = Engine::new(rusqlite::Connection::open(&path).unwrap(), &mut wfp, &NoGraph, &clock, &R, &[]).unwrap();
+        let mut e = Engine::new(
+            rusqlite::Connection::open(&path).unwrap(),
+            &mut wfp,
+            &NoGraph,
+            &clock,
+            &R,
+            &[],
+        )
+        .unwrap();
         e.apply(SIMPLE, &[], "r1", "ui").unwrap();
         e.confirm(1, 1, "ui").unwrap();
         // 조건 없는 허용이 섞이면 거부
@@ -1300,15 +1308,33 @@ fn emergency_filters_lost_on_reboot_are_not_restored() {
         let mut open = bad[0].clone();
         open.action = policy::spec::Action::Permit;
         bad.push(open);
-        assert!(matches!(e.apply_emergency(&bad, 30, "r0", "ui"), Err(EngineError::Guard(_))));
+        assert!(matches!(
+            e.apply_emergency(&bad, 30, "r0", "ui"),
+            Err(EngineError::Guard(_))
+        ));
         // 기한 범위 밖 거부
         assert!(e.apply_emergency(&specs, 0, "r9", "ui").is_err());
         let r = e.apply_emergency(&specs, 30, "r2", "ui").unwrap();
         e.confirm(r.policy_id, r.version, "ui").unwrap();
         let (id, _, exp, st) = e.emergency_status().unwrap().unwrap();
-        assert_eq!((id, st, exp), (r.policy_id, State::Confirmed, MONDAY_0000 + 1800));
-        let emg: Vec<u64> = e.store.filters_of(r.policy_id).unwrap().iter().map(|f| f.filter_id).collect();
-        let other: Vec<u64> = e.store.filters_of(1).unwrap().iter().map(|f| f.filter_id).collect();
+        assert_eq!(
+            (id, st, exp),
+            (r.policy_id, State::Confirmed, MONDAY_0000 + 1800)
+        );
+        let emg: Vec<u64> = e
+            .store
+            .filters_of(r.policy_id)
+            .unwrap()
+            .iter()
+            .map(|f| f.filter_id)
+            .collect();
+        let other: Vec<u64> = e
+            .store
+            .filters_of(1)
+            .unwrap()
+            .iter()
+            .map(|f| f.filter_id)
+            .collect();
         (emg, other)
     };
     // 재부팅: 긴급 차단 필터는 전부 사라짐(비영구), 다른 정책 필터 하나도 외부 삭제
@@ -1316,9 +1342,20 @@ fn emergency_filters_lost_on_reboot_are_not_restored() {
         assert!(wfp.external_delete(*id));
     }
     assert!(wfp.external_delete(other_ids[0]));
-    let mut e = Engine::new(rusqlite::Connection::open(&path).unwrap(), &mut wfp, &NoGraph, &clock, &R, &[]).unwrap();
+    let mut e = Engine::new(
+        rusqlite::Connection::open(&path).unwrap(),
+        &mut wfp,
+        &NoGraph,
+        &clock,
+        &R,
+        &[],
+    )
+    .unwrap();
     let (restored, _) = e.reconcile().unwrap();
     assert_eq!(restored, 1, "다른 정책 필터만 되살림");
-    assert!(e.emergency_status().unwrap().is_none(), "긴급 차단은 만료로 닫힘");
+    assert!(
+        e.emergency_status().unwrap().is_none(),
+        "긴급 차단은 만료로 닫힘"
+    );
     assert!(e.events.iter().any(|ev| ev.kind == "emergency_off"));
 }

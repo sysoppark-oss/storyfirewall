@@ -29,15 +29,15 @@ mod pipeline;
 pub mod qpc;
 #[cfg(any(windows, feature = "host-check"))]
 mod scm;
-/// 35차 Q3: 서비스 레지스트리 변경 알림
-#[cfg(any(windows, feature = "host-check"))]
-mod svcreg;
 #[cfg(any(windows, feature = "host-check"))]
 mod session_stats;
 #[cfg(any(windows, feature = "host-check"))]
 pub mod signature;
 #[cfg(any(windows, feature = "host-check"))]
 mod snapshot;
+/// 35차 Q3: 서비스 레지스트리 변경 알림
+#[cfg(any(windows, feature = "host-check"))]
+mod svcreg;
 #[cfg(any(windows, feature = "host-check"))]
 mod token;
 

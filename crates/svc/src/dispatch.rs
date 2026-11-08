@@ -105,7 +105,9 @@ fn db_bytes(path: &str) -> Option<u64> {
         return None;
     }
     let main = std::fs::metadata(path).ok()?.len();
-    let wal = std::fs::metadata(format!("{path}-wal")).map(|m| m.len()).unwrap_or(0);
+    let wal = std::fs::metadata(format!("{path}-wal"))
+        .map(|m| m.len())
+        .unwrap_or(0);
     Some(main + wal)
 }
 
@@ -178,12 +180,40 @@ fn summarize(
             l.push(format!("긴급 차단 {}분", v.minutes));
             l.extend(policy::emergency::summary(&inp));
         }
+        Method::ConnectionsKill => {
+            let v: ConnKillParams = from(p)?;
+            let c = find_open_conn(world, &v)?;
+            let now_ft = crate::runtime::unix_to_filetime(world.engine_wall());
+            let image = world
+                .graph
+                .latest_process_by_pid(c.pid, now_ft)
+                .ok()
+                .flatten()
+                .and_then(|id| world.graph.node(id).ok())
+                .and_then(|n| {
+                    n.attr("image")
+                        .and_then(|x| x.as_str().map(|s| s.to_string()))
+                })
+                .unwrap_or_else(|| format!("pid {}", c.pid));
+            l.push(format!("연결 하나를 끊습니다: {image}"));
+            l.push(format!("{}:{} → {}:{}", c.laddr, c.lport, c.raddr, c.rport));
+            l.push(
+                "프로그램이 곧바로 다시 접속할 수 있습니다. 계속 막으려면 [접속지 차단]을 쓰세요."
+                    .into(),
+            );
+        }
         Method::EmergencyStop => {
             let st = crate::emergency::status(world);
             if st["active"] != serde_json::json!(true) {
-                return Err(RpcError::with(ErrorCode::InvalidParams, "걸린 긴급 차단이 없습니다"));
+                return Err(RpcError::with(
+                    ErrorCode::InvalidParams,
+                    "걸린 긴급 차단이 없습니다",
+                ));
             }
-            l.push(format!("긴급 차단을 풉니다 (남은 시간 {}분)", st["remaining_secs"].as_i64().unwrap_or(0) / 60));
+            l.push(format!(
+                "긴급 차단을 풉니다 (남은 시간 {}분)",
+                st["remaining_secs"].as_i64().unwrap_or(0) / 60
+            ));
         }
         Method::CutApply => {
             let v: CutParams = from(p)?;
@@ -527,7 +557,11 @@ pub fn dispatch(
 /// 끝남 기록이 있으면 끝남. 없으면 지금 그 PID 로 살아 있는 프로세스가 같은 것(생성 시각 일치 또는 처음 본 시각 이전 생성)인지 조회한다.
 /// 읽기 경로라 DB 에 쓰지 않는다. 조회는 카드 한 쪽(보이는 것)만 — OpenProcess 한 번씩
 fn live_state(world: &World, d: &graph::views::ProcessDetail) -> serde_json::Value {
-    let running = !d.ended && world.host.live_image(d.pid, d.create_ts, d.node.first_ts).is_some();
+    let running = !d.ended
+        && world
+            .host
+            .live_image(d.pid, d.create_ts, d.node.first_ts)
+            .is_some();
     serde_json::json!({ "running": running, "pid": d.pid, "ended": d.ended })
 }
 
@@ -765,11 +799,14 @@ fn handle(
                 .record("이야기 목록: 판정 결과", t_judge.elapsed());
             let t_narr = std::time::Instant::now();
             // 등급으로 거른다(점수가 아니라): 5장 심각은 점수 70~89 라도 심각이다
-            let min = judge::Level::parse(&v.level_min).unwrap_or(judge::Level::Suspicious).rank();
+            let min = judge::Level::parse(&v.level_min)
+                .unwrap_or(judge::Level::Suspicious)
+                .rank();
             let scope = caller.scope();
             // 사건 추적: 처리 상태는 한 번에 읽고(사건마다 묻지 않는다), 수준·범위를 거른 뒤 상태별 개수를 센 다음 필터를 건다
             let triage_all = crate::triage::all(&world.graph);
-            let triage_filter = crate::triage::Filter::parse(&v.triage).unwrap_or(crate::triage::Filter::Open);
+            let triage_filter =
+                crate::triage::Filter::parse(&v.triage).unwrap_or(crate::triage::Filter::Open);
             let mut counts = crate::triage::Counts::default();
             // 개편안 2판 2-2(낮음 요약 칩): 등급 필터에 걸려 숨긴 미조치 사건 수 — 숨겨도 존재는 알린다
             let hidden_low = stories
@@ -777,7 +814,11 @@ fn handle(
                 .filter(|s| {
                     s.level.rank() < min
                         && scope.process_visible(&world.graph, s.root)
-                        && triage_filter.keeps(triage_all.get(&s.root).map_or(crate::triage::State::New, |r| r.state))
+                        && triage_filter.keeps(
+                            triage_all
+                                .get(&s.root)
+                                .map_or(crate::triage::State::New, |r| r.state),
+                        )
                 })
                 .count();
             // A30: 다른 사용자 세션의 프로세스가 든 이야기는 통째로 숨긴다
@@ -789,7 +830,9 @@ fn handle(
                         && scope.edges_visible(&world.graph, &s.edges)
                 })
                 .filter(|s| {
-                    let st = triage_all.get(&s.root).map_or(crate::triage::State::New, |r| r.state);
+                    let st = triage_all
+                        .get(&s.root)
+                        .map_or(crate::triage::State::New, |r| r.state);
                     counts.add(st);
                     triage_filter.keeps(st)
                 })
@@ -918,26 +961,44 @@ fn handle(
             let v: TriageParams = serde_json::from_value(p)
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
             if world.graph.node(v.root).is_err() {
-                return Err(RpcError::with(ErrorCode::InvalidParams, format!("없음: {}", v.root)));
+                return Err(RpcError::with(
+                    ErrorCode::InvalidParams,
+                    format!("없음: {}", v.root),
+                ));
             }
             if !caller.scope().process_visible(&world.graph, v.root) {
                 return Err(out_of_scope());
             }
             // 39차 Q3: 조회 권한으로는 "조사됨"만 — 알림을 끄는 상태는 승인 창(story.triage_set)
-            let rec = set_triage(world, v.root, crate::triage::State::Investigated, None, &actor(caller), v.note.as_deref())?;
+            let rec = set_triage(
+                world,
+                v.root,
+                crate::triage::State::Investigated,
+                None,
+                &actor(caller),
+                v.note.as_deref(),
+            )?;
             j(serde_json::to_value(rec).unwrap_or_default())
         }
         Method::StoryTriageSet => {
             let v: TriageSetParams = serde_json::from_value(p)
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
             if world.graph.node(v.root).is_err() {
-                return Err(RpcError::with(ErrorCode::InvalidParams, format!("없음: {}", v.root)));
+                return Err(RpcError::with(
+                    ErrorCode::InvalidParams,
+                    format!("없음: {}", v.root),
+                ));
             }
             if !caller.scope().process_visible(&world.graph, v.root) {
                 return Err(out_of_scope());
             }
             let state = crate::triage::State::parse(&v.state)
-                .filter(|s| matches!(s, crate::triage::State::Acted | crate::triage::State::Closed))
+                .filter(|s| {
+                    matches!(
+                        s,
+                        crate::triage::State::Acted | crate::triage::State::Closed
+                    )
+                })
                 .ok_or_else(|| RpcError::with(ErrorCode::InvalidParams, "state"))?;
             let action = if state == crate::triage::State::Acted {
                 Some(
@@ -949,7 +1010,14 @@ fn handle(
             } else {
                 None
             };
-            let rec = set_triage(world, v.root, state, action, &actor(caller), v.note.as_deref())?;
+            let rec = set_triage(
+                world,
+                v.root,
+                state,
+                action,
+                &actor(caller),
+                v.note.as_deref(),
+            )?;
             j(serde_json::to_value(rec).unwrap_or_default())
         }
         Method::StoryTriageLog => {
@@ -959,7 +1027,9 @@ fn handle(
                 return Err(out_of_scope());
             }
             let rows = crate::triage::log(&world.graph, v.root, v.limit);
-            j(serde_json::json!({ "root": v.root, "state": crate::triage::get(&world.graph, v.root), "items": rows }))
+            j(
+                serde_json::json!({ "root": v.root, "state": crate::triage::get(&world.graph, v.root), "items": rows }),
+            )
         }
         Method::StoryToday => {
             // 구조 개선 C: 읽기 작업자가 없을 때(메모리 DB 테스트·작업자 실패)만 엔진에서 직접
@@ -982,13 +1052,17 @@ fn handle(
             let v: api::methods::InvestigateParams = serde_json::from_value(p)
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
             if world.graph.node(v.root).is_err() {
-                return Err(RpcError::with(ErrorCode::InvalidParams, format!("없음: {}", v.root)));
+                return Err(RpcError::with(
+                    ErrorCode::InvalidParams,
+                    format!("없음: {}", v.root),
+                ));
             }
             if !caller.scope().process_visible(&world.graph, v.root) {
                 return Err(out_of_scope());
             }
             let t = std::time::Instant::now();
-            let r = crate::investigate::investigate(&world.graph, world.host.as_ref(), v.root).map_err(internal)?;
+            let r = crate::investigate::investigate(&world.graph, world.host.as_ref(), v.root)
+                .map_err(internal)?;
             world.timings.record("자동 조사", t.elapsed());
             j(serde_json::to_value(r).unwrap())
         }
@@ -1108,21 +1182,37 @@ fn handle(
                         .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
                     world.judge_inc.invalidate();
                     // 사건 추적: 정상 처리 = 조치함(정상)
-                    let _ = set_triage(world, v.root, crate::triage::State::Acted, Some(crate::triage::Action::Normal), &actor(caller), None);
+                    let _ = set_triage(
+                        world,
+                        v.root,
+                        crate::triage::State::Acted,
+                        Some(crate::triage::Action::Normal),
+                        &actor(caller),
+                        None,
+                    );
                     return j(serde_json::json!({ "ok": true, "scope": "vault" }));
                 }
                 // 인수인계 2026-11-07 남은 일 2: (다)·(라)·(바)는 "부모 → 도구 → 띄운 프로그램(경로+서명)" 조합 단위로 정상 처리.
                 // 키는 판정과 같은 뷰(judge_inc)로 만든다 — 다른 창(전체 그래프)으로 만들면 띄운 프로그램 집합이 달라 키가 어긋난다
-                let chain_kind = world.judged.as_ref().and_then(|(_, ss)| {
-                    ss.iter().find(|s| s.root == v.root).map(|s| s.root_kind)
-                });
+                let chain_kind = world
+                    .judged
+                    .as_ref()
+                    .and_then(|(_, ss)| ss.iter().find(|s| s.root == v.root).map(|s| s.root_kind));
                 if !matches!(
                     chain_kind,
-                    Some(judge::RootKind::IsolatedSvchost | judge::RootKind::LolbinFromDocApp | judge::RootKind::RecoveryInhibit)
+                    Some(
+                        judge::RootKind::IsolatedSvchost
+                            | judge::RootKind::LolbinFromDocApp
+                            | judge::RootKind::RecoveryInhibit
+                    )
                 ) {
-                    return Err(RpcError::with(ErrorCode::InvalidParams, "이 종류의 사건은 아직 '이건 정상입니다'를 지원하지 않습니다".to_string()));
+                    return Err(RpcError::with(
+                        ErrorCode::InvalidParams,
+                        "이 종류의 사건은 아직 '이건 정상입니다'를 지원하지 않습니다".to_string(),
+                    ));
                 }
-                let (key, label) = match world.judge_inc.view().and_then(|vw| vw.chain_unit(v.root)) {
+                let (key, label) = match world.judge_inc.view().and_then(|vw| vw.chain_unit(v.root))
+                {
                     // 39차 Q1②: 부모를 모르는(수집 전부터 돌던) 도구의 조합은 정상 처리하지 않는다 — 부팅 때 먼저 뜬 악성 프로세스가
                     // "부모 ?" 조합으로 영구 면죄부를 받는 길이 된다
                     Some(u) if u.parent.is_none() => {
@@ -1139,7 +1229,14 @@ fn handle(
                     .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
                 world.judge_inc.invalidate();
                 let note = format!("정상 조합: {label}");
-                let _ = set_triage(world, v.root, crate::triage::State::Acted, Some(crate::triage::Action::Normal), &actor(caller), Some(&note));
+                let _ = set_triage(
+                    world,
+                    v.root,
+                    crate::triage::State::Acted,
+                    Some(crate::triage::Action::Normal),
+                    &actor(caller),
+                    Some(&note),
+                );
                 return j(serde_json::json!({ "ok": true, "scope": "chain", "unit": label }));
             }
             world
@@ -1149,7 +1246,14 @@ fn handle(
             // 갈래 C: 다음 주기 판정은 전체 다시(점수는 캐시하지 않아 결과에는 필요 없지만 안전망 — 드문 일)
             world.judge_inc.invalidate();
             // 사건 추적: 정상 처리 = 조치함(정상)
-            let _ = set_triage(world, v.root, crate::triage::State::Acted, Some(crate::triage::Action::Normal), &actor(caller), None);
+            let _ = set_triage(
+                world,
+                v.root,
+                crate::triage::State::Acted,
+                Some(crate::triage::Action::Normal),
+                &actor(caller),
+                None,
+            );
             j(serde_json::json!({ "ok": true }))
         }
         Method::JudgeBaselineStatus => {
@@ -1665,6 +1769,26 @@ fn handle(
             j(out)
         }
         Method::EmergencyStatus => j(crate::emergency::status(world)),
+        Method::ConnectionsOpen => j(open_connections_json(world, caller)?),
+        Method::ConnectionsKill => {
+            let v: api::methods::ConnKillParams = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            let c = find_open_conn(world, &v)?;
+            world
+                .host
+                .kill_tcp(&c)
+                .map_err(|e| RpcError::with(ErrorCode::Internal, e))?;
+            let _ = world.engine.record_event(
+                "conn_killed",
+                2,
+                format!(
+                    "연결을 끊었습니다 — pid {} {}:{} → {}:{}",
+                    c.pid, c.laddr, c.lport, c.raddr, c.rport
+                ),
+            );
+            crate::runtime::flush_events(world);
+            j(serde_json::json!({ "ok": true }))
+        }
         Method::EmergencyStart => {
             let v: EmergencyStartParams = serde_json::from_value(p)
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
@@ -1689,10 +1813,18 @@ fn handle(
             let _: RequestOnly = serde_json::from_value(p)
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
             let Some((id, _, _, _)) = world.engine.emergency_status().map_err(engine_err)? else {
-                return Err(RpcError::with(ErrorCode::InvalidParams, "걸린 긴급 차단이 없습니다"));
+                return Err(RpcError::with(
+                    ErrorCode::InvalidParams,
+                    "걸린 긴급 차단이 없습니다",
+                ));
             };
-            world.engine.rollback(id, None, &actor(caller)).map_err(engine_err)?;
-            let _ = world.engine.record_event("emergency_off", 2, "긴급 차단을 풀었습니다".into());
+            world
+                .engine
+                .rollback(id, None, &actor(caller))
+                .map_err(engine_err)?;
+            let _ = world
+                .engine
+                .record_event("emergency_off", 2, "긴급 차단을 풀었습니다".into());
             crate::runtime::flush_events(world);
             j(serde_json::json!({ "ok": true, "policy_id": id }))
         }
@@ -1765,7 +1897,14 @@ fn handle(
             );
             crate::runtime::flush_events(world);
             // 사건 추적: 끊기 = 조치함(끊음)
-            let _ = set_triage(world, v.story_root, crate::triage::State::Acted, Some(crate::triage::Action::Cut), &actor(caller), None);
+            let _ = set_triage(
+                world,
+                v.story_root,
+                crate::triage::State::Acted,
+                Some(crate::triage::Action::Cut),
+                &actor(caller),
+                None,
+            );
             j(
                 serde_json::json!({ "policies": applied, "terminated": killed, "pending": pending, "autoruns": plan.autoruns, "written_executables": plan.written_executables, "warnings": plan.warnings }),
             )
@@ -1799,8 +1938,20 @@ pub(crate) fn set_triage(
         .map(|s| story_dst(&world.graph, s))
         .unwrap_or_default();
     let prev = crate::triage::get(&world.graph, root);
-    let rec = crate::triage::set_with_dst(&world.graph, root, state, action, chapter, score, actor, note, now, &dst, prev.recur_count)
-        .map_err(internal)?;
+    let rec = crate::triage::set_with_dst(
+        &world.graph,
+        root,
+        state,
+        action,
+        chapter,
+        score,
+        actor,
+        note,
+        now,
+        &dst,
+        prev.recur_count,
+    )
+    .map_err(internal)?;
     // 조치함·닫힘이 되면 그 사건의 알림 기록은 지운다 — 재발로 돌아올 때 다시 알리기 위해
     if !state.is_open() {
         world.notified.remove(&root);
@@ -1820,7 +1971,9 @@ pub(crate) fn story_dst(g: &graph::Store, s: &judge::Story) -> Vec<String> {
         .filter_map(|e| {
             let n = g.node(e.dst).ok()?;
             Some(if n.kind == "remote" {
-                let domain = n.attr("domain").and_then(|d| d.as_str().map(|x| x.to_string()));
+                let domain = n
+                    .attr("domain")
+                    .and_then(|d| d.as_str().map(|x| x.to_string()));
                 crate::triage::dst_mark_remote(domain.as_deref(), &n.key)
             } else {
                 crate::triage::dst_mark_node(e.dst)
@@ -1953,4 +2106,109 @@ fn judged_stories(
     world.judge_gen += 1;
     world.judge_cache_gen = world.judge_gen;
     Ok(s)
+}
+
+/// connections.kill: 요청한 연결이 지금도 같은 PID 로 열려 있는지(그 사이 다른 연결로 바뀌지 않았는지) 확인
+fn find_open_conn(
+    world: &World,
+    v: &api::methods::ConnKillParams,
+) -> Result<crate::host::OpenConn, RpcError> {
+    let cs = world
+        .host
+        .open_connections()
+        .map_err(|e| RpcError::with(ErrorCode::Internal, e))?;
+    cs.into_iter()
+        .find(|c| {
+            c.laddr == v.laddr
+                && c.lport == v.lport
+                && c.raddr == v.raddr
+                && c.rport == v.rport
+                && c.pid == v.pid
+        })
+        .ok_or_else(|| {
+            RpcError::with(
+                ErrorCode::InvalidParams,
+                "그 연결이 이미 닫혔거나 다른 프로그램의 연결로 바뀌었습니다",
+            )
+        })
+}
+
+/// TCP 상태 숫자 → 화면 말(UI 명세 4판 3-4: 연결됨 · 연결 중 · 닫는 중)
+pub fn tcp_state_word(st: u32) -> &'static str {
+    match st {
+        5 => "연결됨",
+        3 | 4 => "연결 중",
+        _ => "닫는 중",
+    }
+}
+
+/// 원격 주소가 이 PC 안(루프백)이거나 비어 있으면 "지금 열린 외부 연결"이 아니다
+pub fn is_external_remote(addr: &str) -> bool {
+    match addr.parse::<std::net::IpAddr>() {
+        Ok(ip) => !ip.is_loopback() && !ip.is_unspecified(),
+        Err(_) => false,
+    }
+}
+
+/// connections.open 결과(UI 명세 4판 3-4). 연결 테이블을 지금 읽고 그래프에서 프로그램·인시던트만 찾는다(DB 에 쓰지 않음)
+fn open_connections_json(
+    world: &mut World,
+    caller: &Caller,
+) -> Result<serde_json::Value, RpcError> {
+    let cs = world
+        .host
+        .open_connections()
+        .map_err(|e| RpcError::with(ErrorCode::Internal, e))?;
+    let now_ft = crate::runtime::unix_to_filetime(world.engine_wall());
+    let scope = caller.scope();
+    let judged = judged_stories(world, 0).ok();
+    let mut items = Vec::new();
+    for c in cs.into_iter().filter(|c| is_external_remote(&c.raddr)) {
+        let node = world
+            .graph
+            .latest_process_by_pid(c.pid, now_ft)
+            .ok()
+            .flatten();
+        if let Some(n) = node {
+            if !scope.process_visible(&world.graph, n) {
+                continue;
+            }
+        }
+        let image = node.and_then(|id| world.graph.node(id).ok()).and_then(|n| {
+            n.attr("image")
+                .and_then(|x| x.as_str().map(|s| s.to_string()))
+        });
+        let story = node.and_then(|id| {
+            judged.as_ref().and_then(|s| {
+                s.iter()
+                    .find(|x| x.root == id)
+                    .map(|x| (x.root, format!("{:?}", x.level)))
+            })
+        });
+        let wh = geo::global().lookup_str(&c.raddr);
+        items.push(serde_json::json!({
+            "proto": "tcp", "laddr": c.laddr, "lport": c.lport, "raddr": c.raddr, "rport": c.rport,
+            "state": tcp_state_word(c.state), "pid": c.pid, "process_id": node, "image": image,
+            "where": wh, "v4": c.raddr.parse::<std::net::Ipv4Addr>().is_ok(),
+            "story_root": story.as_ref().map(|x| x.0), "story_level": story.as_ref().map(|x| x.1.clone()),
+        }));
+    }
+    Ok(serde_json::json!({ "items": items }))
+}
+
+#[cfg(test)]
+mod open_conn_tests {
+    use super::*;
+    #[test]
+    fn open_connection_words_and_external_filter() {
+        assert_eq!(tcp_state_word(5), "연결됨");
+        assert_eq!(tcp_state_word(3), "연결 중");
+        assert_eq!(tcp_state_word(8), "닫는 중");
+        assert!(is_external_remote("203.0.113.5"));
+        assert!(is_external_remote("2001:db8::1"));
+        assert!(!is_external_remote("127.0.0.1"));
+        assert!(!is_external_remote("::1"));
+        assert!(!is_external_remote("0.0.0.0"));
+        assert!(!is_external_remote("not-an-ip"));
+    }
 }

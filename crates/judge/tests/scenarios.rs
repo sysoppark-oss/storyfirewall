@@ -1264,9 +1264,18 @@ fn low_events_sharing_a_remote_are_raised_to_watch_after_three() {
         ]);
     }
     ing.ingest_all(&evs).unwrap();
-    for app in [r"C:\Program Files\WindowsApps\V1.App_1.0\a.exe", r"C:\Program Files\WindowsApps\V2.App_1.0\b.exe", r"C:\Program Files\WindowsApps\V3.App_1.0\c.exe"] {
-        let fid = store.find_node(graph::NodeKind::File, app).unwrap().unwrap();
-        store.merge_node_attrs(fid, &serde_json::json!({"store_package": app})).unwrap();
+    for app in [
+        r"C:\Program Files\WindowsApps\V1.App_1.0\a.exe",
+        r"C:\Program Files\WindowsApps\V2.App_1.0\b.exe",
+        r"C:\Program Files\WindowsApps\V3.App_1.0\c.exe",
+    ] {
+        let fid = store
+            .find_node(graph::NodeKind::File, app)
+            .unwrap()
+            .unwrap();
+        store
+            .merge_node_attrs(fid, &serde_json::json!({"store_package": app}))
+            .unwrap();
     }
     let bl = Baseline::open(&store, T0 + 3 * DAY).unwrap();
     let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
@@ -1274,15 +1283,27 @@ fn low_events_sharing_a_remote_are_raised_to_watch_after_three() {
     for s in &stories {
         assert_eq!(s.level, Level::Watch, "{:?}", s.reasons);
         assert_eq!(s.score, 40);
-        assert!(s.reasons.iter().any(|r| r.what.contains("같은 접속지")), "{:?}", s.reasons);
+        assert!(
+            s.reasons.iter().any(|r| r.what.contains("같은 접속지")),
+            "{:?}",
+            s.reasons
+        );
     }
     // 두 건뿐이면 그대로 낮음
     let store2 = Store::open_in_memory().unwrap();
     let mut ing2 = Ingester::new(&store2);
     ing2.ingest_all(&evs[..1 + 2 * 5]).unwrap();
-    for app in [r"C:\Program Files\WindowsApps\V1.App_1.0\a.exe", r"C:\Program Files\WindowsApps\V2.App_1.0\b.exe"] {
-        let fid = store2.find_node(graph::NodeKind::File, app).unwrap().unwrap();
-        store2.merge_node_attrs(fid, &serde_json::json!({"store_package": app})).unwrap();
+    for app in [
+        r"C:\Program Files\WindowsApps\V1.App_1.0\a.exe",
+        r"C:\Program Files\WindowsApps\V2.App_1.0\b.exe",
+    ] {
+        let fid = store2
+            .find_node(graph::NodeKind::File, app)
+            .unwrap()
+            .unwrap();
+        store2
+            .merge_node_attrs(fid, &serde_json::json!({"store_package": app}))
+            .unwrap();
     }
     let bl2 = Baseline::open(&store2, T0 + 3 * DAY).unwrap();
     let two = judge::run(&store2, 0, i64::MAX, &bl2).unwrap();
@@ -1307,8 +1328,18 @@ fn auto_response_full_for_unsigned_origin_running_t1490() {
         start(T0 + 2 * SEC, 4100, 4000, CMD),
         sig(T0 + 2 * SEC, CMD, Some("Microsoft Windows"), "valid", true),
         start(T0 + 3 * SEC, 4200, 4100, VSSADMIN),
-        sig(T0 + 3 * SEC, VSSADMIN, Some("Microsoft Windows"), "valid", true),
-        cmd(T0 + 3 * SEC, 4200, "vssadmin.exe delete shadows /all /quiet"),
+        sig(
+            T0 + 3 * SEC,
+            VSSADMIN,
+            Some("Microsoft Windows"),
+            "valid",
+            true,
+        ),
+        cmd(
+            T0 + 3 * SEC,
+            4200,
+            "vssadmin.exe delete shadows /all /quiet",
+        ),
     ])
     .unwrap();
     let bl = Baseline::open(&store, T0 + DAY).unwrap();
@@ -1324,9 +1355,19 @@ fn auto_response_full_for_unsigned_origin_running_t1490() {
             assert_eq!(r.unsigned_chain.len(), 1, "{r:?}");
             // 끊기 대상은 원인 프로그램 x.exe
             let o = view.node(r.origin);
-            assert!(judge::rules::attr_str(o, "image").unwrap_or_default().ends_with("x.exe"), "{o:?}");
+            assert!(
+                judge::rules::attr_str(o, "image")
+                    .unwrap_or_default()
+                    .ends_with("x.exe"),
+                "{o:?}"
+            );
             let p = view.node(r.trigger_proc);
-            assert!(judge::rules::attr_str(p, "image").unwrap_or_default().ends_with("vssadmin.exe"), "{p:?}");
+            assert!(
+                judge::rules::attr_str(p, "image")
+                    .unwrap_or_default()
+                    .ends_with("vssadmin.exe"),
+                "{p:?}"
+            );
         }
         v => panic!("{v:?}"),
     }
@@ -1351,18 +1392,32 @@ fn auto_response_skipped_when_ancestor_is_microsoft_or_allowlisted() {
     let bl = Baseline::open(&store, T0 + DAY).unwrap();
     let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
     let view = judge::View::load(&store, 0, i64::MAX).unwrap();
-    let s = stories.iter().find(|s| s.chapter == Chapter::Destroy).expect("5장 사건");
+    let s = stories
+        .iter()
+        .find(|s| s.chapter == Chapter::Destroy)
+        .expect("5장 사건");
     // 허용 목록 없음: 유효 서명이라도 Microsoft 가 아니면 대응한다(2판 4-2) — 끊기 대상은 사건 뿌리(vssadmin)가 아니라 Acme
     match respond::judge(&view, s, &[]) {
         Verdict::Respond(r) => {
             assert_eq!(r.mode, Mode::Full);
-            assert!(judge::rules::attr_str(view.node(r.origin), "image").unwrap_or_default().ends_with("acmebackup.exe"), "{r:?}");
+            assert!(
+                judge::rules::attr_str(view.node(r.origin), "image")
+                    .unwrap_or_default()
+                    .ends_with("acmebackup.exe"),
+                "{r:?}"
+            );
         }
         v => panic!("{v:?}"),
     }
     // 44차 Q1-②: 앞부분만 같은 항목("acme software")은 허용이 아니다 — 대응한다
-    assert!(matches!(respond::judge(&view, s, &["acme software".into()]), Verdict::Respond(_)));
-    assert!(matches!(respond::judge(&view, s, &["Acme".into()]), Verdict::Respond(_)));
+    assert!(matches!(
+        respond::judge(&view, s, &["acme software".into()]),
+        Verdict::Respond(_)
+    ));
+    assert!(matches!(
+        respond::judge(&view, s, &["Acme".into()]),
+        Verdict::Respond(_)
+    ));
     // 허용 목록에 서명자 이름이 정확히(대소문자·앞뒤 공백 무시) 있으면 대응하지 않는다
     match respond::judge(&view, s, &["  acme SOFTWARE inc. ".into()]) {
         Verdict::TrustedAncestor { signer, .. } => assert_eq!(signer, "Acme Software Inc."),
@@ -1384,8 +1439,17 @@ fn auto_response_skipped_when_ancestor_is_microsoft_or_allowlisted() {
     let bl2 = Baseline::open(&store2, T0 + DAY).unwrap();
     let st2 = judge::run(&store2, 0, i64::MAX, &bl2).unwrap();
     let view2 = judge::View::load(&store2, 0, i64::MAX).unwrap();
-    let s2 = st2.iter().find(|s| s.chapter == Chapter::Destroy).expect("5장 사건");
-    assert!(matches!(respond::judge(&view2, s2, &[]), Verdict::TrustedAncestor { .. }), "{s2:#?}");
+    let s2 = st2
+        .iter()
+        .find(|s| s.chapter == Chapter::Destroy)
+        .expect("5장 사건");
+    assert!(
+        matches!(
+            respond::judge(&view2, s2, &[]),
+            Verdict::TrustedAncestor { .. }
+        ),
+        "{s2:#?}"
+    );
 }
 
 /// 부모가 핵심 프로세스·Windows 도구뿐(explorer → cmd → vssadmin)이면 자식만 종료(ChildOnly)
@@ -1400,14 +1464,27 @@ fn auto_response_child_only_when_parent_is_core_process() {
         start(T0 + SEC, 3000, 1000, CMD),
         sig(T0 + SEC, CMD, Some("Microsoft Windows"), "valid", true),
         start(T0 + 2 * SEC, 3100, 3000, VSSADMIN),
-        sig(T0 + 2 * SEC, VSSADMIN, Some("Microsoft Windows"), "valid", true),
-        cmd(T0 + 2 * SEC, 3100, "vssadmin.exe delete shadows /all /quiet"),
+        sig(
+            T0 + 2 * SEC,
+            VSSADMIN,
+            Some("Microsoft Windows"),
+            "valid",
+            true,
+        ),
+        cmd(
+            T0 + 2 * SEC,
+            3100,
+            "vssadmin.exe delete shadows /all /quiet",
+        ),
     ])
     .unwrap();
     let bl = Baseline::open(&store, T0 + DAY).unwrap();
     let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
     let view = judge::View::load(&store, 0, i64::MAX).unwrap();
-    let s = stories.iter().find(|s| s.root_kind == RootKind::RecoveryInhibit).expect("5장 사건");
+    let s = stories
+        .iter()
+        .find(|s| s.root_kind == RootKind::RecoveryInhibit)
+        .expect("5장 사건");
     match respond::judge(&view, s, &[]) {
         Verdict::Respond(r) => {
             assert_eq!(r.mode, Mode::ChildOnly);
@@ -1435,7 +1512,13 @@ fn auto_response_targets_first_non_windows_actor_only() {
     ing.ingest_all(&[
         snap(T0, 900, 4, agent, &[]),
         start(T0 + SEC, 1000, 900, edge),
-        sig(T0 + SEC, edge, Some("Microsoft Corporation"), "valid", false),
+        sig(
+            T0 + SEC,
+            edge,
+            Some("Microsoft Corporation"),
+            "valid",
+            false,
+        ),
         start(T0 + 2 * SEC, 4000, 1000, mal),
         sig(T0 + 2 * SEC, mal, None, "nosignature", false),
         start(T0 + 3 * SEC, 4100, 4000, CMD),
@@ -1446,12 +1529,18 @@ fn auto_response_targets_first_non_windows_actor_only() {
     let bl = Baseline::open(&store, T0 + DAY).unwrap();
     let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
     let view = judge::View::load(&store, 0, i64::MAX).unwrap();
-    let s = stories.iter().find(|s| s.chapter == Chapter::Destroy).expect("5장 사건");
+    let s = stories
+        .iter()
+        .find(|s| s.chapter == Chapter::Destroy)
+        .expect("5장 사건");
     match respond::judge(&view, s, &[]) {
         Verdict::Respond(r) => {
             assert_eq!(r.mode, Mode::Full);
             let o = judge::rules::attr_str(view.node(r.origin), "image").unwrap_or_default();
-            assert!(o.ends_with("invoice-viewer.exe"), "끊기 대상은 시험 프로그램이어야 함(Edge·에이전트 아님): {o}");
+            assert!(
+                o.ends_with("invoice-viewer.exe"),
+                "끊기 대상은 시험 프로그램이어야 함(Edge·에이전트 아님): {o}"
+            );
         }
         v => panic!("Edge(Microsoft 서명) 위에 있어도 면제되면 안 됨: {v:?}"),
     }
@@ -1474,7 +1563,10 @@ fn auto_response_child_only_when_actor_signature_unknown() {
     let bl = Baseline::open(&store, T0 + DAY).unwrap();
     let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
     let view = judge::View::load(&store, 0, i64::MAX).unwrap();
-    let s = stories.iter().find(|s| s.chapter == Chapter::Destroy).expect("5장 사건");
+    let s = stories
+        .iter()
+        .find(|s| s.chapter == Chapter::Destroy)
+        .expect("5장 사건");
     match respond::judge(&view, s, &[]) {
         Verdict::Respond(r) => {
             assert_eq!(r.mode, Mode::ChildOnly, "{r:?}");
@@ -1501,19 +1593,38 @@ fn auto_response_does_not_skip_program_in_user_writable_windows_folder() {
         start(T0 + 2 * SEC, 4100, 4000, CMD),
         sig(T0 + 2 * SEC, CMD, Some("Microsoft Windows"), "valid", true),
         start(T0 + 3 * SEC, 4200, 4100, VSSADMIN),
-        sig(T0 + 3 * SEC, VSSADMIN, Some("Microsoft Windows"), "valid", true),
-        cmd(T0 + 3 * SEC, 4200, "vssadmin.exe delete shadows /all /quiet"),
+        sig(
+            T0 + 3 * SEC,
+            VSSADMIN,
+            Some("Microsoft Windows"),
+            "valid",
+            true,
+        ),
+        cmd(
+            T0 + 3 * SEC,
+            4200,
+            "vssadmin.exe delete shadows /all /quiet",
+        ),
     ])
     .unwrap();
     let bl = Baseline::open(&store, T0 + DAY).unwrap();
     let stories = judge::run(&store, 0, i64::MAX, &bl).unwrap();
     let view = judge::View::load(&store, 0, i64::MAX).unwrap();
-    let s = stories.iter().find(|s| s.chapter == Chapter::Destroy).expect("5장 사건");
+    let s = stories
+        .iter()
+        .find(|s| s.chapter == Chapter::Destroy)
+        .expect("5장 사건");
     match respond::judge(&view, s, &[]) {
         Verdict::Respond(r) => {
             assert_eq!(r.mode, Mode::Full, "{r:?}");
             let o = view.node(r.origin);
-            assert!(judge::rules::attr_str(o, "image").unwrap_or_default().to_ascii_lowercase().ends_with(r"windows\temp\upd.exe"), "{o:?}");
+            assert!(
+                judge::rules::attr_str(o, "image")
+                    .unwrap_or_default()
+                    .to_ascii_lowercase()
+                    .ends_with(r"windows\temp\upd.exe"),
+                "{o:?}"
+            );
         }
         v => panic!("{v:?}"),
     }

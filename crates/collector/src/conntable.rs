@@ -8,9 +8,11 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use windows_sys::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, NO_ERROR};
 use windows_sys::Win32::NetworkManagement::IpHelper::{
-    GetExtendedTcpTable, GetExtendedUdpTable, MIB_TCP6ROW_OWNER_PID, MIB_TCP6TABLE_OWNER_PID,
-    MIB_TCPROW_OWNER_PID, MIB_TCPTABLE_OWNER_PID, MIB_UDP6ROW_OWNER_PID, MIB_UDP6TABLE_OWNER_PID,
-    MIB_UDPROW_OWNER_PID, MIB_UDPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL, UDP_TABLE_OWNER_PID,
+    GetExtendedTcpTable, GetExtendedUdpTable, SetTcpEntry, MIB_TCP6ROW_OWNER_PID,
+    MIB_TCP6TABLE_OWNER_PID, MIB_TCPROW_LH, MIB_TCPROW_LH_0, MIB_TCPROW_OWNER_PID,
+    MIB_TCPTABLE_OWNER_PID, MIB_TCP_STATE_DELETE_TCB, MIB_UDP6ROW_OWNER_PID,
+    MIB_UDP6TABLE_OWNER_PID, MIB_UDPROW_OWNER_PID, MIB_UDPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL,
+    UDP_TABLE_OWNER_PID,
 };
 use windows_sys::Win32::Networking::WinSock::{AF_INET, AF_INET6};
 
@@ -193,4 +195,25 @@ pub fn missed_by_etw(
         out.push(c.clone());
     }
     out
+}
+
+/// IPv4 TCP 연결 하나 끊기(UI 명세 4판 3-4). SetTcpEntry 에 MIB_TCP_STATE_DELETE_TCB 를 주면 그 연결이 RST 로 끝난다.
+/// 관리자 권한 필요(Microsoft Learn: SetTcpEntry — 바꿀 수 있는 상태는 DELETE_TCB 하나, IPv6 판 없음).
+/// 주소는 네트워크 바이트 순서(읽을 때와 같은 표현: 주소는 octets 그대로, 포트는 아래 16비트 big-endian)
+pub fn kill_tcp_v4(local: Ipv4Addr, lport: u16, remote: Ipv4Addr, rport: u16) -> Result<(), u32> {
+    let row = MIB_TCPROW_LH {
+        Anonymous: MIB_TCPROW_LH_0 {
+            dwState: MIB_TCP_STATE_DELETE_TCB as u32,
+        },
+        dwLocalAddr: u32::from_ne_bytes(local.octets()),
+        dwLocalPort: lport.to_be() as u32,
+        dwRemoteAddr: u32::from_ne_bytes(remote.octets()),
+        dwRemotePort: rport.to_be() as u32,
+    };
+    let r = unsafe { SetTcpEntry(&row) };
+    if r == NO_ERROR {
+        Ok(())
+    } else {
+        Err(r)
+    }
 }

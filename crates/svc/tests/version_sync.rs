@@ -10,7 +10,10 @@ fn read(rel: &str) -> String {
 
 fn toml_version(s: &str) -> String {
     s.lines()
-        .find_map(|l| l.strip_prefix("version = \"").and_then(|r| r.strip_suffix('"')))
+        .find_map(|l| {
+            l.strip_prefix("version = \"")
+                .and_then(|r| r.strip_suffix('"'))
+        })
         .expect("version 줄")
         .to_string()
 }
@@ -23,8 +26,24 @@ fn json_version(s: &str) -> String {
 #[test]
 fn all_version_fields_match() {
     let svc = env!("CARGO_PKG_VERSION").to_string();
-    assert_eq!(toml_version(&read("ui/src-tauri/Cargo.toml")), svc, "ui/src-tauri/Cargo.toml");
-    assert_eq!(json_version(&read("ui/src-tauri/tauri.conf.json")), svc, "tauri.conf.json");
-    assert_eq!(json_version(&read("ui/package.json")), svc, "ui/package.json");
-    assert_eq!(json_version(&read("ui/package-lock.json")), svc, "ui/package-lock.json");
+    assert_eq!(
+        toml_version(&read("ui/src-tauri/Cargo.toml")),
+        svc,
+        "ui/src-tauri/Cargo.toml"
+    );
+    assert_eq!(
+        json_version(&read("ui/src-tauri/tauri.conf.json")),
+        svc,
+        "tauri.conf.json"
+    );
+    assert_eq!(
+        json_version(&read("ui/package.json")),
+        svc,
+        "ui/package.json"
+    );
+    assert_eq!(
+        json_version(&read("ui/package-lock.json")),
+        svc,
+        "ui/package-lock.json"
+    );
 }

@@ -12,7 +12,6 @@
 //! 수집기는 `Event` 채널. Linux 에서는 가짜로 통합 테스트.
 
 pub mod auto_respond;
-pub mod emergency;
 pub mod blocked;
 pub mod change;
 pub mod cut;
@@ -21,6 +20,7 @@ pub mod defender;
 pub mod demo;
 pub mod dev;
 pub mod dispatch;
+pub mod emergency;
 /// 첫 실행 관찰실 (기획서 17판 23-2 ①)
 pub mod first_run;
 pub mod handler;

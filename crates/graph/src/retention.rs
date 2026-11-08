@@ -346,7 +346,10 @@ fn apply_inner(
     crate::changes::end_bulk(&tx, changed)?;
     // 시간대별 트래픽 요약은 연결 요약과 같은 기간(summary_days) 보관
     let hourly_before_unix = (now - policy.summary_days * DAY) / 10_000_000 - 11_644_473_600;
-    tx.execute("DELETE FROM traffic_hourly WHERE hour < ?1", params![hourly_before_unix])?;
+    tx.execute(
+        "DELETE FROM traffic_hourly WHERE hour < ?1",
+        params![hourly_before_unix],
+    )?;
     tx.commit()?;
     Ok(rep)
 }

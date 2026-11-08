@@ -491,16 +491,25 @@ impl<'a> Engine<'a> {
             return Ok(prev);
         }
         if !(1..=1440).contains(&minutes) {
-            return Err(EngineError::Invalid(vec!["긴급 차단 기한은 1~1440분".into()]));
+            return Err(EngineError::Invalid(vec![
+                "긴급 차단 기한은 1~1440분".into()
+            ]));
         }
         if specs.is_empty() || !specs.iter().all(|s| s.emergency) {
             return Err(EngineError::Invalid(vec!["긴급 차단 명세가 아님".into()]));
         }
-        if specs.iter().any(|s| s.action == Action::Permit && s.is_empty_match()) {
-            return Err(EngineError::Guard("긴급 차단 예외에 조건 없는 전체 허용".into()));
+        if specs
+            .iter()
+            .any(|s| s.action == Action::Permit && s.is_empty_match())
+        {
+            return Err(EngineError::Guard(
+                "긴급 차단 예외에 조건 없는 전체 허용".into(),
+            ));
         }
         if !specs.iter().any(|s| s.action == Action::Block) {
-            return Err(EngineError::Invalid(vec!["긴급 차단에 차단 명세가 없음".into()]));
+            return Err(EngineError::Invalid(vec![
+                "긴급 차단에 차단 명세가 없음".into()
+            ]));
         }
         let now = self.clock.wall();
         let expires_at = now + i64::from(minutes) * 60;
@@ -511,8 +520,13 @@ impl<'a> Engine<'a> {
             notify_on_expire: true,
         };
         let name = policy::emergency::POLICY_NAME;
-        let note = format!("긴급 차단 {minutes}분 (예외 {}건)", specs.iter().filter(|s| s.action == Action::Permit).count());
-        let (policy_id, version) = self.store.new_version(name, &note, specs, Some(&schedule), now, actor)?;
+        let note = format!(
+            "긴급 차단 {minutes}분 (예외 {}건)",
+            specs.iter().filter(|s| s.action == Action::Permit).count()
+        );
+        let (policy_id, version) =
+            self.store
+                .new_version(name, &note, specs, Some(&schedule), now, actor)?;
         let prev_ids: Vec<u64> = self
             .store
             .filters_of(policy_id)?
@@ -550,7 +564,11 @@ impl<'a> Engine<'a> {
         for st in [State::Applied, State::Confirmed] {
             for row in self.store.policies_in(st)? {
                 if row.name == policy::emergency::POLICY_NAME {
-                    let exp = row.schedule.as_ref().and_then(|s| s.expires_at).unwrap_or(0);
+                    let exp = row
+                        .schedule
+                        .as_ref()
+                        .and_then(|s| s.expires_at)
+                        .unwrap_or(0);
                     return Ok(Some((row.id, row.version, exp, st)));
                 }
             }
@@ -1480,7 +1498,10 @@ impl<'a> Engine<'a> {
                 self.removing.extend(ef.iter().map(|r| r.filter_id));
                 let tx = self.store.conn.unchecked_transaction()?;
                 for r in &ef {
-                    tx.execute("DELETE FROM wfp_filters WHERE filter_id = ?1", [r.filter_id as i64])?;
+                    tx.execute(
+                        "DELETE FROM wfp_filters WHERE filter_id = ?1",
+                        [r.filter_id as i64],
+                    )?;
                 }
                 tx.commit()?;
                 for r in &ef {
@@ -1488,9 +1509,18 @@ impl<'a> Engine<'a> {
                 }
                 self.confirm_mono.remove(&eid);
                 self.store.set_state(eid, State::Expired, None)?;
-                self.store
-                    .history(self.clock.wall(), eid, "expire", "system:reboot", "재부팅으로 해제")?;
-                self.event("emergency_off", 2, "긴급 차단이 재부팅으로 풀렸습니다(다시 걸지 않음)".into())?;
+                self.store.history(
+                    self.clock.wall(),
+                    eid,
+                    "expire",
+                    "system:reboot",
+                    "재부팅으로 해제",
+                )?;
+                self.event(
+                    "emergency_off",
+                    2,
+                    "긴급 차단이 재부팅으로 풀렸습니다(다시 걸지 않음)".into(),
+                )?;
             }
         }
         for row in self.store.all_filters()? {

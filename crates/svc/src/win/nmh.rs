@@ -4,14 +4,17 @@
 //! 이름·경로는 외부에서 온 문자열 — 비교와 표시(자료)에만 쓴다.
 use crate::host::NativeHost;
 use windows_sys::Win32::System::Registry::{
-    RegCloseKey, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW, HKEY, HKEY_LOCAL_MACHINE, HKEY_USERS, KEY_READ,
-    KEY_WOW64_32KEY, KEY_WOW64_64KEY, RRF_RT_REG_SZ,
+    RegCloseKey, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW, HKEY, HKEY_LOCAL_MACHINE, HKEY_USERS,
+    KEY_READ, KEY_WOW64_32KEY, KEY_WOW64_64KEY, RRF_RT_REG_SZ,
 };
 
 const BROWSERS: &[(&str, &str)] = &[
     ("chrome", r"Software\Google\Chrome\NativeMessagingHosts"),
     ("edge", r"Software\Microsoft\Edge\NativeMessagingHosts"),
-    ("brave", r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts"),
+    (
+        "brave",
+        r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts",
+    ),
     ("chromium", r"Software\Chromium\NativeMessagingHosts"),
     ("firefox", r"Software\Mozilla\NativeMessagingHosts"),
 ];
@@ -31,7 +34,16 @@ fn subkeys(k: HKEY) -> Vec<String> {
         let mut len = name.len() as u32;
         // SAFETY: 이름 버퍼와 길이는 지역 변수
         let r = unsafe {
-            RegEnumKeyExW(k, i, name.as_mut_ptr(), &mut len, std::ptr::null(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut())
+            RegEnumKeyExW(
+                k,
+                i,
+                name.as_mut_ptr(),
+                &mut len,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
         };
         if r != 0 {
             break;
@@ -47,7 +59,17 @@ fn default_value(k: HKEY, sub: &str) -> Option<String> {
     let mut cb = (buf.len() * 2) as u32;
     let w = super::wide(sub);
     // SAFETY: 출력 버퍼는 지역 배열. 값 이름 null = 기본값
-    let r = unsafe { RegGetValueW(k, w.as_ptr(), std::ptr::null(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr() as *mut _, &mut cb) };
+    let r = unsafe {
+        RegGetValueW(
+            k,
+            w.as_ptr(),
+            std::ptr::null(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr() as *mut _,
+            &mut cb,
+        )
+    };
     if r != 0 {
         return None;
     }
@@ -74,18 +96,35 @@ pub fn resolve(manifest: &str, p: &str) -> String {
     if is_abs {
         return p.replace('/', "\\");
     }
-    let dir = std::path::Path::new(manifest).parent().map(|d| d.to_path_buf()).unwrap_or_default();
-    dir.join(p.replace('/', "\\")).to_string_lossy().into_owned()
+    let dir = std::path::Path::new(manifest)
+        .parent()
+        .map(|d| d.to_path_buf())
+        .unwrap_or_default();
+    dir.join(p.replace('/', "\\"))
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn scan(root: HKEY, scope: &str, prefix: &str, extra: u32, out: &mut Vec<NativeHost>) {
     for (browser, sub) in BROWSERS {
-        let path = if prefix.is_empty() { sub.to_string() } else { format!("{prefix}\\{sub}") };
-        let Some(k) = open(root, &path, extra) else { continue };
+        let path = if prefix.is_empty() {
+            sub.to_string()
+        } else {
+            format!("{prefix}\\{sub}")
+        };
+        let Some(k) = open(root, &path, extra) else {
+            continue;
+        };
         for name in subkeys(k) {
             if let Some(manifest) = default_value(k, &name) {
                 let exe = manifest_exe(&manifest).unwrap_or_default();
-                let h = NativeHost { browser: browser.to_string(), name, scope: scope.to_string(), manifest, path: exe };
+                let h = NativeHost {
+                    browser: browser.to_string(),
+                    name,
+                    scope: scope.to_string(),
+                    manifest,
+                    path: exe,
+                };
                 if !out.contains(&h) {
                     out.push(h);
                 }

@@ -76,6 +76,7 @@ fn method_table_roles_and_idempotency_keys() {
             "cut.apply",
             "emergency.start",
             "emergency.stop",
+            "connections.kill",
             "retention.set",
             "settings.set",
             "change.get",
@@ -375,7 +376,11 @@ fn remote_trusted_tools_are_validated() {
     let rid = "0f3c2a1e-9b7d-4c6a-8e5f-123456789abc";
     let ok = serde_json::json!({"request_id": rid, "remote_trusted_tools": ["teamviewer", "chrome_remote_desktop"]});
     assert!(validate_params(Method::SettingsSet, &ok).is_ok());
-    assert!(validate_params(Method::SettingsSet, &serde_json::json!({"request_id": rid, "remote_trusted_tools": []})).is_ok());
+    assert!(validate_params(
+        Method::SettingsSet,
+        &serde_json::json!({"request_id": rid, "remote_trusted_tools": []})
+    )
+    .is_ok());
     for bad in [
         serde_json::json!({"request_id": rid, "remote_trusted_tools": "teamviewer"}),
         serde_json::json!({"request_id": rid, "remote_trusted_tools": ["Team Viewer"]}),

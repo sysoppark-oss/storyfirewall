@@ -88,8 +88,14 @@ impl Store {
         // A20 이행: origins.sha256 / sha256_ts
         let _ = conn.execute("ALTER TABLE origins ADD COLUMN sha256 TEXT", []);
         // 개편안 2판 1-2②: 시간대별 차단 통신 수(우리 필터가 막은 것)와 집계 채널이 넘쳐 못 센 수
-        let _ = conn.execute("ALTER TABLE traffic_hourly ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0", []);
-        let _ = conn.execute("ALTER TABLE traffic_hourly ADD COLUMN blocked_lost INTEGER NOT NULL DEFAULT 0", []);
+        let _ = conn.execute(
+            "ALTER TABLE traffic_hourly ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE traffic_hourly ADD COLUMN blocked_lost INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
         let _ = conn.execute("ALTER TABLE origins ADD COLUMN sha256_ts INTEGER", []);
         conn.execute(
             "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?1)",
@@ -382,12 +388,25 @@ impl Store {
     /// `since_unix` 이후 시간대별 요약(hour 오름차순): (hour, sent, recv, conns, blocked, blocked_lost). 조회 경로는 이 작은 표만 읽는다
     pub fn traffic_hourly(&self, since_unix: i64) -> Result<Vec<(i64, i64, i64, i64, i64, i64)>> {
         let mut st = self.conn.prepare("SELECT hour, sent, recv, conns, blocked, blocked_lost FROM traffic_hourly WHERE hour >= ?1 ORDER BY hour")?;
-        let rows = st.query_map(params![since_unix - since_unix.rem_euclid(3600)], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?;
-        rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+        let rows = st.query_map(params![since_unix - since_unix.rem_euclid(3600)], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Into::into)
     }
     /// 보관 정리: 오래된 시간대 요약 삭제
     pub fn prune_traffic_hourly(&self, before_unix: i64) -> Result<usize> {
-        Ok(self.conn.execute("DELETE FROM traffic_hourly WHERE hour < ?1", params![before_unix])?)
+        Ok(self.conn.execute(
+            "DELETE FROM traffic_hourly WHERE hour < ?1",
+            params![before_unix],
+        )?)
     }
 
     pub fn count_nodes(&self) -> Result<i64> {

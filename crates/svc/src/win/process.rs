@@ -103,6 +103,32 @@ impl crate::host::Host for WinHost {
     fn terminate(&self, pid: u32, create_ft: Option<i64>) -> String {
         format!("{:?}", terminate(pid, create_ft))
     }
+    fn open_connections(&self) -> Result<Vec<crate::host::OpenConn>, String> {
+        let cs = collector::conntable::tcp_connections()
+            .map_err(|e| format!("연결 표 조회 실패 {e:#x}"))?;
+        Ok(cs
+            .into_iter()
+            .filter(|c| c.state != collector::conntable::MIB_TCP_STATE_LISTEN && c.pid != 0)
+            .map(|c| crate::host::OpenConn {
+                laddr: c.local.to_string(),
+                lport: c.lport,
+                raddr: c.remote.to_string(),
+                rport: c.rport,
+                state: c.state,
+                pid: c.pid,
+            })
+            .collect())
+    }
+    fn kill_tcp(&self, c: &crate::host::OpenConn) -> Result<(), String> {
+        let (Ok(l), Ok(r)) = (
+            c.laddr.parse::<std::net::Ipv4Addr>(),
+            c.raddr.parse::<std::net::Ipv4Addr>(),
+        ) else {
+            return Err("IPv4 연결만 끊을 수 있습니다".into());
+        };
+        collector::conntable::kill_tcp_v4(l, c.lport, r, c.rport)
+            .map_err(|e| format!("SetTcpEntry 실패 (Win32 오류 {e})"))
+    }
     fn live_image(&self, pid: u32, create_ft: i64, seen_ft: i64) -> Option<(String, i64)> {
         // 같은 프로세스일 때만(PID 재사용 방지): 생성 시각이 기록과 같거나, 처음 본 시각 전에 생겼다
         let same = |ct: i64| ct == create_ft || (seen_ft > 0 && ct > 0 && ct <= seen_ft);
@@ -126,7 +152,10 @@ impl crate::host::Host for WinHost {
     }
     fn signature(&self, path: &str) -> Option<crate::host::SigInfo> {
         let r = collector::signature::verify(path);
-        Some(crate::host::SigInfo { status: r.status, signer: r.signer })
+        Some(crate::host::SigInfo {
+            status: r.status,
+            signer: r.signer,
+        })
     }
     fn native_hosts(&self) -> Vec<crate::host::NativeHost> {
         super::nmh::native_hosts()

@@ -52,15 +52,24 @@ pub fn check_tools(tools: &[String]) -> Result<Vec<String>, String> {
 pub fn input(world: &World, remote_tools: &[String]) -> Result<policy::emergency::Input, String> {
     let tools = check_tools(remote_tools)?;
     // 사용자가 적은 경로가 없으면 그 경로를 알려 주고 거부(조용히 빼면 그 도구가 막힌 줄 모른다)
-    if let Some(missing) = tools.iter().find(|t| !std::path::Path::new(t.as_str()).is_file()) {
+    if let Some(missing) = tools
+        .iter()
+        .find(|t| !std::path::Path::new(t.as_str()).is_file())
+    {
         return Err(format!("원격 도구 경로가 없습니다: {missing}"));
     }
     Ok(policy::emergency::Input {
         own_images: own_images(),
         remote_tools: tools,
         rdp_clients: rdp_clients(&world.host.rdp_sessions()),
-        dns_service: world.host.service_sid_usable("Dnscache").then(|| "Dnscache".to_string()),
-        dhcp_service: world.host.service_sid_usable("Dhcp").then(|| "Dhcp".to_string()),
+        dns_service: world
+            .host
+            .service_sid_usable("Dnscache")
+            .then(|| "Dnscache".to_string()),
+        dhcp_service: world
+            .host
+            .service_sid_usable("Dhcp")
+            .then(|| "Dhcp".to_string()),
     })
 }
 
@@ -73,9 +82,19 @@ pub fn suggested_tools(world: &World) -> Vec<(String, String)> {
     };
     let mut out: Vec<(String, String)> = Vec::new();
     for (_, node, key) in found {
-        let Ok(n) = world.graph.node(node) else { continue };
-        let Some(img) = n.attr("image").and_then(|v| v.as_str().map(|s| s.to_string())) else { continue };
-        if key == "rdp" || dsl::validate::is_system_image(&img) || !std::path::Path::new(&img).is_file() {
+        let Ok(n) = world.graph.node(node) else {
+            continue;
+        };
+        let Some(img) = n
+            .attr("image")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+        else {
+            continue;
+        };
+        if key == "rdp"
+            || dsl::validate::is_system_image(&img)
+            || !std::path::Path::new(&img).is_file()
+        {
             continue;
         }
         if out.iter().any(|(_, p)| p.eq_ignore_ascii_case(&img)) {
@@ -132,14 +151,24 @@ mod tests {
             (6, "203.0.113.7\u{1f}SAME".to_string()),
         ];
         let v = rdp_clients(&s);
-        assert_eq!(v, vec!["203.0.113.7".parse::<IpAddr>().unwrap(), "2001:db8::5".parse().unwrap()]);
+        assert_eq!(
+            v,
+            vec![
+                "203.0.113.7".parse::<IpAddr>().unwrap(),
+                "2001:db8::5".parse().unwrap()
+            ]
+        );
     }
 
     #[test]
     fn system_images_are_not_allowed_as_remote_tools() {
         assert!(check_tools(&[r"C:\Windows\System32\svchost.exe".into()]).is_err());
         assert_eq!(
-            check_tools(&[r"C:\Program Files\TeamViewer\TeamViewer.exe".into(), " ".into()]).unwrap(),
+            check_tools(&[
+                r"C:\Program Files\TeamViewer\TeamViewer.exe".into(),
+                " ".into()
+            ])
+            .unwrap(),
             vec![r"C:\Program Files\TeamViewer\TeamViewer.exe".to_string()]
         );
     }

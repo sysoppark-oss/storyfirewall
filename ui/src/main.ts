@@ -1,7 +1,7 @@
 import { topbar } from "./topbar";
+import { connectionsScreen } from "./screens/live-conns";
 import { SCREEN_LABEL } from "./terms";
 import { dashboard } from "./screens/dashboard";
-import { connections } from "./screens/connections";
 import { story } from "./screens/story";
 import { installs } from "./screens/installs";
 import { agents } from "./screens/agents";
@@ -32,11 +32,11 @@ setUnauthorizedHandler(notAdmin);
 
 const SCREENS = {
   dashboard: { label: "대시보드", make: () => dashboard() },
-  connections: { label: SCREEN_LABEL.connections, make: () => connections() },
+  connections: { label: SCREEN_LABEL.connections, make: (a?: Record<string, unknown>) => connectionsScreen(a) },
   story: { label: SCREEN_LABEL.story, make: (a?: Record<string, unknown>) => story(a) },
   installs: { label: SCREEN_LABEL.installs, make: () => installs() },
   agents: { label: SCREEN_LABEL.agents, make: () => agents() },
-  policy: { label: "정책", make: () => policy() },
+  policy: { label: "정책", make: (a?: Record<string, unknown>) => policy(a) },
   settings: { label: "설정", make: () => settings() },
 } as const;
 type Key = keyof typeof SCREENS;

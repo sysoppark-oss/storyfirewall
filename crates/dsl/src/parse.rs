@@ -13,7 +13,9 @@ pub fn parse(text: &str) -> Result<Document> {
         let t = t.strip_prefix("- ").unwrap_or(t).trim_start();
         for k in SERVICE_ONLY_KEYS {
             if t.starts_with(&format!("{k}:")) {
-                return Err(DslError::Syntax(format!("'{k}' 는 서비스가 붙이는 필드다. 입력에서는 쓸 수 없다")));
+                return Err(DslError::Syntax(format!(
+                    "'{k}' 는 서비스가 붙이는 필드다. 입력에서는 쓸 수 없다"
+                )));
             }
         }
     }

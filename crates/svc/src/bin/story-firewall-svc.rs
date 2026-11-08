@@ -23,13 +23,12 @@ fn main() {
 
 #[cfg(any(windows, feature = "host-check"))]
 mod real {
-/// 화면 상태 줄·service.log 에 보이는 판 번호. 릴리스 빌드는 태그(v0.1.3 → 0.1.3)를 SF_VERSION 으로 넘긴다 —
-/// 전에는 크레이트 판(0.1.0)이 그대로 보여 v0.1.3 으로 업데이트해도 "0.1.0판"이었다(사용자 제보 2026-11-07)
-const SVC_VERSION: &str = match option_env!("SF_VERSION") {
-    Some(v) => v,
-    None => env!("CARGO_PKG_VERSION"),
-};
-
+    /// 화면 상태 줄·service.log 에 보이는 판 번호. 릴리스 빌드는 태그(v0.1.3 → 0.1.3)를 SF_VERSION 으로 넘긴다 —
+    /// 전에는 크레이트 판(0.1.0)이 그대로 보여 v0.1.3 으로 업데이트해도 "0.1.0판"이었다(사용자 제보 2026-11-07)
+    const SVC_VERSION: &str = match option_env!("SF_VERSION") {
+        Some(v) => v,
+        None => env!("CARGO_PKG_VERSION"),
+    };
 
     use std::io::Write;
     use std::path::{Path, PathBuf};
@@ -315,7 +314,12 @@ const SVC_VERSION: &str = match option_env!("SF_VERSION") {
                     match policy::wfp::Engine::open() {
                         Ok(mut eng) => {
                             let s = sink.clone();
-                            match eng.subscribe_drops(Box::new(move |d| s.push(svc::blocked::Drop { ts_ft: d.ts, filter_id: d.filter_id }))) {
+                            match eng.subscribe_drops(Box::new(move |d| {
+                                s.push(svc::blocked::Drop {
+                                    ts_ft: d.ts,
+                                    filter_id: d.filter_id,
+                                })
+                            })) {
                                 Ok(()) => {
                                     log3.w("blocked: WFP 차단 사건 구독 시작");
                                     loop {

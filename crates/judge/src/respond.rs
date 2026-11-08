@@ -46,7 +46,10 @@ pub struct AutoResponse {
 pub enum Verdict {
     Respond(AutoResponse),
     /// 조상이 Microsoft 서명 또는 허용 목록 서명자 — 대응하지 않음
-    TrustedAncestor { proc_id: i64, signer: String },
+    TrustedAncestor {
+        proc_id: i64,
+        signer: String,
+    },
     /// T1490 명령이 없음
     NoDestroy,
 }
@@ -84,7 +87,9 @@ pub fn is_windows_tool(path_lower: &str) -> bool {
         return false;
     }
     let rest = p.get(11..).unwrap_or("");
-    !USER_WRITABLE_UNDER_WINDOWS.iter().any(|w| rest.starts_with(w))
+    !USER_WRITABLE_UNDER_WINDOWS
+        .iter()
+        .any(|w| rest.starts_with(w))
 }
 
 /// 건너뛸 Windows 도구인가: 위치(is_windows_tool) + 서명 사실이 있으면 Microsoft 서명이어야 한다.
@@ -101,13 +106,20 @@ fn windows_tool(view: &View, proc_id: i64, path_lower: &str) -> bool {
 
 /// 허용 목록 항목과 서명자 이름이 같은가(정확 일치 — 앞뒤 공백·대소문자·연속 공백만 정규화)
 pub fn signer_matches(allowed: &str, signer: &str) -> bool {
-    let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    let norm = |s: &str| {
+        s.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    };
     let a = norm(allowed);
     !a.is_empty() && a == norm(signer)
 }
 
 fn parent_of(view: &View, proc_id: i64) -> Option<i64> {
-    view.ins(proc_id).find(|e| e.rel == "spawned").map(|e| e.src)
+    view.ins(proc_id)
+        .find(|e| e.rel == "spawned")
+        .map(|e| e.src)
 }
 
 /// 사건 하나를 판정한다. `allow_signers`: 사용자 허용 목록 서명자(**정확 일치**, 앞뒤 공백·대소문자만 무시).
@@ -117,7 +129,9 @@ pub fn judge(view: &View, story: &Story, allow_signers: &[String]) -> Verdict {
     let mut trigger: Option<(i64, &'static str, i64)> = None; // (proc, what, ts)
     for &eid in &story.edges {
         let Some(e) = view.edge(eid) else { continue };
-        let Some(cmd) = view.nodes.get(&e.dst) else { continue };
+        let Some(cmd) = view.nodes.get(&e.dst) else {
+            continue;
+        };
         if let Some(what) = rules::ran_kind(e, cmd) {
             if trigger.is_none_or(|(_, _, ts)| e.ts < ts) {
                 trigger = Some((e.src, what, e.ts));
@@ -154,16 +168,16 @@ pub fn judge(view: &View, story: &Story, allow_signers: &[String]) -> Verdict {
     let mut unsigned_chain = Vec::new();
     let mut mode = Mode::ChildOnly;
     if let Some(p) = actor {
-        let file = view.image_file(p).expect("image_path_lower 가 Some 이면 image_file 도 Some");
+        let file = view
+            .image_file(p)
+            .expect("image_path_lower 가 Some 이면 image_file 도 Some");
         let signer = rules::attr_str(file, "signer").unwrap_or_default();
-        let allowed = || {
-            allow_signers
-                .iter()
-                .any(|a| signer_matches(a, &signer))
-        };
+        let allowed = || allow_signers.iter().any(|a| signer_matches(a, &signer));
         match rules::sig_of(file) {
             Some(Sig::Microsoft) => return Verdict::TrustedAncestor { proc_id: p, signer },
-            Some(Sig::Valid) | Some(Sig::Package) if allowed() => return Verdict::TrustedAncestor { proc_id: p, signer },
+            Some(Sig::Valid) | Some(Sig::Package) if allowed() => {
+                return Verdict::TrustedAncestor { proc_id: p, signer }
+            }
             // 서명 없음·깨짐·불신·Microsoft 아닌 유효 서명(2판 4-2: 예외 아님) → 이 프로그램부터 끊기
             Some(_) => {
                 unsigned_chain.push(p);
@@ -199,7 +213,9 @@ mod tests {
         assert!(!is_windows_tool(r"c:\windows\temp\malware.exe"));
         assert!(!is_windows_tool(r"c:\windows\tasks\a.exe"));
         assert!(!is_windows_tool(r"c:\windows\tracing\a.exe"));
-        assert!(!is_windows_tool(r"c:\windows\system32\spool\drivers\color\a.exe"));
+        assert!(!is_windows_tool(
+            r"c:\windows\system32\spool\drivers\color\a.exe"
+        ));
         assert!(!is_windows_tool(r"c:\windows\system32\tasks\a.exe"));
         assert!(!is_windows_tool(r"d:\backup\windows\malware.exe"));
         assert!(!is_windows_tool(r"c:\users\u\appdata\local\windows\x.exe"));
@@ -213,7 +229,10 @@ mod tests {
     #[test]
     fn signer_match_is_exact_after_normalizing_case_and_spaces() {
         assert!(signer_matches("acme software inc.", "Acme Software Inc."));
-        assert!(signer_matches("  Acme   Software Inc. ", "Acme Software Inc."));
+        assert!(signer_matches(
+            "  Acme   Software Inc. ",
+            "Acme Software Inc."
+        ));
         assert!(!signer_matches("Acme", "Acme Evil Ltd"));
         assert!(!signer_matches("Acme Software", "Acme Software Inc."));
         assert!(!signer_matches("", "Acme"));

@@ -375,8 +375,8 @@ pub fn run(name: &str, body: Box<dyn FnOnce(Receiver<ServiceEvent>) + Send>) -> 
 /// None(0)이면 토큰에 서비스 SID 가 없어 조건이 맞지 않는다(Windows 방화벽 서비스 규칙과 같은 제약). 읽기만(QUERY_CONFIG).
 pub fn service_sid_usable(name: &str) -> bool {
     use windows_sys::Win32::System::Services::{
-        QueryServiceConfig2W, SC_MANAGER_CONNECT, SERVICE_CONFIG_SERVICE_SID_INFO, SERVICE_QUERY_CONFIG,
-        SERVICE_SID_INFO,
+        QueryServiceConfig2W, SC_MANAGER_CONNECT, SERVICE_CONFIG_SERVICE_SID_INFO,
+        SERVICE_QUERY_CONFIG, SERVICE_SID_INFO,
     };
     let scm = unsafe { OpenSCManagerW(null(), null(), SC_MANAGER_CONNECT) };
     if scm.is_null() {

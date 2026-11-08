@@ -52,7 +52,7 @@ const ACK_TEXT: Record<string, string> = {
 
 /// 정책: YAML 편집 → 검증 → 적용(needs_ack 확인 대화상자) → 60초 확인 카운트다운 → 롤백·일시 중지.
 /// 승인 상태는 서비스가 든다: 60초 안에 confirm 을 못 보내면 서비스가 되돌린다 (10차).
-export function policy(): HTMLElement {
+export function policy(args: Record<string, unknown> = {}): HTMLElement {
   const root = el("section", "screen");
   root.append(el("h1", undefined, "정책"));
   const ta = el("textarea", "yaml");
@@ -133,6 +133,12 @@ export function policy(): HTMLElement {
     const live = r.result.items.find((x) => x.acl_yaml && (x.state === "Applied" || x.state === "Confirmed"));
     if (!aclLoaded) {
       aclLoaded = true;
+      // 지금 열린 연결 › [접속지 차단…]: 채운 새 규칙 대화상자를 연다(외부 문자열은 IP 형식만 받는다)
+      const add = args["aclAdd"] as { remote?: unknown } | undefined;
+      if (add && typeof add.remote === "string" && /^[0-9a-fA-F:.]{2,45}$/.test(add.remote)) {
+        const remote = add.remote;
+        window.setTimeout(() => acl.prefill({ action: "block", dir: "out", dstIp: remote }), 0);
+      }
       // 걸린 ACL 이 없으면 마지막 ACL(되돌림·일시 중지 포함)을 '걸려 있지 않은 표'로 보여 준다 — 되돌린 뒤 빈 표가 되어 다시 입력하던 것(노트북 제보)
       const row = live ?? r.result.items.find((x) => x.acl_yaml);
       acl.load(row?.acl_yaml ?? null, live?.acl_yaml ?? null);

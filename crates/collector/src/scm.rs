@@ -83,7 +83,10 @@ fn enum_services(state: u32) -> Result<Vec<(u32, String)>, u32> {
                 )
             };
             for r in rows {
-                out.push((r.ServiceStatusProcess.dwProcessId, pwstr_to_string(r.lpServiceName)));
+                out.push((
+                    r.ServiceStatusProcess.dwProcessId,
+                    pwstr_to_string(r.lpServiceName),
+                ));
             }
             break;
         }

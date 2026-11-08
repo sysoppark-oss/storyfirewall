@@ -58,6 +58,10 @@ pub enum Method {
     EmergencyStart,
     EmergencyStop,
     EmergencyStatus,
+    /// 지금 열린 연결(UI 명세 4판 3-4): 연결 테이블을 요청 때 읽는다(DB 를 읽지 않음). 조회(사용자)
+    ConnectionsOpen,
+    /// 연결 하나 끊기(IPv4 TCP — SetTcpEntry DELETE_TCB). 관리자, 승인 도우미
+    ConnectionsKill,
     RetentionGet,
     RetentionSet,
     SettingsGet,
@@ -123,6 +127,8 @@ impl Method {
         ("emergency.start", Method::EmergencyStart),
         ("emergency.stop", Method::EmergencyStop),
         ("emergency.status", Method::EmergencyStatus),
+        ("connections.open", Method::ConnectionsOpen),
+        ("connections.kill", Method::ConnectionsKill),
         ("retention.get", Method::RetentionGet),
         ("retention.set", Method::RetentionSet),
         ("settings.get", Method::SettingsGet),
@@ -162,6 +168,7 @@ impl Method {
             | Method::CutApply
             | Method::EmergencyStart
             | Method::EmergencyStop
+            | Method::ConnectionsKill
             | Method::RetentionSet
             | Method::SettingsSet
             | Method::ChangeGet
@@ -186,6 +193,7 @@ impl Method {
                 | Method::CutApply
                 | Method::EmergencyStart
                 | Method::EmergencyStop
+                | Method::ConnectionsKill
                 | Method::RetentionSet
                 | Method::SettingsSet
         )
@@ -488,7 +496,10 @@ pub fn validate_params(
             let v: StoryEventsParams = serde_json::from_value(p.clone())
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
             check(
-                matches!(v.level_min.as_str(), "normal" | "watch" | "suspicious" | "critical"),
+                matches!(
+                    v.level_min.as_str(),
+                    "normal" | "watch" | "suspicious" | "critical"
+                ),
                 "level_min 은 normal|watch|suspicious|critical",
             )?;
             check(
@@ -610,7 +621,9 @@ pub fn validate_params(
             check(
                 v.remote_tools.iter().all(|t| {
                     let l = t.to_ascii_lowercase();
-                    t.len() <= 260 && l.ends_with(".exe") && (l.as_bytes().get(1) == Some(&b':') || l.starts_with("\\\\"))
+                    t.len() <= 260
+                        && l.ends_with(".exe")
+                        && (l.as_bytes().get(1) == Some(&b':') || l.starts_with("\\\\"))
                 }),
                 "remote_tools 는 실행 파일 절대 경로(.exe)",
             )?;
@@ -634,7 +647,15 @@ pub fn validate_params(
         | Method::SettingsGet
         | Method::CollectorHealth
         | Method::TrafficHourly
-        | Method::EmergencyStatus => {}
+        | Method::EmergencyStatus
+        | Method::ConnectionsOpen => {}
+        Method::ConnectionsKill => {
+            let v: ConnKillParams = serde_json::from_value(p.clone())
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            let v4 = |a: &str| a.parse::<std::net::Ipv4Addr>().is_ok();
+            check(v4(&v.laddr) && v4(&v.raddr), "IPv4 주소만 끊을 수 있습니다(Windows 가 IPv6 연결 하나를 끊는 기능을 제공하지 않음)")?;
+            check(v.lport > 0 && v.rport > 0, "포트는 1~65535")?;
+        }
         Method::ServiceEvents => {
             let v: ServiceEventsParams = serde_json::from_value(p.clone())
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
@@ -762,6 +783,17 @@ pub struct EmergencyStartParams {
 
 fn default_emergency_minutes() -> u32 {
     30
+}
+
+/// connections.kill (UI 명세 4판 3-4): 지금 열린 IPv4 TCP 연결 하나. pid 가 다르면 서비스가 거절한다(그 사이 다른 연결로 바뀜)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnKillParams {
+    pub request_id: String,
+    pub laddr: String,
+    pub lport: u16,
+    pub raddr: String,
+    pub rport: u16,
+    pub pid: u32,
 }
 
 /// request_id 만 받는 변경(emergency.stop)

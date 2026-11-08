@@ -460,7 +460,11 @@ fn ingest_judge_story_events_and_suspicious_notification() {
         .starts_with("[높음] payload.exe"));
     assert!(v["result"]["next"].is_null(), "사건 1건이라 다음 쪽 없음");
     // 실시간 1: 주인공이 지금 실행 중인지. 시험 호스트(NoHost)는 살아 있는 프로세스를 모른다 → 실행 중 아님
-    assert_eq!(items[0]["root_live"]["running"], serde_json::json!(false), "{v}");
+    assert_eq!(
+        items[0]["root_live"]["running"],
+        serde_json::json!(false),
+        "{v}"
+    );
     // L052: 대시보드(since 0)와 이야기 화면(since 지정)을 오가도 두 결과의 문장 캐시가 서로 지우지 않고 같은 문장을 돌려준다
     let first = items[0]["title"].clone();
     let w = a.call(
@@ -486,10 +490,20 @@ fn ingest_judge_story_events_and_suspicious_notification() {
     let v = a.call("story.events", serde_json::json!({"level_min": "normal"}));
     assert!(v["result"]["items"].as_array().unwrap().is_empty(), "{v}");
     assert_eq!(v["result"]["counts"]["acted"], serde_json::json!(1), "{v}");
-    let v = a.call("story.events", serde_json::json!({"level_min": "normal", "triage": "all"}));
+    let v = a.call(
+        "story.events",
+        serde_json::json!({"level_min": "normal", "triage": "all"}),
+    );
     assert_eq!(v["result"]["items"][0]["score"], serde_json::json!(0));
-    assert_eq!(v["result"]["items"][0]["triage"]["state"], serde_json::json!("acted"), "{v}");
-    assert_eq!(v["result"]["items"][0]["triage"]["action"], serde_json::json!("normal"));
+    assert_eq!(
+        v["result"]["items"][0]["triage"]["state"],
+        serde_json::json!("acted"),
+        "{v}"
+    );
+    assert_eq!(
+        v["result"]["items"][0]["triage"]["action"],
+        serde_json::json!("normal")
+    );
     let v = a.call("story.triage_log", serde_json::json!({"root": root}));
     let log = v["result"]["items"].as_array().unwrap();
     assert_eq!(log.len(), 1, "{v}");
@@ -507,15 +521,72 @@ fn triage_states_filter_and_recurrence_reopens_and_notifies() {
     let t = 133_800_000_000_000_000i64;
     let s = 10_000_000;
     let payload = r"C:\Users\pjg\AppData\Local\Temp\payload.exe";
-    let ev = |ts: i64, source: &str, kind: EventKind| Event { ts, source: source.into(), kind };
+    let ev = |ts: i64, source: &str, kind: EventKind| Event {
+        ts,
+        source: source.into(),
+        kind,
+    };
     // 3장(자리잡기)까지만
     let events = vec![
-        ev(t, "snapshot", EventKind::ProcessSnapshot { pid: 1000, ppid: 4, image: r"C:\Windows\explorer.exe".into(), create_time: t, services: vec![] }),
-        ev(t + s, "etw:file", EventKind::FileWrite { proc: ProcRef::new(1000, None), path: payload.into() }),
-        ev(t + s, "motw", EventKind::Downloaded { path: payload.into(), host_url: Some("https://evil.example/p".into()), referrer_url: None, zone_id: Some(3) }),
-        ev(t + 2 * s, "signature", EventKind::Signature { path: payload.into(), signer: None, issuer: None, status: "untrusted".into(), catalog: false }),
-        ev(t + 3 * s, "etw:process", EventKind::ProcessStart { pid: 2200, ppid: 1000, image: payload.into(), create_time: Some(t + 3 * s) }),
-        ev(t + 4 * s, "autorun", EventKind::AutorunRegistered { proc: ProcRef::new(2200, None), location: "HKCU\\...\\Run\\x".into(), target: payload.into() }),
+        ev(
+            t,
+            "snapshot",
+            EventKind::ProcessSnapshot {
+                pid: 1000,
+                ppid: 4,
+                image: r"C:\Windows\explorer.exe".into(),
+                create_time: t,
+                services: vec![],
+            },
+        ),
+        ev(
+            t + s,
+            "etw:file",
+            EventKind::FileWrite {
+                proc: ProcRef::new(1000, None),
+                path: payload.into(),
+            },
+        ),
+        ev(
+            t + s,
+            "motw",
+            EventKind::Downloaded {
+                path: payload.into(),
+                host_url: Some("https://evil.example/p".into()),
+                referrer_url: None,
+                zone_id: Some(3),
+            },
+        ),
+        ev(
+            t + 2 * s,
+            "signature",
+            EventKind::Signature {
+                path: payload.into(),
+                signer: None,
+                issuer: None,
+                status: "untrusted".into(),
+                catalog: false,
+            },
+        ),
+        ev(
+            t + 3 * s,
+            "etw:process",
+            EventKind::ProcessStart {
+                pid: 2200,
+                ppid: 1000,
+                image: payload.into(),
+                create_time: Some(t + 3 * s),
+            },
+        ),
+        ev(
+            t + 4 * s,
+            "autorun",
+            EventKind::AutorunRegistered {
+                proc: ProcRef::new(2200, None),
+                location: "HKCU\\...\\Run\\x".into(),
+                target: payload.into(),
+            },
+        ),
     ];
     rt.tx.send(Command::Ingest(events)).unwrap();
     rt.tx.send(Command::Judge).unwrap();
@@ -532,38 +603,95 @@ fn triage_states_filter_and_recurrence_reopens_and_notifies() {
     assert_eq!(n["params"]["chapter"], serde_json::json!(3), "{n}");
     let v = a.call("story.events", serde_json::json!({}));
     let root = v["result"]["items"][0]["root"].as_i64().unwrap();
-    assert_eq!(v["result"]["items"][0]["triage"]["state"], serde_json::json!("new"), "{v}");
+    assert_eq!(
+        v["result"]["items"][0]["triage"]["state"],
+        serde_json::json!("new"),
+        "{v}"
+    );
     assert_eq!(v["result"]["counts"]["new"], serde_json::json!(1));
     // 조사됨 (조회 권한으로 된다 — 차단·설정을 바꾸지 않는다)
-    let v = a.call("story.triage", serde_json::json!({"root": root, "state": "investigated"}));
-    assert_eq!(v["result"]["state"], serde_json::json!("investigated"), "{v}");
+    let v = a.call(
+        "story.triage",
+        serde_json::json!({"root": root, "state": "investigated"}),
+    );
+    assert_eq!(
+        v["result"]["state"],
+        serde_json::json!("investigated"),
+        "{v}"
+    );
     // 39차 Q3: 조회 권한(story.triage)으로는 알림을 끄는 상태로 못 간다 — 조치함·닫힘은 story.triage_set(관리자·request_id)
-    let v = a.call("story.triage", serde_json::json!({"root": root, "state": "acted", "action": "watch"}));
+    let v = a.call(
+        "story.triage",
+        serde_json::json!({"root": root, "state": "acted", "action": "watch"}),
+    );
     assert!(v["error"].is_object(), "{v}");
     let mut u = Client::connect(&rt, 200, 2); // 비관리자
     u.hello();
-    let v = u.call("story.triage_set", serde_json::json!({"request_id": UUID, "root": root, "state": "closed"}));
-    assert_eq!(v["error"]["code"], serde_json::json!(-32001), "비관리자는 닫지 못한다 {v}");
+    let v = u.call(
+        "story.triage_set",
+        serde_json::json!({"request_id": UUID, "root": root, "state": "closed"}),
+    );
+    assert_eq!(
+        v["error"]["code"],
+        serde_json::json!(-32001),
+        "비관리자는 닫지 못한다 {v}"
+    );
     // acted 는 action 필수
-    let v = a.call("story.triage_set", serde_json::json!({"request_id": UUID, "root": root, "state": "acted"}));
+    let v = a.call(
+        "story.triage_set",
+        serde_json::json!({"request_id": UUID, "root": root, "state": "acted"}),
+    );
     assert!(v["error"].is_object(), "{v}");
     let v = a.call("story.triage_set", serde_json::json!({"request_id": UUID, "root": root, "state": "acted", "action": "watch", "note": "며칠 지켜봄"}));
     assert_eq!(v["result"]["action"], serde_json::json!("watch"), "{v}");
-    assert_eq!(v["result"]["chapter"], serde_json::json!(3), "조치 시점의 장");
+    assert_eq!(
+        v["result"]["chapter"],
+        serde_json::json!(3),
+        "조치 시점의 장"
+    );
     // 기본 목록(처리 안 한 사건)에서 빠지고, done 목록에 있다
     let v = a.call("story.events", serde_json::json!({}));
     assert!(v["result"]["items"].as_array().unwrap().is_empty(), "{v}");
     assert_eq!(v["result"]["counts"]["acted"], serde_json::json!(1));
     let v = a.call("story.events", serde_json::json!({"triage": "done"}));
-    assert_eq!(v["result"]["items"][0]["triage"]["note"], serde_json::json!("며칠 지켜봄"), "{v}");
+    assert_eq!(
+        v["result"]["items"][0]["triage"]["note"],
+        serde_json::json!("며칠 지켜봄"),
+        "{v}"
+    );
     // 같은 장에서 다시 판정해도 알림 없음(조치함)
     rt.tx.send(Command::Judge).unwrap();
-    assert!(a.next_notification(Duration::from_millis(800)).is_none(), "조치한 사건은 알리지 않음");
+    assert!(
+        a.next_notification(Duration::from_millis(800)).is_none(),
+        "조치한 사건은 알리지 않음"
+    );
     // 재발: 4장(외부 접속)까지 이어짐 → 새 사건으로 되돌아오고 다시 알린다
-    rt.tx.send(Command::Ingest(vec![
-        ev(t + 5 * s, "etw:dns", EventKind::DnsQuery { proc: ProcRef::new(2200, None), name: "c2.evil.example".into(), results: vec!["203.0.113.9".into()] }),
-        ev(t + 6 * s, "etw:network", EventKind::Connect { proc: ProcRef::new(2200, None), proto: Proto::Tcp, direction: Direction::Out, laddr: "10.0.0.2".into(), lport: 50000, raddr: "203.0.113.9".into(), rport: 8443 }),
-    ])).unwrap();
+    rt.tx
+        .send(Command::Ingest(vec![
+            ev(
+                t + 5 * s,
+                "etw:dns",
+                EventKind::DnsQuery {
+                    proc: ProcRef::new(2200, None),
+                    name: "c2.evil.example".into(),
+                    results: vec!["203.0.113.9".into()],
+                },
+            ),
+            ev(
+                t + 6 * s,
+                "etw:network",
+                EventKind::Connect {
+                    proc: ProcRef::new(2200, None),
+                    proto: Proto::Tcp,
+                    direction: Direction::Out,
+                    laddr: "10.0.0.2".into(),
+                    lport: 50000,
+                    raddr: "203.0.113.9".into(),
+                    rport: 8443,
+                },
+            ),
+        ]))
+        .unwrap();
     rt.tx.send(Command::Judge).unwrap();
     let mut got = None;
     for _ in 0..5 {
@@ -577,31 +705,72 @@ fn triage_states_filter_and_recurrence_reopens_and_notifies() {
     let n = got.expect("재발 알림(4장)");
     assert_eq!(n["params"]["chapter"], serde_json::json!(4), "{n}");
     let v = a.call("story.triage_log", serde_json::json!({"root": root}));
-    assert_eq!(v["result"]["state"]["state"], serde_json::json!("new"), "{v}");
+    assert_eq!(
+        v["result"]["state"]["state"],
+        serde_json::json!("new"),
+        "{v}"
+    );
     let log = v["result"]["items"].as_array().unwrap();
     assert_eq!(log.len(), 3, "조사됨·지켜보기·재발 {v}");
     assert!(log[0]["note"].as_str().unwrap().starts_with("재발"), "{v}");
     assert_eq!(log[0]["actor"], serde_json::json!("system"));
     // 닫힘
-    let v = a.call("story.triage_set", serde_json::json!({"request_id": UUID, "root": root, "state": "closed"}));
+    let v = a.call(
+        "story.triage_set",
+        serde_json::json!({"request_id": UUID, "root": root, "state": "closed"}),
+    );
     assert_eq!(v["result"]["state"], serde_json::json!("closed"), "{v}");
     assert_eq!(v["result"]["chapter"], serde_json::json!(4));
     assert_eq!(v["result"]["recur_count"], serde_json::json!(1));
     let v = a.call("story.events", serde_json::json!({"triage": "all"}));
     assert_eq!(v["result"]["counts"]["closed"], serde_json::json!(1), "{v}");
     // 같은 접속지로 다시 접속해도 재발 아님
-    rt.tx.send(Command::Ingest(vec![
-        ev(t + 7 * s, "etw:network", EventKind::Connect { proc: ProcRef::new(2200, None), proto: Proto::Tcp, direction: Direction::Out, laddr: "10.0.0.2".into(), lport: 50001, raddr: "203.0.113.9".into(), rport: 8443 }),
-    ])).unwrap();
+    rt.tx
+        .send(Command::Ingest(vec![ev(
+            t + 7 * s,
+            "etw:network",
+            EventKind::Connect {
+                proc: ProcRef::new(2200, None),
+                proto: Proto::Tcp,
+                direction: Direction::Out,
+                laddr: "10.0.0.2".into(),
+                lport: 50001,
+                raddr: "203.0.113.9".into(),
+                rport: 8443,
+            },
+        )]))
+        .unwrap();
     rt.tx.send(Command::Judge).unwrap();
     // (별도 배치 = 수집기가 새로 만들어져 DNS 짝이 없다 — 원격지 노드에 전에 붙은 도메인을 이어받아야 같은 접속지로 본다)
     let nn = a.next_notification(Duration::from_millis(800));
     assert!(nn.is_none(), "같은 접속지 반복은 재발 아님: {nn:?}");
     // 39차 Q2①: 같은 4장이라도 조치 뒤 새 접속지가 생기면 재발 → 새 사건·알림
-    rt.tx.send(Command::Ingest(vec![
-        ev(t + 8 * s, "etw:dns", EventKind::DnsQuery { proc: ProcRef::new(2200, None), name: "c2b.evil.example".into(), results: vec!["198.51.100.7".into()] }),
-        ev(t + 9 * s, "etw:network", EventKind::Connect { proc: ProcRef::new(2200, None), proto: Proto::Tcp, direction: Direction::Out, laddr: "10.0.0.2".into(), lport: 50002, raddr: "198.51.100.7".into(), rport: 443 }),
-    ])).unwrap();
+    rt.tx
+        .send(Command::Ingest(vec![
+            ev(
+                t + 8 * s,
+                "etw:dns",
+                EventKind::DnsQuery {
+                    proc: ProcRef::new(2200, None),
+                    name: "c2b.evil.example".into(),
+                    results: vec!["198.51.100.7".into()],
+                },
+            ),
+            ev(
+                t + 9 * s,
+                "etw:network",
+                EventKind::Connect {
+                    proc: ProcRef::new(2200, None),
+                    proto: Proto::Tcp,
+                    direction: Direction::Out,
+                    laddr: "10.0.0.2".into(),
+                    lport: 50002,
+                    raddr: "198.51.100.7".into(),
+                    rport: 443,
+                },
+            ),
+        ]))
+        .unwrap();
     rt.tx.send(Command::Judge).unwrap();
     let mut got = None;
     for _ in 0..5 {
@@ -614,9 +783,23 @@ fn triage_states_filter_and_recurrence_reopens_and_notifies() {
     }
     assert!(got.is_some(), "새 접속지 재발 알림");
     let v = a.call("story.triage_log", serde_json::json!({"root": root}));
-    assert_eq!(v["result"]["state"]["state"], serde_json::json!("new"), "{v}");
-    assert_eq!(v["result"]["state"]["recur_count"], serde_json::json!(2), "{v}");
-    assert!(v["result"]["items"][0]["note"].as_str().unwrap().contains("새 접속지"), "{v}");
+    assert_eq!(
+        v["result"]["state"]["state"],
+        serde_json::json!("new"),
+        "{v}"
+    );
+    assert_eq!(
+        v["result"]["state"]["recur_count"],
+        serde_json::json!(2),
+        "{v}"
+    );
+    assert!(
+        v["result"]["items"][0]["note"]
+            .as_str()
+            .unwrap()
+            .contains("새 접속지"),
+        "{v}"
+    );
     rt.shutdown();
 }
 
@@ -2098,7 +2281,12 @@ fn agents_list_reads_precomputed_cache() {
 struct LiveHost;
 impl svc::host::Host for LiveHost {
     fn live_image(&self, pid: u32, create_ft: i64, _seen_ft: i64) -> Option<(String, i64)> {
-        (pid == 2200).then(|| (r"C:\Users\pjg\AppData\Local\Temp\payload.exe".to_string(), create_ft))
+        (pid == 2200).then(|| {
+            (
+                r"C:\Users\pjg\AppData\Local\Temp\payload.exe".to_string(),
+                create_ft,
+            )
+        })
     }
 }
 
@@ -2137,37 +2325,126 @@ fn auto_destroy_response_cuts_unsigned_origin_without_asking() {
     let mal = r"C:\Users\pjg\AppData\Local\Temp\x.exe";
     let cmd = r"C:\Windows\System32\cmd.exe";
     let vss = r"C:\Windows\System32\vssadmin.exe";
-    let ev = |ts: i64, source: &str, kind: EventKind| Event { ts, source: source.into(), kind };
+    let ev = |ts: i64, source: &str, kind: EventKind| Event {
+        ts,
+        source: source.into(),
+        kind,
+    };
     let events = vec![
-        ev(t, "snapshot", EventKind::ProcessSnapshot { pid: 1000, ppid: 4, image: r"C:\Windows\explorer.exe".into(), create_time: t, services: vec![] }),
-        ev(t + s, "etw:process", EventKind::ProcessStart { pid: 4000, ppid: 1000, image: mal.into(), create_time: Some(t + s) }),
-        ev(t + s, "signature", EventKind::Signature { path: mal.into(), signer: None, issuer: None, status: "nosignature".into(), catalog: false }),
-        ev(t + 2 * s, "etw:process", EventKind::ProcessStart { pid: 4100, ppid: 4000, image: cmd.into(), create_time: Some(t + 2 * s) }),
-        ev(t + 3 * s, "etw:process", EventKind::ProcessStart { pid: 4200, ppid: 4100, image: vss.into(), create_time: Some(t + 3 * s) }),
-        ev(t + 3 * s, "etw:process", EventKind::ProcessCommand { proc: graph::event::ProcRef::new(4200, Some(t + 3 * s)), cmdline: "vssadmin delete shadows /all /quiet".into(), tool: None }),
+        ev(
+            t,
+            "snapshot",
+            EventKind::ProcessSnapshot {
+                pid: 1000,
+                ppid: 4,
+                image: r"C:\Windows\explorer.exe".into(),
+                create_time: t,
+                services: vec![],
+            },
+        ),
+        ev(
+            t + s,
+            "etw:process",
+            EventKind::ProcessStart {
+                pid: 4000,
+                ppid: 1000,
+                image: mal.into(),
+                create_time: Some(t + s),
+            },
+        ),
+        ev(
+            t + s,
+            "signature",
+            EventKind::Signature {
+                path: mal.into(),
+                signer: None,
+                issuer: None,
+                status: "nosignature".into(),
+                catalog: false,
+            },
+        ),
+        ev(
+            t + 2 * s,
+            "etw:process",
+            EventKind::ProcessStart {
+                pid: 4100,
+                ppid: 4000,
+                image: cmd.into(),
+                create_time: Some(t + 2 * s),
+            },
+        ),
+        ev(
+            t + 3 * s,
+            "etw:process",
+            EventKind::ProcessStart {
+                pid: 4200,
+                ppid: 4100,
+                image: vss.into(),
+                create_time: Some(t + 3 * s),
+            },
+        ),
+        ev(
+            t + 3 * s,
+            "etw:process",
+            EventKind::ProcessCommand {
+                proc: graph::event::ProcRef::new(4200, Some(t + 3 * s)),
+                cmdline: "vssadmin delete shadows /all /quiet".into(),
+                tool: None,
+            },
+        ),
     ];
     // 1) 설정을 끄면: 판정은 심각이지만 자동 대응 없음 (기본은 켬 — 사용자 결정 2026-11-08)
     let v = a.call("settings.set", serde_json::json!({"request_id": "0f3c2a1e-9b7d-4c6a-8e5f-0000000a2901", "auto_destroy_response": false}));
     assert_eq!(v["result"]["ok"], true, "{v}");
     rt.tx.send(Command::Ingest(events.clone())).unwrap();
     rt.tx.send(Command::Judge).unwrap();
-    let v = a.call("story.events", serde_json::json!({"level_min": "suspicious"}));
-    let it = v["result"]["items"].as_array().unwrap().iter().find(|x| x["title"].as_str().unwrap_or("").contains("x.exe")).unwrap_or_else(|| panic!("{v}")).clone();
+    let v = a.call(
+        "story.events",
+        serde_json::json!({"level_min": "suspicious"}),
+    );
+    let it = v["result"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["title"].as_str().unwrap_or("").contains("x.exe"))
+        .unwrap_or_else(|| panic!("{v}"))
+        .clone();
     let root = it["root"].as_i64().unwrap();
     assert!(killed.lock().unwrap().is_empty());
-    assert_eq!(a.call("policy.list", serde_json::json!({}))["result"]["items"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        a.call("policy.list", serde_json::json!({}))["result"]["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
     // 2) 켜면 다음 판정에서 끊는다
-    let v = a.call("settings.set", serde_json::json!({"request_id": UUID, "auto_destroy_response": true}));
+    let v = a.call(
+        "settings.set",
+        serde_json::json!({"request_id": UUID, "auto_destroy_response": true}),
+    );
     assert_eq!(v["result"]["ok"], true, "{v}");
     rt.tx.send(Command::Judge).unwrap();
     let v = a.call("story.triage_log", serde_json::json!({"root": root}));
     assert!(v["result"].is_object() || v["result"].is_array(), "{v}");
-    let v = a.call("story.events", serde_json::json!({"level_min": "suspicious", "triage": "all"}));
-    let it = v["result"]["items"].as_array().unwrap().iter().find(|x| x["root"].as_i64() == Some(root)).unwrap_or_else(|| panic!("{v}")).clone();
+    let v = a.call(
+        "story.events",
+        serde_json::json!({"level_min": "suspicious", "triage": "all"}),
+    );
+    let it = v["result"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["root"].as_i64() == Some(root))
+        .unwrap_or_else(|| panic!("{v}"))
+        .clone();
     assert_eq!(it["triage"]["state"], "acted", "{it}");
     assert_eq!(it["triage"]["action"], "cut", "{it}");
     let note = it["triage"]["note"].as_str().unwrap_or("");
-    assert!(note.starts_with("auto:") && !note.starts_with("auto:0:"), "{it}");
+    assert!(
+        note.starts_with("auto:") && !note.starts_with("auto:0:"),
+        "{it}"
+    );
     // 정책 1건: 끊기 출처, 바로 확정
     let v = a.call("policy.list", serde_json::json!({}));
     let pols = v["result"]["items"].as_array().unwrap();
@@ -2209,8 +2486,17 @@ fn emergency_block_start_confirm_expire_and_stop() {
         serde_json::json!({"request_id": rid(2), "minutes": 30, "remote_tools": [r"C:\Program Files\TeamViewer\TeamViewer.exe"]}),
     );
     // 없는 경로 → 거부(A30: 없는 경로 하나가 WFP 0x2 로 긴급 차단 전체를 실패시켰다)
-    assert!(v["error"]["message"].as_str().unwrap_or("").contains("경로가 없습니다"), "{v}");
-    let v = a.call("emergency.start", serde_json::json!({"request_id": rid(8), "minutes": 30}));
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("경로가 없습니다"),
+        "{v}"
+    );
+    let v = a.call(
+        "emergency.start",
+        serde_json::json!({"request_id": rid(8), "minutes": 30}),
+    );
     assert!(v["result"]["policy_id"].is_i64(), "{v}");
     assert!(v["result"]["filters"].as_u64().unwrap() >= 10, "{v}");
     let pid = v["result"]["policy_id"].as_i64().unwrap();
@@ -2220,9 +2506,15 @@ fn emergency_block_start_confirm_expire_and_stop() {
     assert_eq!(st["result"]["confirmed"], false, "{st}");
     assert_eq!(st["result"]["remaining_secs"], 1800, "{st}");
     // 유지
-    let v = a.call("policy.confirm", serde_json::json!({"request_id": rid(3), "policy_id": pid, "version": ver}));
+    let v = a.call(
+        "policy.confirm",
+        serde_json::json!({"request_id": rid(3), "policy_id": pid, "version": ver}),
+    );
     assert_eq!(v["result"]["ok"], true, "{v}");
-    assert_eq!(a.call("emergency.status", serde_json::json!({}))["result"]["confirmed"], true);
+    assert_eq!(
+        a.call("emergency.status", serde_json::json!({}))["result"]["confirmed"],
+        true
+    );
     // 기한 지나면 풀린다
     wall.fetch_add(1801, Ordering::SeqCst);
     mono.fetch_add(1801, Ordering::SeqCst);
@@ -2230,19 +2522,31 @@ fn emergency_block_start_confirm_expire_and_stop() {
     let st = a.call("emergency.status", serde_json::json!({}));
     assert_eq!(st["result"]["active"], false, "{st}");
     // 다시 걸고 해제(stop)
-    let v = a.call("emergency.start", serde_json::json!({"request_id": rid(4), "minutes": 5}));
+    let v = a.call(
+        "emergency.start",
+        serde_json::json!({"request_id": rid(4), "minutes": 5}),
+    );
     assert!(v["result"]["policy_id"].is_i64(), "{v}");
     let v = a.call("emergency.stop", serde_json::json!({"request_id": rid(5)}));
     assert_eq!(v["result"]["ok"], true, "{v}");
-    assert_eq!(a.call("emergency.status", serde_json::json!({}))["result"]["active"], false);
+    assert_eq!(
+        a.call("emergency.status", serde_json::json!({}))["result"]["active"],
+        false
+    );
     // 없는데 해제 → 오류
     let v = a.call("emergency.stop", serde_json::json!({"request_id": rid(6)}));
     assert!(v["error"].is_object(), "{v}");
     // 60초 안에 유지 안 하면 자동 롤백
-    let v = a.call("emergency.start", serde_json::json!({"request_id": rid(7), "minutes": 30}));
+    let v = a.call(
+        "emergency.start",
+        serde_json::json!({"request_id": rid(7), "minutes": 30}),
+    );
     assert!(v["result"]["policy_id"].is_i64(), "{v}");
     mono.fetch_add(61, Ordering::SeqCst);
     rt.tx.send(Command::Tick).unwrap();
-    assert_eq!(a.call("emergency.status", serde_json::json!({}))["result"]["active"], false);
+    assert_eq!(
+        a.call("emergency.status", serde_json::json!({}))["result"]["active"],
+        false
+    );
     rt.shutdown();
 }

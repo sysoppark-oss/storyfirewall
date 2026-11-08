@@ -21,14 +21,28 @@ impl Host for Fake {
         (pid == 200).then(|| (CMD.to_string(), create_ft))
     }
     fn cmdline(&self, _pid: u32, _ft: i64) -> Option<String> {
-        Some(format!(r#"C:\Windows\system32\cmd.exe /d /s /c ""{NH}" chrome-extension://abc/ --parent-window=0" < \\.\pipe\x"#))
+        Some(format!(
+            r#"C:\Windows\system32\cmd.exe /d /s /c ""{NH}" chrome-extension://abc/ --parent-window=0" < \\.\pipe\x"#
+        ))
     }
     fn signature(&self, path: &str) -> Option<SigInfo> {
-        Some(if self.signed || !path.ends_with("chrome-native-host.exe") {
-            SigInfo { status: "valid".into(), signer: Some(if path.ends_with("chrome-native-host.exe") { "Anthropic, PBC".into() } else { "Microsoft Windows".into() }) }
-        } else {
-            SigInfo { status: "nosignature".into(), signer: None }
-        })
+        Some(
+            if self.signed || !path.ends_with("chrome-native-host.exe") {
+                SigInfo {
+                    status: "valid".into(),
+                    signer: Some(if path.ends_with("chrome-native-host.exe") {
+                        "Anthropic, PBC".into()
+                    } else {
+                        "Microsoft Windows".into()
+                    }),
+                }
+            } else {
+                SigInfo {
+                    status: "nosignature".into(),
+                    signer: None,
+                }
+            },
+        )
     }
     fn native_hosts(&self) -> Vec<NativeHost> {
         vec![NativeHost {
@@ -42,7 +56,16 @@ impl Host for Fake {
 }
 
 fn start(ts: i64, pid: u32, ppid: u32, image: &str) -> Event {
-    Event::new(ts, "etw", EventKind::ProcessStart { pid, ppid, image: image.into(), create_time: Some(ts) })
+    Event::new(
+        ts,
+        "etw",
+        EventKind::ProcessStart {
+            pid,
+            ppid,
+            image: image.into(),
+            create_time: Some(ts),
+        },
+    )
 }
 
 fn graph_with(native_image: &str) -> (Store, i64) {
@@ -51,9 +74,13 @@ fn graph_with(native_image: &str) -> (Store, i64) {
         let mut ing = Ingester::new(&store);
         ing.ingest(&start(T0, 100, 4, CHROME)).unwrap();
         ing.ingest(&start(T0 + S, 200, 100, CMD)).unwrap();
-        ing.ingest(&start(T0 + 2 * S, 300, 200, native_image)).unwrap();
+        ing.ingest(&start(T0 + 2 * S, 300, 200, native_image))
+            .unwrap();
     }
-    let root = store.find_node(graph::NodeKind::Process, &format!("200@{}", T0 + S)).unwrap().unwrap();
+    let root = store
+        .find_node(graph::NodeKind::Process, &format!("200@{}", T0 + S))
+        .unwrap()
+        .unwrap();
     (store, root)
 }
 
@@ -63,13 +90,26 @@ fn registered_signed_native_host_is_known_normal() {
     let r = investigate(&store, &Fake { signed: true }, root).unwrap();
     assert_eq!(r.verdict, Verdict::KnownNormal, "{r:#?}");
     assert_eq!(r.recommend, Action::MarkNormal);
-    assert_eq!(r.native_host.as_ref().unwrap().name, "com.anthropic.claude_browser_extension");
+    assert_eq!(
+        r.native_host.as_ref().unwrap().name,
+        "com.anthropic.claude_browser_extension"
+    );
     // 개발 세션이 손으로 한 실물 확인과 같은 사실이 들어 있다
     let labels: Vec<&str> = r.facts.iter().map(|f| f.label.as_str()).collect();
-    for want in ["지금 상태", "경로", "명령줄", "부모", "서명", "브라우저 확장 보조 프로그램"] {
+    for want in [
+        "지금 상태",
+        "경로",
+        "명령줄",
+        "부모",
+        "서명",
+        "브라우저 확장 보조 프로그램",
+    ] {
         assert!(labels.contains(&want), "{want} 없음: {labels:?}");
     }
-    assert!(r.facts.iter().any(|f| f.value.contains("Anthropic, PBC")), "{r:#?}");
+    assert!(
+        r.facts.iter().any(|f| f.value.contains("Anthropic, PBC")),
+        "{r:#?}"
+    );
 }
 
 #[test]
@@ -88,5 +128,8 @@ fn lookalike_in_other_folder_is_not_matched() {
     let r = investigate(&store, &Fake { signed: true }, root).unwrap();
     assert_ne!(r.verdict, Verdict::KnownNormal, "{r:#?}");
     assert!(r.native_host.is_none());
-    assert!(r.facts.iter().any(|f| f.label == "브라우저 확장 보조 프로그램" && f.ok == Some(false)));
+    assert!(r
+        .facts
+        .iter()
+        .any(|f| f.label == "브라우저 확장 보조 프로그램" && f.ok == Some(false)));
 }
