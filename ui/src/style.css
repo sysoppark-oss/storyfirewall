@@ -25,6 +25,14 @@ body { margin: 0; font: 14px/1.5 system-ui, "Malgun Gothic", sans-serif; backgro
 .tb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--crit); display: inline-block; margin-right: 4px; }
 .tb-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 220px; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
 .tb-menu[hidden] { display: none; }
+/* 2판 2-4: 대화상자 단추 줄은 오른쪽 정렬 — 파괴적 단추가 오른쪽 끝(검수 2026-11-09) */
+dialog.ack .actions { justify-content: flex-end; }
+/* 4판 3-1: 좁은 창에서는 엔진 뱃지를 "⋯ N개"로 접는다(보호 서비스 뱃지·긴급 차단은 그대로) */
+.tb-more { display: none; }
+@media (max-width: 900px) {
+  .topbar:not(.tb-expanded) .tb-extra { display: none; }
+  .tb-more { display: inline-flex; }
+}
 /* 반응형(사용자 2026-11-07): 좁은 창에서는 메뉴를 위로 가로 배치, 여백 축소 */
 @media (max-width: 760px) {
   #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }

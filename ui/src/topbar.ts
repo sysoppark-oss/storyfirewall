@@ -80,7 +80,8 @@ export function emergencyDialog(done: () => void, suggested: { display: string; 
     mins.append(o);
   }
   dlg.append(el("label", undefined, "기한 ", mins));
-  const tools = el("textarea") as HTMLTextAreaElement;
+  // D039: 경로는 고정폭 글꼴(한국어 글꼴은 \ 를 ₩ 로 그린다)
+  const tools = el("textarea", "mono") as HTMLTextAreaElement;
   tools.rows = 3;
   tools.placeholder = "예외로 둘 원격 도구 실행 파일 경로(한 줄에 하나, 8개까지)\n예: C:\\Program Files\\TeamViewer\\TeamViewer.exe";
   tools.style.width = "100%";
@@ -100,7 +101,8 @@ export function emergencyDialog(done: () => void, suggested: { display: string; 
     done();
   }, "btn danger");
   const cancel = button("취소", () => { dlg.close(); dlg.remove(); }, "btn");
-  dlg.append(out, el("div", "actions", go, cancel));
+  // 2판 2-4: 보조(취소) 왼쪽 → 파괴적(승인 창 열기, 빨간 테두리) 오른쪽 끝
+  dlg.append(out, el("div", "actions", cancel, go));
   document.body.append(dlg);
   dlg.showModal();
 }
@@ -156,10 +158,24 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
     const applied = items.filter((p) => /^(applied|confirmed)$/i.test(p.state)).length;
     const pend = items.filter((p) => /^applied$/i.test(p.state)).length;
     const row: HTMLElement[] = [badgeBtn(`badge-${sw.tone}`, `보호 서비스 ${sw.word}`, toDiag, `서비스 ${state.serverVersion} · 누르면 진단`, "heart")];
-    for (const t of engineBadges(h, applied, pend)) {
+    const extra = engineBadges(h, applied, pend);
+    for (const t of extra) {
       const isPolicy = t.startsWith("정책 ");
-      row.push(badgeBtn("", t, isPolicy ? () => state.go("policy", {}) : toDiag, isPolicy ? "정책 화면" : "설정 › 진단"));
+      // tb-extra: 좁은 창에서 접히는 뱃지(4판 3-1) — 보호 서비스 뱃지와 긴급 차단은 접지 않는다
+      // 확인 대기가 있는 정책 뱃지는 주의 색으로, 접지 않는다(검수: 경고까지 접혀 숨으면 안 됨)
+      const warn = isPolicy && /확인 대기/.test(t);
+      row.push(badgeBtn(warn ? "badge-warn" : "tb-extra", t, isPolicy ? () => state.go("policy", {}) : toDiag, isPolicy ? "정책 화면" : "설정 › 진단"));
     }
+    const nFold = row.filter((b) => b.classList.contains("tb-extra")).length;
+    const moreText = () => (root.classList.contains("tb-expanded") ? "접기" : `⋯ ${nFold}개`);
+    const more = button(moreText(), () => {
+      const open = root.classList.toggle("tb-expanded");
+      more.setAttribute("aria-expanded", String(open));
+      more.textContent = moreText();
+    }, "tb-badge tb-more");
+    more.setAttribute("aria-expanded", String(root.classList.contains("tb-expanded")));
+    more.title = "접힌 상태 뱃지 보기";
+    row.push(more);
     badges.replaceChildren(...row);
 
     // 긴급 차단
@@ -172,9 +188,15 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
       endAt = Date.now() + Math.max(0, st.remaining_secs ?? 0) * 1000;
       const label = el("span", "tb-emg-text", emergencyText(st) ?? "");
       emgLabel = label;
-      const stat = button("", () => menu.toggleAttribute("hidden"), "tb-badge badge-crit tb-emg-state");
+      const stat = button("", () => {
+        const opened = menu.hasAttribute("hidden");
+        menu.toggleAttribute("hidden");
+        stat.setAttribute("aria-expanded", String(opened));
+        if (opened) (menu.querySelector("button") as HTMLButtonElement | null)?.focus();
+      }, "tb-badge badge-crit tb-emg-state");
       stat.append(el("span", "tb-dot"), label, " ▾");
       stat.setAttribute("aria-haspopup", "true");
+      stat.setAttribute("aria-expanded", "false");
       const menu = el("div", "tb-menu");
       menu.setAttribute("hidden", "");
       const off = button("지금 해제…", async () => {
@@ -201,6 +223,17 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
   window.setInterval(() => void refresh(), 20_000);
   window.addEventListener("engine-state", () => void refresh());
   window.addEventListener(EMERGENCY_EVENT, () => void refresh());
+  // Esc 로 메뉴를 닫고 상태 단추로 포커스를 돌린다
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const m = emg.querySelector(".tb-menu");
+    if (m && !m.hasAttribute("hidden")) {
+      m.setAttribute("hidden", "");
+      const st = emg.querySelector<HTMLButtonElement>(".tb-emg-state");
+      st?.setAttribute("aria-expanded", "false");
+      st?.focus();
+    }
+  });
   // 펼친 메뉴 밖을 누르면 닫는다
   document.addEventListener("click", (e) => {
     const m = emg.querySelector(".tb-menu");
