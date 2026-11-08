@@ -62,8 +62,44 @@ pub fn input(world: &World, remote_tools: &[String]) -> Result<policy::emergency
     })
 }
 
-/// 상태 JSON: { active, policy_id, version, expires_at, remaining_secs, confirmed }
+/// 지금(최근 10분 통신 기록) 돌고 있는 원격 도구의 (표시 이름, 실행 파일 경로). 긴급 차단 대화상자가 예외 칸을
+/// 미리 채운다(사용자 승인 2026-11-08 "자동 채우기"). 시스템 핵심 프로세스·없는 파일은 뺀다(RDP 는 세션 IP 로 따로 연다)
+pub fn suggested_tools(world: &World) -> Vec<(String, String)> {
+    let since = crate::runtime::unix_to_filetime(world.engine_wall() - 600);
+    let Ok(found) = graph::remote::running_tools(&world.graph, since) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(String, String)> = Vec::new();
+    for (_, node, key) in found {
+        let Ok(n) = world.graph.node(node) else { continue };
+        let Some(img) = n.attr("image").and_then(|v| v.as_str().map(|s| s.to_string())) else { continue };
+        if key == "rdp" || dsl::validate::is_system_image(&img) || !std::path::Path::new(&img).is_file() {
+            continue;
+        }
+        if out.iter().any(|(_, p)| p.eq_ignore_ascii_case(&img)) {
+            continue;
+        }
+        out.push((graph::remote::display_of(key).to_string(), img));
+        if out.len() >= 8 {
+            break;
+        }
+    }
+    out
+}
+
+/// 상태 JSON: { active, policy_id, version, expires_at, remaining_secs, confirmed, suggested_tools }
 pub fn status(world: &World) -> serde_json::Value {
+    let mut v = status_core(world);
+    if v["active"] == serde_json::json!(false) {
+        v["suggested_tools"] = serde_json::json!(suggested_tools(world)
+            .into_iter()
+            .map(|(d, p)| serde_json::json!({"display": d, "path": p}))
+            .collect::<Vec<_>>());
+    }
+    v
+}
+
+fn status_core(world: &World) -> serde_json::Value {
     match world.engine.emergency_status() {
         Ok(Some((id, ver, exp, st))) => {
             let now = world.engine_wall();

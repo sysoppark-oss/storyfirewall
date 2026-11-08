@@ -2193,8 +2193,10 @@ fn emergency_block_start_confirm_expire_and_stop() {
     let mut a = Client::connect(&rt, 100, 1);
     a.hello();
     let rid = |n: u32| format!("0f3c2a1e-9b7d-4c6a-8e5f-{n:012x}");
-    // 꺼진 상태
-    assert_eq!(a.call("emergency.status", serde_json::json!({}))["result"]["active"], false);
+    // 꺼진 상태 — 자동 채우기 목록(지금 통신 중인 원격 도구)이 함께 온다(이 시험 환경에서는 빈 목록)
+    let st = a.call("emergency.status", serde_json::json!({}));
+    assert_eq!(st["result"]["active"], false);
+    assert!(st["result"]["suggested_tools"].is_array(), "{st}");
     // svchost 를 원격 도구 예외로 → 거부
     let v = a.call(
         "emergency.start",

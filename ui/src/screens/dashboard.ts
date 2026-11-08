@@ -106,6 +106,8 @@ export interface EmergencyStatus {
   expires_at?: number;
   remaining_secs?: number;
   confirmed?: boolean;
+  /// 걸려 있지 않을 때: 지금 통신 중인 원격 도구(대화상자가 예외 칸을 미리 채움)
+  suggested_tools?: { display: string; path: string }[];
 }
 /// 상단 띠의 긴급 차단 문구(순수 함수 — 시험용). 걸려 있지 않으면 null
 export function emergencyText(st: EmergencyStatus | null): string | null {
@@ -117,7 +119,7 @@ export function emergencyText(st: EmergencyStatus | null): string | null {
 }
 
 /// 긴급 차단 대화상자: 기한·원격 도구 예외를 고르고 승인 창으로 보낸다(서비스가 RDP 세션은 자동으로 예외)
-function emergencyDialog(done: () => void) {
+function emergencyDialog(done: () => void, suggested: { display: string; path: string }[] = []) {
   const dlg = el("dialog", "ack");
   dlg.append(el("h3", undefined, "긴급 차단"));
   dlg.append(el("p", undefined, "이 PC 의 나가는·들어오는 통신을 모두 막습니다. 예외: 이 PC 안 통신(루프백) · DNS · DHCP · 이 앱 · 지금 접속한 원격 데스크톱 세션의 상대 IP · 아래에 적은 원격 도구."));
@@ -134,7 +136,10 @@ function emergencyDialog(done: () => void) {
   tools.rows = 3;
   tools.placeholder = "예외로 둘 원격 도구 실행 파일 경로(한 줄에 하나, 8개까지)\n예: C:\\Program Files\\TeamViewer\\TeamViewer.exe";
   tools.style.width = "100%";
+  // 사용자 승인 2026-11-08: 지금 통신 중인 원격 도구를 미리 채운다(지우면 막힌다)
+  tools.value = suggested.map((t) => t.path).join("\n");
   dlg.append(el("label", "block", "원격 도구 예외", tools));
+  if (suggested.length) dlg.append(el("p", "muted small", `지금 통신 중인 원격 도구를 미리 넣었습니다: ${suggested.map((t) => t.display).join(", ")}. 지운 줄은 막힙니다.`));
   const out = el("div");
   const go = button("승인 창 열기", async () => {
     go.disabled = true;
@@ -537,7 +542,7 @@ export function dashboard(): HTMLElement {
         }, "btn small");
         emgSlot.replaceChildren(b, off);
       } else if (er.ok) {
-        emgSlot.replaceChildren(button("긴급 차단…", () => emergencyDialog(() => void refresh()), "btn small danger"));
+        emgSlot.replaceChildren(button("긴급 차단…", () => emergencyDialog(() => void refresh(), st?.suggested_tools ?? []), "btn small danger"));
       }
     })();
     const more = el("a", "badge-link", "진단 ›");
