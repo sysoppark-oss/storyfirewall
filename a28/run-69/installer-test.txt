@@ -1,0 +1,40 @@
+setup=D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\bundle\nsis\Story Firewall_0.1.4_x64-setup.exe
+install exit=0
+PASS  ui exe in Program Files
+PASS  svc exe in Program Files
+PASS  geo data installed
+PASS  service running after install (Running)
+status: state=4 published=\\.\pipe\story-firewall-00c3ae00ab6140ceaedcee16c612b8a8 wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+
+PASS  pipe name published
+PASS  data dir owner trusted
+PASS  HKLM Run --tray ("C:\Program Files\Story Firewall\story-firewall-ui.exe" --tray)
+PASS  users cannot write install dir
+PASS  start mode auto (Auto)
+PASS  service path in Program Files ("C:\Program Files\Story Firewall\story-firewall-svc.exe" run)
+install: updated existing service ("C:\Program Files\Story Firewall\story-firewall-svc.exe" run --test-signer "StoryFirewall Test")
+stop: ok state=Some(1)
+start: ok state=Some(4)
+apply: hello {"id":1,"jsonrpc":"2.0","result":{"api":[1,0],"engine_busy_ms":0,"server_version":"0.1.4"}}
+apply: policy_id=1 version=1 filters=2 confirm=ok
+
+PASS  policy applied and confirmed before upgrade
+PASS  WFP filters present before upgrade (2)
+reinstall exit=0
+during upgrade: samples=40 min=2
+PASS  filters never dropped during upgrade (min=2, before=2)
+PASS  service running after reinstall
+service pid before=6692 after=4736 (restarted = files replaced)
+status: state=4 published=\\.\pipe\story-firewall-ce7ae19474164f4ebd9a2189693b6c8d wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+
+PASS  same filter count after upgrade + restart reconcile
+uninstall exit=0
+PASS  service removed
+PASS  files removed
+PASS  Run value removed
+status: state=(OpenServiceW 실패 0x424) published=- wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+
+PASS  pipe name unpublished
+PASS  no WFP filters left
+PASS  data kept on silent uninstall
+assert: 0 failed
