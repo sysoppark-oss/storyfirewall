@@ -336,6 +336,7 @@ if (mode.startsWith("shots:")) {
       await page.keyboard.press("Escape");
     }
     await page.click("button.nav-btn[data-key=settings]");
+    await page.click("button.u-tab >> text=데이터·진단").catch(() => {}); // UI 명세 4판 7-1
     await page.waitForTimeout(3000);
     await page.screenshot({ path: path.join(outDir, `${label}-diagnostics.png`) });
   }

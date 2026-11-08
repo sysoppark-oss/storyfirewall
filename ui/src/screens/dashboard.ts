@@ -460,7 +460,7 @@ export function dashboard(): HTMLElement {
     void drawOverview();
     // C1: 카드 아래, 상태 줄과 별개. D014: 기록 없는 구간에 시작한 의심 사건이 있으면 맨 앞 주황 경고
     const inGap = all.filter((s) => s.started_in_gap);
-    if (hr.ok) body.append(healthLine(hr.result, () => state.go("settings", {}), { n: inGap.length, open: () => state.go("story", { root: inGap[0]?.root }) }));
+    if (hr.ok) body.append(healthLine(hr.result, () => state.go("settings", { tab: "diag" }), { n: inGap.length, open: () => state.go("story", { root: inGap[0]?.root }) }));
     const prot = se.ok ? se.result.items.filter((e) => PROTECTION_KINDS.has(e.kind)) : [];
     let protBox: HTMLElement | null = null;
     if (prot.length) {
@@ -559,7 +559,7 @@ export function dashboard(): HTMLElement {
       // D013: 오류 / 수집 안 됨 / 비어 있음을 가른다. "조용합니다"는 응답이 성공했고 수집이 돌 때만
       const st = listState(ev, hr.ok ? hr.result : null);
       if (st === "error" && !ev.ok) body.append(failBox(ev.error, () => void refresh(), "인시던트 목록"));
-      else if (st === "nodata") body.append(noDataBox(() => state.go("settings", {})));
+      else if (st === "nodata") body.append(noDataBox(() => state.go("settings", { tab: "diag" })));
       else body.append(el("p", "muted", "오늘은 조용합니다. 미조치 인시던트가 없습니다."), checkedLine(hr.ok ? hr.result : null));
     }
     clear(foot);

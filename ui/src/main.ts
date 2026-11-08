@@ -37,7 +37,7 @@ const SCREENS = {
   installs: { label: SCREEN_LABEL.installs, make: () => installs() },
   agents: { label: SCREEN_LABEL.agents, make: () => agents() },
   policy: { label: "정책", make: (a?: Record<string, unknown>) => policy(a) },
-  settings: { label: "설정", make: () => settings() },
+  settings: { label: "설정", make: (a?: Record<string, unknown>) => settings(a) },
 } as const;
 type Key = keyof typeof SCREENS;
 
@@ -56,6 +56,9 @@ if (!isHud) app.append(nav, content, status);
 
 let current: HTMLElement | undefined;
 function go(key: Key, args?: Record<string, unknown>) {
+  // UI 명세 4판 7-2: 저장하지 않은 서비스 설정이 있으면 떠나기 전에 묻는다
+  const unsaved = current?.dataset["unsaved"];
+  if (unsaved && !confirm(`저장하지 않은 서비스 설정 ${unsaved}건이 있습니다. 저장하지 않고 떠날까요?`)) return;
   current?.dispatchEvent(new Event("screen-leave"));
   clear(main);
   current = SCREENS[key].make(args);

@@ -682,3 +682,7 @@ body.hud-body #app { display: block; }
 .bulk-bar { position: sticky; bottom: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; margin-top: 10px; background: var(--card); border: 1px solid var(--brand-strong); border-radius: 10px; box-shadow: 0 -4px 16px rgba(0,0,0,.25); }
 .bulk-bar[hidden] { display: none; }
 .watch-chip[aria-pressed="true"] { background: color-mix(in srgb, var(--brand-strong) 15%, transparent); }
+
+/* 4판 7-2: 설정 저장 바(서비스 설정을 바꿨을 때만) */
+.save-bar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 10px 14px; margin-top: 12px; background: var(--card); border: 1px solid var(--warn); border-radius: 10px; box-shadow: 0 -4px 16px rgba(0,0,0,.25); }
+.save-bar[hidden] { display: none; } .save-bar .spacer { flex: 1; }
