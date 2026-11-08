@@ -14,10 +14,10 @@ import {
 
 /// UI 명세 4판 4-2: 요약 단추 — 이 설치(뿌리)가 인시던트면 그 카드로, 아니면 프로그램 상세 서랍(실행 흐름)으로.
 /// 인시던트가 아닌 것을 인시던트처럼 보이지 않는다. 목록을 못 받으면 서랍으로(잘못된 카드로 보내지 않음)
-export async function openRunFlow(root: number): Promise<void> {
+export async function openRunFlow(root: number, note = "이 설치 프로그램의 실행 흐름"): Promise<void> {
   const r = await rpc<{ items: { root: number }[] }>("story.events", { level_min: "normal", triage: "all", cursor: { limit: 200 } });
   if (r.ok && r.result.items.some((x) => x.root === root)) return void state.go("story", { root, level: "normal", triage: "all" });
-  openProcessDrawer(root, "이 설치 프로그램의 실행 흐름");
+  openProcessDrawer(root, note);
 }
 
 /// 외부 문자열(경로 등) → 위생 처리 + 경로 고정폭. 표시 위장 문자를 지웠으면 표시를 남긴다
@@ -46,9 +46,9 @@ export function pathLine(path: string, count = 1): HTMLElement {
 }
 
 /// 상세의 한 갈래: 제목 + 목록. 비었으면 "없음"
-export function section(title: string, items: HTMLElement[], note?: string, iconName?: string): HTMLElement {
+export function section(title: string, items: HTMLElement[], note?: string, iconName?: string, countText?: string): HTMLElement {
   const box = el("div", "install-sec");
-  const h = el("h4", undefined, `${title} (${items.length})`);
+  const h = el("h4", undefined, `${title} (${countText ?? items.length})`);
   if (iconName) h.prepend(icon(iconName), " ");
   box.append(h);
   if (note) box.append(el("p", "muted small", note));
@@ -58,7 +58,7 @@ export function section(title: string, items: HTMLElement[], note?: string, icon
 }
 
 /// 카드 하나. AI 도구 화면(14판 20-5)도 같은 모양을 쓴다 — `summary` 로 요약 문장만 바꾼다
-export function buildCard(run: InstallRun, summary: string = summaryText(run), opts: { chips?: boolean } = {}): HTMLElement {
+export function buildCard(run: InstallRun, summary: string = summaryText(run), opts: { chips?: boolean; flowNote?: string; flowTip?: string } = {}): HTMLElement {
   const card = el("div", "card install");
   const title = ext("h3", baseName(run.image));
   title.title = sanitize(run.image, 400).text;
@@ -91,8 +91,16 @@ export function buildCard(run: InstallRun, summary: string = summaryText(run), o
   card.append(meta);
 
   // 4-2: 요약은 단추 — 인시던트면 그 카드, 아니면 프로그램 상세 서랍
-  const sumBtn = button(summary, () => void openRunFlow(run.root), "btn link install-summary");
-  sumBtn.title = "이 설치가 한 일을 실행 흐름으로 보기";
+  // 인시던트 여부를 묻는 데 몇 초 걸릴 수 있다 — 누른 즉시 "여는 중" 표시(두 번 누름 방지)
+  const sumBtn = button(summary, async () => {
+    if (sumBtn.disabled) return;
+    sumBtn.disabled = true;
+    sumBtn.setAttribute("aria-busy", "true");
+    const wait = el("span", "muted small", " 여는 중…");
+    sumBtn.after(wait);
+    try { await openRunFlow(run.root, opts.flowNote); } finally { sumBtn.disabled = false; sumBtn.removeAttribute("aria-busy"); wait.remove(); }
+  }, "btn link install-summary");
+  sumBtn.title = opts.flowTip ?? "이 설치가 한 일을 실행 흐름으로 보기";
   card.append(el("p", undefined, sumBtn));
   // 검수(AI 도구 1): 수집 한계는 주의 뜻이 아니라 회색(명세 2-1: 주황은 주의·오늘 처음에만)
   if (run.truncated) card.append(el("p", "muted small", "기록이 많아 일부만 모았습니다(접속·자동 실행·파일 쓰기를 한 것 먼저). 아래 목록은 전부가 아닙니다."));

@@ -482,7 +482,7 @@ fn switch_of(t: &str) -> Option<String> {
 }
 
 /// 공백 기준으로 자르되 큰따옴표 안의 공백은 잇는다(Windows 명령줄 규칙의 근사 — 역슬래시 이스케이프는 다루지 않는다)
-fn split_cmdline(s: &str) -> Vec<String> {
+pub(crate) fn split_cmdline(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
     let mut quoted = false;

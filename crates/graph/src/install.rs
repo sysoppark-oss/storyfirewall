@@ -540,3 +540,66 @@ mod tests {
         assert!(!is_installer_image(r"C:\Temp\setup.msi"));
     }
 }
+
+/// UI 명세 4판 3-6(검수 122-2): 설치 프로그램 명령줄에서 **조용한 설치 스위치만** 남긴다(실행 파일 이름 + 스위치).
+/// 설치 명령줄에는 속성 값(PASSWORD=…·키·경로)이 들 수 있어 원문은 남기지 않는다. 스위치가 없으면 None(아무것도 보내지 않음).
+/// 대상: msiexec /q·/qn·/qb·/quiet·/passive(꼬리 +,- 허용), NSIS /S, InstallShield /s, Inno /SILENT·/VERYSILENT, 일반 --silent·/silent
+pub fn silent_flags_only(cmdline: &str) -> Option<String> {
+    let toks = crate::vault::split_cmdline(cmdline);
+    let exe = toks
+        .first()
+        .map(|t| t.rsplit(['\\', '/']).next().unwrap_or(t).to_string())
+        .unwrap_or_default();
+    let kept: Vec<String> = toks
+        .iter()
+        .skip(1)
+        .filter_map(|t| {
+            let head = t.split('=').next().unwrap_or("");
+            is_silent_switch(head).then(|| head.to_string())
+        })
+        .collect();
+    if kept.is_empty() || exe.is_empty() {
+        return None;
+    }
+    Some(format!("{exe} {}", kept.join(" ")))
+}
+
+fn is_silent_switch(t: &str) -> bool {
+    let l = t.to_ascii_lowercase();
+    if l == "--silent" {
+        return true;
+    }
+    let Some(s) = l.strip_prefix('/') else {
+        return false;
+    };
+    let s = s.trim_end_matches(['+', '-']);
+    matches!(
+        s,
+        "q" | "qn" | "qb" | "quiet" | "passive" | "s" | "silent" | "verysilent"
+    )
+}
+
+#[cfg(test)]
+mod silent_tests {
+    use super::silent_flags_only;
+    #[test]
+    fn keeps_only_silent_switches() {
+        assert_eq!(
+            silent_flags_only(r#""C:\Users\a\Downloads\Foo Setup.exe" /S /D=C:\x"#).as_deref(),
+            Some("Foo Setup.exe /S")
+        );
+        assert_eq!(
+            silent_flags_only(r#"msiexec.exe /i "C:\a.msi" /qn+ PASSWORD=hunter2"#).as_deref(),
+            Some("msiexec.exe /qn+")
+        );
+        assert_eq!(
+            silent_flags_only("setup.exe /VERYSILENT /NORESTART /LOG=C:\\l.txt").as_deref(),
+            Some("setup.exe /VERYSILENT")
+        );
+        assert_eq!(silent_flags_only("setup.exe /norestart"), None);
+        assert_eq!(silent_flags_only("setup.exe /silently /sp-"), None);
+        assert!(!silent_flags_only("msiexec /qn KEY=secret")
+            .unwrap()
+            .contains("secret"));
+    }
+}

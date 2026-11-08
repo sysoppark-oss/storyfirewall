@@ -593,7 +593,7 @@ details.where-panel { border-radius: 16px; }
 .triage-bars { display: grid; gap: 6px; font-size: 12px; } .triage-bar-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 28px; align-items: center; gap: 8px; }
 .triage-bar-row .lbl { color: var(--muted); white-space: nowrap; } .triage-bar-row .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; display: block; } .triage-bar-row .fill { display: block; height: 100%; border-radius: 4px; }
 .triage-bar-row b { text-align: right; }
-.fill.t-new { background: var(--bad); } .fill.t-inv { background: var(--warn); } .fill.t-act { background: var(--ok); } .fill.t-closed { background: var(--muted); }
+/* 검수 122-12: 처리 상태는 심각도가 아니다 — 중립색 한 가지, 글자로 구분 */ .fill.t-new, .fill.t-inv, .fill.t-act, .fill.t-closed { background: var(--brand); }
 .donut { width: 120px; height: 120px; flex: none; }
 .donut-ring { fill: none; stroke: var(--line); stroke-width: 12; }
 .donut-seg { fill: none; stroke-width: 12; }
@@ -622,6 +622,8 @@ details.where-panel { border-radius: 16px; }
 .feed-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); font-size: 13px; min-width: 0; }
 .feed-row:first-child { border-top: 0; } .feed-row .when { flex: none; font-variant-numeric: tabular-nums; } .feed-row .feed-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .feed-row.alert .feed-text { color: var(--warn); }
+/* 검수 122-4: 인시던트 줄은 수준 색(주황 아님) */
+.feed-row.inc .feed-text { color: var(--fg); } .feed-row.inc.lv-high .lv { color: var(--bad); } .feed-row.inc.lv-critical .lv { color: var(--crit); } .feed-row.inc .lv { font-weight: 600; }
 /* 킬체인|도넛 줄: 킬체인이 넓게 */
 .dash-viz .dash-row2.row-chain { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: start; } .dash-viz .row-chain .flow-card { margin: 0; }
 .dash-viz .dash-row2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 14px; }
@@ -703,7 +705,7 @@ body.hud-body #app { display: block; }
 .card.install.edge-warn { border-left: 3px solid var(--warn); }
 .install-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
 .chip.install-chip { background: transparent; border: 1px solid var(--line); color: var(--fg); }
-.chip.install-chip.silent, .chip.install-chip.other { border-color: var(--warn); }
+.chip.install-chip.silent { border-color: var(--warn); }
 .chip.install-chip.no-origin { color: var(--muted); }
 .btn.link.install-summary { text-align: left; white-space: normal; padding: 0; }
 /* 5-2c: 복사 아이콘 + "복사함" 말풍선 */
@@ -725,7 +727,7 @@ dialog.palette::backdrop { background: rgba(0, 0, 0, 0.35); }
 dialog.palette input { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px solid var(--line); padding: 12px 14px; font-size: 15px; background: transparent; color: var(--fg); outline: none; }
 .pal-list { list-style: none; margin: 0; padding: 4px 0; max-height: 50vh; overflow: auto; }
 .pal-item { display: flex; align-items: center; gap: 12px; padding: 7px 14px; cursor: pointer; }
-.pal-item[aria-selected="true"] { background: var(--select); }
+.pal-item[aria-selected="true"] { background: color-mix(in srgb, var(--brand) 22%, transparent); box-shadow: inset 2px 0 0 var(--brand-strong); }
 .pal-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pal-label mark { background: transparent; color: var(--brand-strong); font-weight: 600; }
 .pal-hint { color: var(--muted); font-size: 12px; white-space: nowrap; }

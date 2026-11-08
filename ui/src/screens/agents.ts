@@ -7,6 +7,7 @@ import { sanitize } from "../sanitize";
 import { countdown, approvalBox, type ApplyReply } from "../confirm";
 import { whereCell, type Where } from "./connections";
 import { withIcon } from "./dash-viz";
+import { isPackagePath } from "./process";
 import { childProcs, countPaths } from "./installs-text";
 import { loadingBox, failBox, noDataBox, collectionStalled, type HealthLike } from "../list-state";
 import { buildCard, section, pathLine, safePath } from "./installs";
@@ -34,12 +35,15 @@ function remoteLine(name: string, count: number, w: Where | undefined): HTMLElem
 
 /// UI 명세 4판 3-7 / 5-1: 자세히 = 실행한 프로그램 / 만든 파일 / 접속지 (+ 자동 실행 관련은 있을 때만)
 function agentDetail(run: AgentRun["run"]): HTMLElement[] {
+  const kinds = countPaths(childProcs(run));
+  const runs = kinds.reduce((a, [, n]) => a + n, 0);
   const progs = [
-    ...countPaths(childProcs(run)).map(([p, n]) => pathLine(p, n)),
+    ...kinds.map(([p, n]) => pathLine(p, n)),
     ...run.commands.map((c) => safePath("li", c, "mono", 1000)),
   ];
   const out = [
-    section("실행한 프로그램", progs, run.commands.length ? "프로그램 경로와 실행한 명령줄" : undefined, "cog"),
+    section("실행한 프로그램", progs, run.commands.length ? "프로그램 경로와 실행한 명령줄" : undefined, "cog",
+      runs > kinds.length ? `${kinds.length}종 · ${runs}번${run.truncated ? " 이상" : ""}${run.commands.length ? ` · 명령 ${run.commands.length}개` : ""}` : undefined),
     section("만든 파일", run.files.map((p) => pathLine(p)), "수집 범위: 실행 파일·스크립트, 사용자 쓰기 가능 폴더", "file"),
     section("접속지", run.remotes.map(([n, c]) => remoteLine(n, c, run.where?.[n])), "나라·망은 PC 안의 오프라인 DB 로 붙입니다(위치가 아니라 등록 정보)", "globe"),
   ];
@@ -60,6 +64,8 @@ function blockDialog(a: AgentRun, status: HTMLElement): void {
   p.append(ext("span", sanitize(path, 400).text, "mono"));
   dlg.append(p, el("p", "muted small", "이 실행 파일이 인터넷 쪽으로 나가는 연결을 막습니다. 같은 PC 안(로컬 MCP 서버)·사설망 연결은 막지 않습니다. 이미 열린 연결은 다음 연결부터 막힐 수 있습니다."));
   // 공용 실행기면 함께 막히는 범위를 먼저 알린다(주의 — 판정 아님)
+  // 스토어(WindowsApps) 앱은 업데이트 때 판 번호가 든 폴더가 바뀐다 → 경로 차단이 새 판에는 걸리지 않는다
+  if (isPackagePath(path)) dlg.append(el("p", "warn", "스토어 앱 경로입니다. 앱이 업데이트되면 폴더 이름(판 번호)이 바뀌어 이 차단이 새 판에는 걸리지 않습니다. 기한을 짧게 두고, 업데이트 뒤에는 다시 확인하세요."));
   if (sharedRuntime(path)) dlg.append(el("p", "warn", "이 실행 파일은 여러 프로그램이 함께 쓰는 실행기입니다. 같은 실행 파일로 도는 다른 도구·스크립트의 인터넷 연결도 함께 막힙니다."));
   const fs = el("fieldset", "span-pick");
   fs.append(el("legend", undefined, "기한"));
@@ -95,7 +101,7 @@ function blockDialog(a: AgentRun, status: HTMLElement): void {
 }
 
 function runCard(a: AgentRun): HTMLElement {
-  const card = buildCard(a.run, agentSummary(a.run), { chips: false });
+  const card = buildCard(a.run, agentSummary(a.run), { chips: false, flowNote: "이 실행의 흐름", flowTip: "이 실행이 한 일을 실행 흐름으로 보기" });
   // 3-7: 자세히 = 세 단락
   const det = card.querySelector("details.install-detail");
   if (det) det.replaceChildren(el("summary", undefined, "자세히"), ...agentDetail(a.run));

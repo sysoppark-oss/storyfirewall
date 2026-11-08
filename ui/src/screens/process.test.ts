@@ -71,3 +71,16 @@ describe("패키지 앱 경로(28차 Q1)", () => {
     expect(isPackagePath("C:\\Users\\u\\x\\Program Files\\WindowsApps\\a.exe")).toBe(false);
   });
 });
+
+describe("검수 122-1 부팅 뿌리 위로 오르지 않음", () => {
+  it("wininit 의 (PID 재사용으로 잘못 잡힌) 부모는 따라가지 않는다", () => {
+    const p = (id: number, label: string) => ({ id, kind: "process", label });
+    const rw = [
+      { depth: 0, node: p(1, "setup.exe"), via: null },
+      { depth: 1, node: p(2, "services.exe"), via: { rel: "spawned", src: 2, dst: 1 } },
+      { depth: 2, node: p(3, "wininit.exe"), via: { rel: "spawned", src: 3, dst: 2 } },
+      { depth: 3, node: p(4, "story-firewall-ui.exe"), via: { rel: "spawned", src: 4, dst: 3 } },
+    ];
+    expect(mainPath(1, rw).map((s) => s.node.label)).toEqual(["wininit.exe", "services.exe"]);
+  });
+});

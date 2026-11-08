@@ -390,10 +390,14 @@ export function dashboard(): HTMLElement {
     feed.querySelector(".kpi-head")?.append(el("span", "spacer"), allBtn);
     const shownItems = feedAll ? feedItems : feedItems.filter(isDefenseEvent);
     const fg = groupProtection(shownItems).slice(0, 8);
-    // 심각·높음 새 인시던트(최대 3) — 누르면 그 카드
+    // 검수 122-5: 인시던트 줄과 서비스 사건 줄을 시각으로 합쳐 최신 먼저(미조치 심각·높음 중 최근 활동 3건까지)
+    const rows: { ts: number; row: HTMLElement }[] = [];
     for (const inc of feedAll ? [] : feedIncidents.slice(0, 3)) {
-      const row = clickable(el("div", "feed-row alert", el("span", "muted when", fmtShort(inc.ts)), ext("span", `새 ${LEVEL[inc.level as keyof typeof LEVEL] ?? inc.level} 인시던트 — ${inc.title}`, "feed-text")), () => state.go("story", { root: inc.root }), "그 인시던트 보기");
-      flist.append(row);
+      const lv = LEVEL[inc.level as keyof typeof LEVEL] ?? inc.level;
+      const text = el("span", "feed-text", "미조치 ", el("span", "lv", lv), " 인시던트 — ");
+      text.append(ext("span", inc.title));
+      const row = clickable(el("div", `feed-row inc lv-${inc.level}`, el("span", "muted when", fmtShort(inc.ts)), text), () => state.go("story", { root: inc.root, level: "normal", triage: "all" }), "그 인시던트 보기");
+      rows.push({ ts: inc.ts, row });
     }
     for (const { head: e, n } of fg) {
       const row = el("div", `feed-row${QUIET_KINDS.has(e.kind) || e.severity < 2 ? "" : " alert"}`);
@@ -404,8 +408,10 @@ export function dashboard(): HTMLElement {
       row.append(ext("span", e.kind.startsWith("cut_") ? `${label} — ${e.detail}` : label, "feed-text"));
       if (n > 1) row.append(el("span", "chip count", `${n}회`));
       row.title = e.detail;
-      flist.append(row);
+      rows.push({ ts: dts, row });
     }
+    rows.sort((a, b) => b.ts - a.ts);
+    for (const r of rows) flist.append(r.row);
     if (!fg.length && !(feedIncidents.length && !feedAll)) flist.append(el("p", "muted small", feedAll ? "최근 7일 서비스 사건이 없습니다." : "최근 7일 차단·대응 기록이 없습니다. [모두 보기]로 다른 서비스 사건을 볼 수 있습니다."));
     feed.append(flist);
     // 2판 화면 구성: [킬체인 | 도넛] → [트래픽 그래프 | 방어 피드]

@@ -36,7 +36,8 @@ async function loadDynamic(): Promise<{ incidents: PaletteItem[]; programs: Pale
 
 /// 고른 항목 실행: 화면 이동, 서랍 열기, 또는 대화상자·메뉴 열기
 function run(it: PaletteItem): void {
-  recent = pushRecent(recent, it);
+  // 파괴적 명령은 최근 목록에 남기지 않는다(빈 입력의 첫 줄이 되지 않게)
+  if (!(it.kind === "command" && String(it.target).startsWith("emg"))) recent = pushRecent(recent, it);
   switch (it.kind) {
     case "screen": {
       const [key, tab] = String(it.target).split(":");
@@ -121,10 +122,15 @@ export function openPalette(): void {
   let sel = 0;
   const paint = () => {
     const q = input.value;
+    // 검수 122-6: 긴급 차단 중이 아니면 "해제" 명령을 내지 않는다(상단 띠의 상태 단추로 안다)
+    const emgOn = !!document.querySelector('[data-cmd="emg-state"]');
+    const cmds = COMMAND_ITEMS.filter((c) => (c.target === "emg-stop" ? emgOn : c.target === "emg-start" ? !emgOn : true));
     if (!q.trim()) {
-      items = [...recent, ...COMMAND_ITEMS.filter((c) => !recent.some((r) => r.kind === "command" && r.target === c.target)).slice(0, 4), ...SCREEN_ITEMS.filter((s) => !recent.includes(s))].slice(0, 12);
+      // 검수 122-7: 빈 입력의 기본 선택(첫 줄)이 파괴적 명령이 되지 않게 — 최근 이동·화면 먼저, 명령은 아래(긴급 차단은 ">" 로만)
+      const quiet = cmds.filter((c) => c.target !== "emg-start" && c.target !== "emg-stop");
+      items = [...recent.filter((r) => r.target !== "emg-start"), ...SCREEN_ITEMS.filter((s) => !recent.includes(s)), ...quiet.filter((c) => !recent.some((r) => r.kind === "command" && r.target === c.target))].slice(0, 14);
     } else {
-      items = search(q, [SCREEN_ITEMS, SETTING_ITEMS, dyn.incidents, dyn.programs]);
+      items = search(q, [SCREEN_ITEMS, SETTING_ITEMS, dyn.incidents, dyn.programs]).filter((x) => x.kind !== "command" || cmds.includes(x));
       const no = incidentNo(q);
       if (no != null && !items.some((x) => x.kind === "incident" && x.target === no)) {
         items.unshift({ kind: "incident", label: `인시던트 #${no}`, hint: "인시던트 목록에서 찾기", target: no });

@@ -75,12 +75,16 @@ function copyable(text: string, cls = "mono"): HTMLElement {
 type Step = Detail["rewind"][number];
 /// D025-A3: 되감기(그물)에서 한 줄 사슬을 고른다 — 자신은 실행 파일(executed_as) 먼저, 파일은 만든 프로그램(wrote) 다음 받은 곳(downloaded),
 /// 그 밖의 프로세스는 실행한 부모(spawned). 오래된 쪽이 앞(왼쪽). 최대 8단계
+/// 부팅 때 시작하는 뿌리: 이것 위로는 거슬러 오르지 않는다(검수 122-1: PID 재사용으로 UI 가 wininit 의 "부모"로 잡힌 옛 선)
+const BOOT_ROOTS = new Set(["system", "smss.exe", "wininit.exe", "csrss.exe", "winlogon.exe"]);
+export const MAIN_PATH_MAX = 8;
 export function mainPath(selfId: number, rewind: Step[]): Step[] {
   const out: Step[] = [];
   const seen = new Set<number>([selfId]);
   let cur = selfId;
   let kind = "self";
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < MAIN_PATH_MAX; i++) {
+    if (kind === "process" && out[0] && BOOT_ROOTS.has((out[0].node.label || "").toLowerCase())) break;
     const cands = rewind.filter((s) => s.via && s.via.dst === cur && !seen.has(s.node.id));
     // 자신: 실행 파일의 출신(만든 프로그램·받은 곳)이 기록돼 있으면 그쪽, 아니면 실행한 부모(svchost 처럼 파일 출신이 없는 경우)
     const fileHasOrigin = (fid: number) => rewind.some((s) => s.via && s.via.dst === fid && (s.via.rel === "wrote" || s.via.rel === "downloaded"));
@@ -148,7 +152,10 @@ export function processPanel(nodeId: number): HTMLElement {
     // D027-4: 왼쪽 끝이 기록된 뿌리(explorer 등 셸·시스템 시작 프로세스)가 아니면 회색 칩 "… 기록 없음(수집 시작 전)"
     const first = steps[0];
     const realStart = !!first && first.node.kind === "process" && ROOT_PROCS.has((first.node.label || "").toLowerCase());
-    if (!realStart) chain.append(el("span", "chip none", "… 기록 없음(수집 시작 전)"), el("span", "muted", " → "));
+    // 검수 122-3: 상한(8단계)에서 끊긴 것은 "기록 없음"이 아니다
+    const more = !!first && steps.length >= MAIN_PATH_MAX && d.rewind.some((x) => x.via && x.via.dst === first.node.id);
+    if (more) chain.append(el("span", "chip none", "… 앞 단계 생략(기록 있음)"), el("span", "muted", " → "));
+    else if (!realStart) chain.append(el("span", "chip none", "… 기록 없음(수집 시작 전)"), el("span", "muted", " → "));
     for (const s of steps) {
       const lb = s.node.label || "미확인 프로세스";
       chain.append(ext("span", s.node.kind === "file" ? `파일 ${lb}` : lb, s.node.kind === "process" ? "chip process" : "chip file"));

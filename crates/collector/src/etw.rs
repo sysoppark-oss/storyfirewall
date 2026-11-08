@@ -143,7 +143,10 @@ pub fn process_provider(ctx: Arc<Ctx>) -> Provider {
                     // 17판 23-2 ②: 브라우저 본체(이름 기준)도 명령줄을 읽되, 디버깅 스위치만 남겨 보낸다(graph::vault::debug_flags_only).
                     // 브라우저 명령줄에는 방문 주소·프로필 경로가 들 수 있다 — 디버깅 스위치가 없으면 아무것도 보내지 않는다
                     let browser = ident.is_none() && graph::vault::is_browser_main_name(&image);
-                    let cmd = if ident.is_some() || browser {
+                    // 검수 122-2(UI 명세 4판 3-6): 설치 프로그램도 명령줄을 읽되 조용한 설치 스위치만 남긴다(graph::install::silent_flags_only)
+                    let installer =
+                        ident.is_none() && !browser && graph::install::is_installer_image(&image);
+                    let cmd = if ident.is_some() || browser || installer {
                         let mut rv = ctx.cmd_rv.lock().unwrap();
                         match rv.on_start(pid, ts, create_time, tool.clone()) {
                             Some(c) => {
@@ -218,6 +221,13 @@ pub fn process_provider(ctx: Arc<Ctx>) -> Provider {
                                     Ok(flags)
                                 }
                                 None => Err("cmdline_browser_plain"),
+                            },
+                            Ok(c) if installer => match graph::install::silent_flags_only(&c) {
+                                Some(flags) => {
+                                    ctx.count("cmdline_installer_silent");
+                                    Ok(flags)
+                                }
+                                None => Err("cmdline_installer_plain"),
                             },
                             other => other,
                         };
@@ -299,15 +309,22 @@ pub fn kernel_process_provider(ctx: Arc<Ctx>) -> Provider {
                 // 17판 23-2 ②: 만남 장소에 시작을 남기는 것은 복구 도구와 브라우저 본체뿐이다. 복구 도구(이름 또는 원래 이름)가 아니면
                 // 브라우저로 보고 디버깅 스위치만 남긴다 — 그 밖의 명령줄이 원문 그대로 나가는 일이 없게(안전한 쪽)
                 let cmdline = if tool.is_none() && !crate::cmdline::wanted(&name) {
+                    // 브라우저면 디버깅 스위치, 설치 프로그램이면 조용한 설치 스위치만. 둘 다 없으면 보내지 않는다
                     match graph::vault::debug_flags_only(&cmdline) {
                         Some(flags) => {
                             ctx.count("cmdline_browser_debug");
                             flags
                         }
-                        None => {
-                            ctx.count("cmdline_browser_plain");
-                            return;
-                        }
+                        None => match graph::install::silent_flags_only(&cmdline) {
+                            Some(flags) => {
+                                ctx.count("cmdline_installer_silent");
+                                flags
+                            }
+                            None => {
+                                ctx.count("cmdline_browser_plain");
+                                return;
+                            }
+                        },
                     }
                 } else {
                     cmdline
