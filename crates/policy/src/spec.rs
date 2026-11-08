@@ -84,6 +84,11 @@ pub struct BlockSpec {
     /// 전용 Sublayer 라 이 안의 허용(예외)은 다른 Sublayer 의 차단(끊기 등)을 뚫지 못한다.
     #[serde(default, skip_serializing_if = "is_false")]
     pub emergency: bool,
+    /// 이 Windows 서비스(이름)의 서비스 SID 로만 맞는다(FWPM_CONDITION_ALE_USER_ID, Windows 방화벽 서비스 규칙과 같은 꼴).
+    /// svchost.exe 처럼 여러 서비스가 같이 쓰는 프로세스에서 한 서비스로 좁힐 때. 서비스 SID 유형이 None 이면 맞지 않으므로
+    /// 호출자가 유형을 확인한 뒤에만 넣는다(긴급 차단 예외: Dnscache·Dhcp)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<String>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -131,6 +136,7 @@ impl BlockSpec {
             weight: None,
             ip_family: None,
             emergency: false,
+            service: None,
         }
     }
 

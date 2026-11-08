@@ -114,6 +114,10 @@ jobs:
           $mine = @($fx.wfpdiag.filters.item | Where-Object { $_.subLayerKey -eq "{5f1a2b3c-4d5e-4f60-8172-839405a6b7cb}" })
           $persist = @($mine | Where-Object { $_.flags.item -contains "FWPM_FILTER_FLAG_PERSISTENT" })
           Log ("a30: emergency sublayer filters=" + $mine.Count + " persistent=" + $persist.Count)
+          # 서비스 SID 조건(Dnscache·Dhcp): 서비스 SID 유형과 ALE_USER_ID 조건 필터 수 — 위의 dns=True 가 실제 효과 확인
+          Log ("a30: qsidtype " + ((& sc.exe qsidtype Dnscache | Out-String) -replace '\s+', ' ').Trim())
+          $sidf = @($mine | Where-Object { ($_.filterCondition.item | ForEach-Object { $_.fieldKey }) -contains "FWPM_CONDITION_ALE_USER_ID" })
+          Log ("a30: service sid filters=" + $sidf.Count)
 
           $o = Rpc "emergency.stop" @{ request_id = (& $rid) }
           Start-Sleep -Seconds 2

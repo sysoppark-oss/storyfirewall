@@ -370,3 +370,35 @@ pub fn run(name: &str, body: Box<dyn FnOnce(Receiver<ServiceEvent>) + Send>) -> 
     }
     Ok(())
 }
+
+/// 서비스 SID 유형이 Unrestricted(1)·Restricted(3) 인가 — 서비스 SID 로 WFP 조건을 걸어도 그 서비스 트래픽이 맞는가.
+/// None(0)이면 토큰에 서비스 SID 가 없어 조건이 맞지 않는다(Windows 방화벽 서비스 규칙과 같은 제약). 읽기만(QUERY_CONFIG).
+pub fn service_sid_usable(name: &str) -> bool {
+    use windows_sys::Win32::System::Services::{
+        QueryServiceConfig2W, SC_MANAGER_CONNECT, SERVICE_CONFIG_SERVICE_SID_INFO, SERVICE_QUERY_CONFIG,
+        SERVICE_SID_INFO,
+    };
+    let scm = unsafe { OpenSCManagerW(null(), null(), SC_MANAGER_CONNECT) };
+    if scm.is_null() {
+        return false;
+    }
+    let scm = ScHandle(scm);
+    let h = unsafe { OpenServiceW(scm.0, wide(name).as_ptr(), SERVICE_QUERY_CONFIG) };
+    if h.is_null() {
+        return false;
+    }
+    let h = ScHandle(h);
+    let mut info: SERVICE_SID_INFO = unsafe { std::mem::zeroed() };
+    let mut need: u32 = 0;
+    // SAFETY: 출력 버퍼는 SERVICE_SID_INFO 한 개(고정 크기, DWORD 하나)
+    let ok = unsafe {
+        QueryServiceConfig2W(
+            h.0,
+            SERVICE_CONFIG_SERVICE_SID_INFO,
+            &mut info as *mut _ as *mut u8,
+            std::mem::size_of::<SERVICE_SID_INFO>() as u32,
+            &mut need,
+        )
+    };
+    ok != 0 && matches!(info.dwServiceSidType, 1 | 3)
+}

@@ -333,6 +333,7 @@ impl<'a> Engine<'a> {
                 weight: None,
                 ip_family: None,
                 emergency: false,
+                service: None,
             });
         }
         if !addr_specs.is_empty() {

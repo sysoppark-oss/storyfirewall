@@ -13,9 +13,11 @@ host-check = []
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+sha1.workspace = true
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Security_Authorization",
     "Win32_System_Rpc",
     "Win32_NetworkManagement_WindowsFilteringPlatform",
     "Win32_NetworkManagement_IpHelper",

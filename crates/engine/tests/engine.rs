@@ -1289,6 +1289,7 @@ fn emergency_filters_lost_on_reboot_are_not_restored() {
         own_images: vec![r"C:\Program Files\Story Firewall\story-firewall-svc.exe".into()],
         remote_tools: vec![],
         rdp_clients: vec![],
+        ..Default::default()
     });
     let (emg_ids, other_ids) = {
         let mut e = Engine::new(rusqlite::Connection::open(&path).unwrap(), &mut wfp, &NoGraph, &clock, &R, &[]).unwrap();

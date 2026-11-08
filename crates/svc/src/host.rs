@@ -64,6 +64,11 @@ pub trait Host: Send {
     fn rdp_sessions(&self) -> Vec<(u32, String)> {
         Vec::new()
     }
+    /// 서비스 SID 유형이 Unrestricted·Restricted 인가(서비스 SID 로 WFP 조건을 걸어도 맞는가). 모르면 false —
+    /// 긴급 차단 DNS·DHCP 예외는 이때만 서비스 SID 로 좁힌다(아니면 svchost 경로만)
+    fn service_sid_usable(&self, _service: &str) -> bool {
+        false
+    }
     /// 34차 Q3: RDP 가 듣는 포트(바꿔 둘 수 있다). 기본 3389
     fn rdp_port(&self) -> u16 {
         3389

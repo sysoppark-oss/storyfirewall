@@ -59,6 +59,8 @@ pub fn input(world: &World, remote_tools: &[String]) -> Result<policy::emergency
         own_images: own_images(),
         remote_tools: tools,
         rdp_clients: rdp_clients(&world.host.rdp_sessions()),
+        dns_service: world.host.service_sid_usable("Dnscache").then(|| "Dnscache".to_string()),
+        dhcp_service: world.host.service_sid_usable("Dhcp").then(|| "Dhcp".to_string()),
     })
 }
 

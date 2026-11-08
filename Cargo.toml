@@ -15,6 +15,7 @@ serde_json = "1"
 thiserror = "2"
 # sha2: MIT OR Apache-2.0 (RustCrypto). 0.10 계열 — 0.11 은 2026-10 출시라 안정 계열을 쓴다 (A20: 출신 기록 해시)
 sha2 = "0.10"
+sha1 = "0.10"
 
 # ferrisetw: 실시간 소비에 RAW_TIMESTAMP 를 켤 수 있게 한 판 (third_party/ferrisetw/PATCHES.md, 23차 Q2)
 [patch.crates-io]

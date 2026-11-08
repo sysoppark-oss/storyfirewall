@@ -137,6 +137,9 @@ impl crate::host::Host for WinHost {
     fn rdp_port(&self) -> u16 {
         super::wts::rdp_port()
     }
+    fn service_sid_usable(&self, service: &str) -> bool {
+        super::service::service_sid_usable(service)
+    }
     fn original_name(&self, path: &str) -> Option<String> {
         // Windows 폴더 밖의 실행 파일만(이름 바꾼 복사본은 보통 사용자 폴더에 있다) — 모든 시스템 프로세스마다 파일을 읽지 않게
         let l = path.to_ascii_lowercase();

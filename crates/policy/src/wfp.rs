@@ -294,6 +294,42 @@ impl Engine {
             c.conditionValue.Anonymous.byteBlob = app_blob;
             conds.push(c);
         }
+        // 서비스 SID 조건(Windows 방화벽 서비스 규칙과 같은 꼴): ALE_USER_ID 가 이 SD 의 허용 SID 를 가진 토큰이면 맞는다
+        let mut sd_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
+        let mut sd_blob: Box<FWP_BYTE_BLOB> = Box::new(unsafe { std::mem::zeroed() });
+        if let Some(svc) = &spec.service {
+            use windows_sys::Win32::Security::Authorization::{
+                ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+            };
+            let sddl = wide(&crate::emergency::service_sd(svc));
+            let mut len: u32 = 0;
+            // SAFETY: sddl 은 NUL 로 끝나는 UTF-16, 출력은 지역 변수. 성공하면 sd_ptr 은 LocalFree 로 푼다(아래)
+            let ok = unsafe {
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    sddl.as_ptr(),
+                    SDDL_REVISION_1,
+                    &mut sd_ptr as *mut _ as *mut _,
+                    &mut len,
+                )
+            };
+            if ok == 0 || sd_ptr.is_null() {
+                if !app_blob.is_null() {
+                    unsafe { FwpmFreeMemory0(&mut app_blob as *mut _ as *mut *mut core::ffi::c_void) };
+                }
+                return Err(PolicyError::Wfp(
+                    unsafe { windows_sys::Win32::Foundation::GetLastError() },
+                    "ConvertStringSecurityDescriptorToSecurityDescriptorW",
+                ));
+            }
+            sd_blob.size = len;
+            sd_blob.data = sd_ptr as *mut u8;
+            let mut c: FWPM_FILTER_CONDITION0 = unsafe { std::mem::zeroed() };
+            c.fieldKey = FWPM_CONDITION_ALE_USER_ID;
+            c.matchType = FWP_MATCH_EQUAL;
+            c.conditionValue.r#type = FWP_SECURITY_DESCRIPTOR_TYPE;
+            c.conditionValue.Anonymous.sd = &mut *sd_blob;
+            conds.push(c);
+        }
         if !v6 {
             for r in &spec.remote_v4 {
                 let mut rg: Box<FWP_RANGE0> = Box::new(unsafe { std::mem::zeroed() });
@@ -466,6 +502,11 @@ impl Engine {
         if !app_blob.is_null() {
             unsafe { FwpmFreeMemory0(&mut app_blob as *mut _ as *mut *mut core::ffi::c_void) };
         }
+        if !sd_ptr.is_null() {
+            // SAFETY: ConvertStringSecurityDescriptorToSecurityDescriptorW 가 LocalAlloc 으로 준 메모리
+            unsafe { windows_sys::Win32::Foundation::LocalFree(sd_ptr) };
+        }
+        drop(sd_blob);
         drop(ranges);
         drop(v6masks);
         drop(luid_box);
