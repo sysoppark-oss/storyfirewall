@@ -18,7 +18,7 @@
 #   cmd.exe is always started with /d (ignores HKCU Command Processor AutoRun).
 # - Output goes to %ProgramFiles%\StoryFirewallDev\logs (admin-written, user-readable).
 # Request format (UTF-8 JSON, one object):  {"job":"b2","seconds":900}   {"job":"pull"}   {"job":"status"}
-#                                           {"job":"install"}   {"job":"uninstall"}   {"job":"selfupdate"}   {"job":"diag"}   {"job":"hostinfo"}   {"job":"sandbox","reboot":"true"}   {"job":"sysmon"}
+#                                           {"job":"install"}   {"job":"uninstall"}   {"job":"selfupdate"}   {"job":"diag"}   {"job":"hostinfo"}   {"job":"sandbox","reboot":"true"}   {"job":"sysmon"}   {"job":"webview2"}   {"job":"sbread"}
 # selfupdate: pull, then replace bin\job-runner.ps1 with the repo copy (no new trust: b2 already runs repo scripts
 #   as SYSTEM; whoever can write main can already run code here). Takes effect from the next run.
 # install (user decision 2026-11-02): installs the latest dev build from the orphan branch dev-builds (CI-built,
@@ -173,6 +173,10 @@ try {
                         $src = Join-Path $repo ("poc\sandbox\" + $n)
                         if (Test-Path $src) { Copy-Item $src (Join-Path $sb $n) -Force }
                     }
+                    # L074: data-only output share (sandbox writes logs/results; nothing here is ever executed by this runner)
+                    $sbo = Join-Path $Base "sandbox-out"
+                    if (-not (Test-Path $sbo)) { New-Item -ItemType Directory -Path $sbo | Out-Null }
+                    & icacls.exe $sbo /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-32-545:(OI)(CI)M" 2>&1 | Out-Null
                     Log $id ("sandbox staged " + $sb)
                     # L070 (install-95, 2026-11-07): setup aborts (exit 2) when the UI is running, but the service step
                     # below still swapped the service -> new service + old UI = signature_failed. Close the UI first.
@@ -293,6 +297,39 @@ try {
                     Copy-Item $exe (Join-Path $sb "Sysmon64.exe") -Force
                     Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue
                     Log $id ("sysmon staged sha256=" + (Get-FileHash (Join-Path $sb "Sysmon64.exe") -Algorithm SHA256).Hash.ToLower())
+                    Log $id "done exit=0"
+                }
+                "webview2" {
+                    # L074: offline WebView2 runtime for the offline sandbox (sandbox-1: UI could not start, the installer's
+                    # embedBootstrapper needs network). Microsoft evergreen standalone x64 installer; must carry a valid
+                    # Microsoft Authenticode signature before it is placed in the read-only sandbox folder.
+                    $sb = Join-Path $Base "sandbox"
+                    if (-not (Test-Path $sb)) { Log $id "rejected: run install first (sandbox folder missing)"; Log $id "done exit=1"; break }
+                    $dl = Join-Path $env:TEMP ("sfwv-" + [guid]::NewGuid().ToString("N"))
+                    try { New-Item -ItemType Directory -Path $dl -ErrorAction Stop | Out-Null } catch { Log $id "rejected: temp dir exists"; Log $id "done exit=1"; break }
+                    & icacls.exe $dl /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" 2>&1 | Out-Null
+                    $exe = Join-Path $dl "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+                    try { Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2124701" -OutFile $exe -UseBasicParsing -ErrorAction Stop }
+                    catch { Log $id ("download failed: " + $_.Exception.Message); Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue; Log $id "done exit=1"; break }
+                    $sig = Get-AuthenticodeSignature $exe
+                    $subj = [string]$sig.SignerCertificate.Subject
+                    Log $id ("webview2 sig " + $sig.Status + " " + $subj + " bytes " + (Get-Item $exe).Length)
+                    if ($sig.Status -ne "Valid" -or $subj -notmatch "O=Microsoft Corporation") { Log $id "rejected: signature"; Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue; Log $id "done exit=1"; break }
+                    Copy-Item $exe (Join-Path $sb "MicrosoftEdgeWebView2RuntimeInstallerX64.exe") -Force
+                    Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue
+                    Log $id "webview2 staged"
+                    Log $id "done exit=0"
+                }
+                "sbread" {
+                    # L074: copy the sandbox output share into logs\sandbox-out (read by the dev session). Text only, size-capped.
+                    $sbo = Join-Path $Base "sandbox-out"
+                    $dst = Join-Path $logs "sandbox-out"
+                    if (-not (Test-Path $dst)) { New-Item -ItemType Directory -Path $dst | Out-Null }
+                    foreach ($f in (Get-ChildItem $sbo -File -Filter *.log -ErrorAction SilentlyContinue)) {
+                        if ($f.Length -gt 1048576) { Log $id ("skip large " + $f.Name); continue }
+                        Copy-Item $f.FullName (Join-Path $dst $f.Name) -Force
+                        Log $id ("copied " + $f.Name + " " + $f.Length)
+                    }
                     Log $id "done exit=0"
                 }
                 "selfupdate" {

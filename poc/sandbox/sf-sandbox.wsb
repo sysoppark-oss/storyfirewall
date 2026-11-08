@@ -1,5 +1,6 @@
 <Configuration>
-  <!-- Story Firewall dev test sandbox (L073, 2026-11-07). Double-click this file on the laptop to start. -->
+  <!-- Story Firewall dev test sandbox (L073/L074). Double-click this file on the laptop to start. -->
+  <!-- C:\sf = verified setup (read-only). C:\sfout = logs/results only (writable, data only - the host never runs anything from it). -->
   <!-- Networking off: isolated test (T1490 auto response etc.). For network tests use sf-sandbox-net.wsb. -->
   <Networking>Disable</Networking>
   <VGpu>Disable</VGpu>
@@ -13,6 +14,11 @@
       <HostFolder>C:\Program Files\StoryFirewallDev\sandbox</HostFolder>
       <SandboxFolder>C:\sf</SandboxFolder>
       <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>C:\Program Files\StoryFirewallDev\sandbox-out</HostFolder>
+      <SandboxFolder>C:\sfout</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
     </MappedFolder>
   </MappedFolders>
   <LogonCommand>
