@@ -68,13 +68,28 @@ jobs:
         shell: pwsh
         run: cargo test --release --lib 2>&1 | Tee-Object -FilePath ..\..\test-ui.log
 
+      # 2026-11-08: NSIS 도구 내려받기 503 으로 실패(코드 무관) -> 개발판과 같은 캐시 + 재시도
+      - name: Cache Tauri bundler tools (NSIS)
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/tauri
+          key: tauri-tools-nsis-3.13-utils-0.5.3
+
       - name: Build NSIS installer
         working-directory: ui
         shell: pwsh
         run: |
           npm ci
-          npx tauri build --config src-tauri/tauri.installer.conf.json 2>&1 | Tee-Object -FilePath ../build-installer.log
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $ok = $false
+          for ($i = 1; $i -le 3 -and -not $ok; $i++) {
+            npx tauri build --config src-tauri/tauri.installer.conf.json 2>&1 | Tee-Object -FilePath ../build-installer.log
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            $retry = Select-String -Path ../build-installer.log -Pattern 'http status: 5\d\d|failed to download|timed out' -Quiet
+            if (-not $retry) { break }
+            "bundle attempt $i failed on download - retrying in 60 s"
+            Start-Sleep -Seconds 60
+          }
+          if (-not $ok) { exit 1 }
           Get-ChildItem src-tauri\target\release\bundle\nsis | Select-Object Name, Length
 
       - name: Install, reinstall, uninstall (silent) and assert
