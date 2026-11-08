@@ -1,6 +1,6 @@
 //! 파괴 행위 자동 대응 집행(대시보드 개편안 2판 4-2). 판정은 `judge::respond`, 여기는 집행만.
 //!
-//! - 설정 `auto_destroy_response`(bool). **VM 검증 전까지 기본 끔** — 검증 뒤 2판대로 기본 켬으로 바꾼다.
+//! - 설정 `auto_destroy_response`(bool). **기본 켬**(2판 4-2; A29 러너 실집행 통과 뒤 사용자 결정 2026-11-08 "켬").
 //!   `auto_destroy_allow_signers`(문자열 배열): 서명자 이름 앞부분 일치(대소문자 무시) — 백업 도구 같은 정당한 예외.
 //! - Full: 기존 "여기서부터 끊기"(`cut::plan_with` → `engine.apply_full(source=cut)` → 종료)를 승인 없이 부른다.
 //!   정책은 바로 `confirm` 한다(60초 확인 창은 사람이 있을 때의 안전장치이고, 여기 대상은 서명 없는 원인 프로그램의
@@ -24,7 +24,7 @@ pub fn enabled(world: &World) -> bool {
         .settings
         .get(SETTING_ON)
         .and_then(|v| v.as_bool())
-        .unwrap_or(false)
+        .unwrap_or(true)
 }
 
 pub fn allow_signers(world: &World) -> Vec<String> {

@@ -2146,7 +2146,9 @@ fn auto_destroy_response_cuts_unsigned_origin_without_asking() {
         ev(t + 3 * s, "etw:process", EventKind::ProcessStart { pid: 4200, ppid: 4100, image: vss.into(), create_time: Some(t + 3 * s) }),
         ev(t + 3 * s, "etw:process", EventKind::ProcessCommand { proc: graph::event::ProcRef::new(4200, Some(t + 3 * s)), cmdline: "vssadmin delete shadows /all /quiet".into(), tool: None }),
     ];
-    // 1) 설정 꺼짐(기본): 판정은 심각이지만 자동 대응 없음
+    // 1) 설정을 끄면: 판정은 심각이지만 자동 대응 없음 (기본은 켬 — 사용자 결정 2026-11-08)
+    let v = a.call("settings.set", serde_json::json!({"request_id": "0f3c2a1e-9b7d-4c6a-8e5f-0000000a2901", "auto_destroy_response": false}));
+    assert_eq!(v["result"]["ok"], true, "{v}");
     rt.tx.send(Command::Ingest(events.clone())).unwrap();
     rt.tx.send(Command::Judge).unwrap();
     let v = a.call("story.events", serde_json::json!({"level_min": "suspicious"}));

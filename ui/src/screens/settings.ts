@@ -138,7 +138,7 @@ export function settings(): HTMLElement {
   toastBox.type = "checkbox";
   toastBox.checked = storyToast();
   toastBox.addEventListener("change", () => void setStoryToast(toastBox.checked));
-  // 개편안 2판 4-2: 파괴 행위 자동 대응(VM 검증 전까지 기본 끔). 바꾸기는 settings.set(관리자 승인 경로)
+  // 개편안 2판 4-2: 파괴 행위 자동 대응(기본 켬, 사용자 결정 2026-11-08). 바꾸기는 settings.set(관리자 승인 경로)
   const adBox = el("input") as HTMLInputElement;
   adBox.type = "checkbox";
   adBox.disabled = true;
@@ -202,7 +202,7 @@ export function settings(): HTMLElement {
       frUmb.textContent = umbrellaText(fr.mode, r.result["first_run_umbrella"]);
       adBox.disabled = false;
       adAllow.disabled = false;
-      adBox.checked = r.result["auto_destroy_response"] === true;
+      adBox.checked = r.result["auto_destroy_response"] !== false; // 기본 켬(값이 없으면 켬)
       const al = r.result["auto_destroy_allow_signers"];
       adAllow.value = Array.isArray(al) ? al.filter((x): x is string => typeof x === "string").join(", ") : "";
       const tt = r.result["remote_trusted_tools"];
