@@ -280,7 +280,7 @@ try {
                     try { New-Item -ItemType Directory -Path $dl -ErrorAction Stop | Out-Null } catch { Log $id "rejected: temp dir exists"; Log $id "done exit=1"; break }
                     & icacls.exe $dl /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" 2>&1 | Out-Null
                     $zip = Join-Path $dl "s.zip"
-                    try { Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Sysmon.zip" -OutFile $zip -UseBasicParsing -ErrorAction Stop }
+                    $ProgressPreference = "SilentlyContinue"; try { Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Sysmon.zip" -OutFile $zip -UseBasicParsing -ErrorAction Stop }
                     catch { Log $id ("download failed: " + $_.Exception.Message); Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue; Log $id "done exit=1"; break }
                     Add-Type -AssemblyName System.IO.Compression.FileSystem
                     $za = [System.IO.Compression.ZipFile]::OpenRead($zip)
@@ -309,7 +309,7 @@ try {
                     try { New-Item -ItemType Directory -Path $dl -ErrorAction Stop | Out-Null } catch { Log $id "rejected: temp dir exists"; Log $id "done exit=1"; break }
                     & icacls.exe $dl /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" 2>&1 | Out-Null
                     $exe = Join-Path $dl "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
-                    try { Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2124701" -OutFile $exe -UseBasicParsing -ErrorAction Stop }
+                    $ProgressPreference = "SilentlyContinue"; try { Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2124701" -OutFile $exe -UseBasicParsing -ErrorAction Stop }
                     catch { Log $id ("download failed: " + $_.Exception.Message); Remove-Item -Recurse -Force $dl -ErrorAction SilentlyContinue; Log $id "done exit=1"; break }
                     $sig = Get-AuthenticodeSignature $exe
                     $subj = [string]$sig.SignerCertificate.Subject
