@@ -6,7 +6,7 @@
 //!   bcdedit recoveryenabled no, wbadmin delete catalog …)을 실행했다.
 //! - (가)·(다) 그 프로세스에서 위로 `\Windows\` 아래 도구(cmd·powershell·wscript·explorer·svchost…)를 건너뛰고
 //!   처음 만나는 Windows 밖 조상(= 명령을 일으킨 프로그램)이 Microsoft 서명도 사용자 허용 목록 서명자도 아니다.
-//!   그 위로는 올라가지 않는다(A29 실측 — 아래 judge() 주석). Windows 도구를 빼는 까닭: 거의 모든 파괴 명령은
+//!   그 위로는 올라가지 않는다(A29 실측 — 아래 judge() 주석; 대시보드 개편안 3판 4-2). Windows 도구를 빼는 까닭: 거의 모든 파괴 명령은
 //!   cmd.exe 를 거치고 cmd.exe 는 Microsoft 서명이라, 빼지 않으면 예외가 항상 성립한다. Microsoft 가 아닌 유효 서명은
 //!   예외가 아니다(2판 4-2 그대로 — 산 인증서로 서명한 랜섬웨어가 흔하다; 정당한 백업 도구는 허용 목록으로).
 //! - Windows 바깥 조상이 하나도 없으면(explorer·svchost 같은 핵심 프로세스나 Windows 도구만) 원인 프로그램을
