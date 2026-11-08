@@ -6,6 +6,7 @@ pub mod approve;
 pub mod approve_win;
 mod client;
 pub mod elevate;
+pub mod hud;
 pub mod tray;
 
 use std::sync::{Arc, Mutex};
@@ -33,8 +34,12 @@ pub(crate) fn probe_service_at(ep: &str) -> bool {
 /// 마지막으로 붙은 끝점 (감시의 probe 가 같은 곳에 붙는다)
 static PROBE_EP: Mutex<Option<String>> = Mutex::new(None);
 pub(crate) fn probe_service() -> bool {
-    let ep = PROBE_EP.lock().unwrap().clone().unwrap_or_else(|| "pipe".to_string());
-    probe_service_at(&ep)
+    probe_service_at(&probe_endpoint())
+}
+
+/// 감시·HUD 가 붙을 끝점: 화면이 마지막으로 붙은 곳(없으면 파이프)
+pub(crate) fn probe_endpoint() -> String {
+    PROBE_EP.lock().unwrap().clone().unwrap_or_else(|| "pipe".to_string())
 }
 
 /// events.new 중 원격 세션 시작이면 알림 본문(서비스가 만든 사실 문장)
@@ -225,7 +230,9 @@ pub fn run() {
                 }
             }
             let link = app.state::<AppState>().link.clone();
-            tray::spawn_watchdog(app.handle().clone(), link);
+            tray::spawn_watchdog(app.handle().clone(), link.clone());
+            // 대시보드 개편안 3판 4-1 HUD ②: 트레이 아이콘 점 색·툴팁(미조치 심각·높음, 최근 사건, 긴급 차단)
+            hud::spawn(app.handle().clone(), link);
             // L061: 브라우저 금고 경비의 미끼 폴더를 **사용자 권한**으로 만든다(서비스는 읽기만 해서 등록).
             // 실제 프로그램 폴더가 있으면 건드리지 않고, 나중에 그 프로그램이 들어오면 우리 파일만 지우고 물러난다
             std::thread::spawn(|| {

@@ -1,0 +1,222 @@
+//! HUD (대시보드 개편안 3판 4-1, 사용자 결정 2026-11-07·승인 2026-11-08) — ② 트레이 아이콘 방식.
+//!
+//! - 트레이 아이콘 오른쪽 아래에 점: 빨강 = 미조치 심각, 주황 = 미조치 높음, 초록 = 없음, 회색 = 서비스 연결 끊김.
+//! - 툴팁: 보호 상태 · 미조치 심각/높음 수 · 가장 최근 사건 한 줄 · 긴급 차단 중이면 남은 시간.
+//! - 창을 숨긴 동안 화면 스크립트 타이머가 늦춰질 수 있어(tray.rs 주석) 상태 조회는 여기서(Rust) 직접 서비스에 묻는다.
+//! - 문장에는 외부에서 온 이름(파일명)이 섞일 수 있어 길이를 자르고 제어 문자를 뺀다. 툴팁 상한 127자(NOTIFYICONDATAW.szTip).
+
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::time::Duration;
+
+/// 갱신 간격(서비스가 붙어 있을 때)
+pub const REFRESH_EVERY: Duration = Duration::from_secs(20);
+/// Windows 트레이 툴팁 상한(문자 수, NUL 제외)
+pub const TIP_MAX: usize = 127;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tone {
+    Critical,
+    High,
+    Ok,
+    Down,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HudState {
+    pub tone: Tone,
+    pub critical: usize,
+    pub high: usize,
+    pub latest: Option<String>,
+    /// 긴급 차단 남은 분(걸려 있을 때)
+    pub emergency_left_min: Option<i64>,
+}
+
+fn clean(s: &str, max: usize) -> String {
+    let t: String = s.chars().filter(|c| !c.is_control()).collect();
+    // 제목 앞의 "[심각] " 같은 칩 글자는 숫자로 이미 보이므로 뺀다
+    let t = t.trim();
+    let t = match (t.starts_with('['), t.find("] ")) {
+        (true, Some(i)) => &t[i + 2..],
+        _ => t,
+    };
+    if t.chars().count() > max {
+        let mut o: String = t.chars().take(max.saturating_sub(1)).collect();
+        o.push('…');
+        o
+    } else {
+        t.to_string()
+    }
+}
+
+/// story.events(level_min=suspicious, triage=open) 응답 + emergency.status 응답 → 상태
+pub fn summarize(events: &serde_json::Value, emergency: &serde_json::Value) -> HudState {
+    let items = events.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let critical = items.iter().filter(|x| x["level"] == "Critical").count();
+    let high = items.iter().filter(|x| x["level"] == "Suspicious").count();
+    // 가장 최근(last_ts 큰 것) 하나
+    let latest = items
+        .iter()
+        .max_by_key(|x| x["last_ts"].as_i64().unwrap_or(0))
+        .and_then(|x| x["title"].as_str())
+        .map(|t| clean(t, 48));
+    let emergency_left_min = (emergency["active"] == serde_json::json!(true))
+        .then(|| (emergency["remaining_secs"].as_i64().unwrap_or(0).max(0) + 59) / 60);
+    let tone = if critical > 0 {
+        Tone::Critical
+    } else if high > 0 {
+        Tone::High
+    } else {
+        Tone::Ok
+    };
+    HudState { tone, critical, high, latest, emergency_left_min }
+}
+
+pub fn tooltip(st: &HudState) -> String {
+    let mut t = match st.tone {
+        Tone::Down => "Story Firewall — 서비스 연결 끊김".to_string(),
+        _ if st.critical + st.high == 0 => "Story Firewall — 보호 중 · 미조치 심각·높음 없음".to_string(),
+        _ => format!("Story Firewall — 미조치 심각 {} · 높음 {}", st.critical, st.high),
+    };
+    if st.tone != Tone::Down {
+        if let Some(m) = st.emergency_left_min {
+            t.push_str(&format!("\n긴급 차단 중 · {m}분 남음"));
+        }
+        if let Some(l) = &st.latest {
+            t.push_str(&format!("\n최근: {l}"));
+        }
+    }
+    if t.chars().count() > TIP_MAX {
+        t = t.chars().take(TIP_MAX - 1).collect::<String>() + "…";
+    }
+    t
+}
+
+/// 점 색(RGBA). 색만으로 뜻을 전하지 않도록 툴팁에 같은 내용이 있다
+pub fn tone_color(t: Tone) -> [u8; 4] {
+    match t {
+        Tone::Critical => [0xE5, 0x48, 0x4D, 0xFF],
+        Tone::High => [0xF5, 0x9E, 0x0B, 0xFF],
+        Tone::Ok => [0x22, 0xC5, 0x5E, 0xFF],
+        Tone::Down => [0x8A, 0x8F, 0x98, 0xFF],
+    }
+}
+
+/// 아이콘 RGBA(w×h) 오른쪽 아래에 지름 w·0.45 의 점(어두운 테두리 1px)을 찍은 복사본
+pub fn badge_rgba(base: &[u8], w: u32, h: u32, color: [u8; 4]) -> Vec<u8> {
+    let mut out = base.to_vec();
+    if out.len() != (w * h * 4) as usize || w == 0 || h == 0 {
+        return out;
+    }
+    let d = (w.min(h) as f32 * 0.45).max(6.0);
+    let r = d / 2.0;
+    let cx = w as f32 - r - 0.5;
+    let cy = h as f32 - r - 0.5;
+    for y in 0..h {
+        for x in 0..w {
+            let dx = x as f32 + 0.5 - cx;
+            let dy = y as f32 + 0.5 - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let px = ((y * w + x) * 4) as usize;
+            if dist <= r - 1.0 {
+                out[px..px + 4].copy_from_slice(&color);
+            } else if dist <= r {
+                out[px..px + 4].copy_from_slice(&[0x10, 0x12, 0x16, 0xFF]);
+            }
+        }
+    }
+    out
+}
+
+/// 갱신 스레드: 서비스가 붙어 있으면 REFRESH_EVERY 마다 상태를 묻고 아이콘·툴팁을 바꾼다. 상태가 같으면 그대로 둔다
+pub fn spawn(app: tauri::AppHandle, link: Arc<crate::tray::Link>) {
+    std::thread::spawn(move || {
+        let mut last: Option<HudState> = None;
+        loop {
+            let st = if link.up.load(Ordering::SeqCst) {
+                query().unwrap_or(HudState { tone: Tone::Down, critical: 0, high: 0, latest: None, emergency_left_min: None })
+            } else {
+                HudState { tone: Tone::Down, critical: 0, high: 0, latest: None, emergency_left_min: None }
+            };
+            if last.as_ref() != Some(&st) {
+                apply(&app, &st);
+                last = Some(st);
+            }
+            std::thread::sleep(REFRESH_EVERY);
+        }
+    });
+}
+
+fn query() -> Option<HudState> {
+    let ep = crate::probe_endpoint();
+    let c = crate::client::Client::connect(&ep, Box::new(|_| {})).ok()?;
+    let t = Duration::from_secs(5);
+    c.call("rpc.hello", serde_json::json!({"client_version": env!("CARGO_PKG_VERSION"), "api": [1, 0]}), t).ok()?;
+    let ev = c
+        .call("story.events", serde_json::json!({"level_min": "suspicious", "triage": "open"}), t)
+        .ok()?;
+    let em = c.call("emergency.status", serde_json::json!({}), t).unwrap_or_default();
+    Some(summarize(&ev, &em))
+}
+
+fn apply(app: &tauri::AppHandle, st: &HudState) {
+    let Some(tray) = app.tray_by_id("main") else { return };
+    let _ = tray.set_tooltip(Some(tooltip(st)));
+    if let Some(base) = app.default_window_icon() {
+        let (w, h) = (base.width(), base.height());
+        let rgba = badge_rgba(base.rgba(), w, h, tone_color(st.tone));
+        let _ = tray.set_icon(Some(tauri::image::Image::new_owned(rgba, w, h)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ev(items: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({ "items": items })
+    }
+
+    #[test]
+    fn tone_and_counts_follow_open_critical_and_high() {
+        let e = ev(serde_json::json!([
+            {"level": "Suspicious", "title": "[높음] a.exe — 4장", "last_ts": 10},
+            {"level": "Critical", "title": "[심각] invoice-viewer.exe — 5장 파괴 행위까지 진행", "last_ts": 30},
+            {"level": "Suspicious", "title": "[높음] b.exe", "last_ts": 20},
+        ]));
+        let st = summarize(&e, &serde_json::json!({"active": false}));
+        assert_eq!((st.tone, st.critical, st.high), (Tone::Critical, 1, 2));
+        assert_eq!(st.latest.as_deref(), Some("invoice-viewer.exe — 5장 파괴 행위까지 진행"));
+        let st = summarize(&ev(serde_json::json!([{"level": "Suspicious", "title": "x", "last_ts": 1}])), &serde_json::json!({}));
+        assert_eq!(st.tone, Tone::High);
+        let st = summarize(&ev(serde_json::json!([])), &serde_json::json!({"active": false}));
+        assert_eq!(st.tone, Tone::Ok);
+        assert_eq!(tooltip(&st), "Story Firewall — 보호 중 · 미조치 심각·높음 없음");
+    }
+
+    #[test]
+    fn tooltip_has_emergency_and_is_capped() {
+        let long = "가".repeat(300);
+        let e = ev(serde_json::json!([{"level": "Critical", "title": format!("[심각] {long}\u{7}"), "last_ts": 1}]));
+        let st = summarize(&e, &serde_json::json!({"active": true, "remaining_secs": 61}));
+        assert_eq!(st.emergency_left_min, Some(2));
+        let t = tooltip(&st);
+        assert!(t.contains("긴급 차단 중 · 2분 남음"), "{t}");
+        assert!(t.chars().count() <= TIP_MAX, "{}", t.chars().count());
+        assert!(!t.chars().any(|c| c == '\u{7}'));
+        let down = HudState { tone: Tone::Down, critical: 3, high: 0, latest: Some("x".into()), emergency_left_min: Some(5) };
+        assert_eq!(tooltip(&down), "Story Firewall — 서비스 연결 끊김");
+    }
+
+    #[test]
+    fn badge_paints_bottom_right_only() {
+        let (w, h) = (32u32, 32u32);
+        let base = vec![0u8; (w * h * 4) as usize];
+        let out = badge_rgba(&base, w, h, tone_color(Tone::Critical));
+        let px = |x: u32, y: u32| &out[((y * w + x) * 4) as usize..((y * w + x) * 4 + 4) as usize];
+        assert_eq!(px(0, 0), &[0, 0, 0, 0], "왼쪽 위는 그대로");
+        assert_eq!(px(w - 8, h - 8), &tone_color(Tone::Critical), "오른쪽 아래 점");
+        // 크기가 안 맞으면 그대로 돌려준다
+        assert_eq!(badge_rgba(&[1, 2, 3], 2, 2, [9, 9, 9, 9]), vec![1, 2, 3]);
+    }
+}
