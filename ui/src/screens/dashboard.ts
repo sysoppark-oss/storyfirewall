@@ -147,6 +147,21 @@ export function healthLine(h: Health, onMore: () => void, gapStart?: { n: number
 }
 
 /// 대시보드: 조용함이 기본. 의심 사건·정책 변조만 배지로.
+/// 카드·칸을 누를 수 있게(UI 명세 4판 3-2 드릴다운). 키보드 Enter·Space 도 같은 동작. 누를 곳은 role=button
+export function clickable<T extends Element>(x: T, go: () => void, label: string): T {
+  x.classList.add("drill");
+  x.setAttribute("role", "button");
+  x.setAttribute("tabindex", "0");
+  x.setAttribute("aria-label", label);
+  if (x instanceof HTMLElement) x.title = label;
+  x.addEventListener("click", go);
+  x.addEventListener("keydown", (e) => {
+    const k = (e as KeyboardEvent).key;
+    if (k === "Enter" || k === " ") { e.preventDefault(); go(); }
+  });
+  return x;
+}
+
 export function dashboard(): HTMLElement {
   const root = el("section", "screen");
   root.append(el("h1", undefined, "대시보드"));
@@ -210,7 +225,7 @@ export function dashboard(): HTMLElement {
     const blockedSub = !th ? "서비스 판이 낮아 집계 없음" : lost > 0 ? `최소 ${blocked}건 · 유실 ${lost}건(폭주)` : blocked ? "우리 정책이 막은 연결" : "막은 연결 없음";
     status.insertBefore(tile("오늘 차단 통신", th ? `${blocked}건` : "—", blockedSub, () => state.go("policy", {}), "shield", blocked ? "bad" : "neutral", th ? th.blocked : undefined), anchor);
     // KPI ④ 일일 트래픽 — 보조 줄에 접속한 곳·프로그램 수
-    status.append(tile("일일 트래픽", bytes(o.sent + o.recv), o.sent + o.recv ? `송신 ${bytes(o.sent)} · 수신 ${bytes(o.recv)}` : `${o.remotes}곳 · 프로그램 ${o.programs}개`, () => state.go("connections", {}), "swap", "neutral", th ? th.conns : o.hourly));
+    status.append(tile("일일 트래픽", bytes(o.sent + o.recv), o.sent + o.recv ? `송신 ${bytes(o.sent)} · 수신 ${bytes(o.recv)}` : `${o.remotes}곳 · 프로그램 ${o.programs}개`, () => state.go("connections", { tab: "history" }), "swap", "neutral", th ? th.conns : o.hourly));
 
     // 네 질문(2×2)
     // 2026-11-07 다듬기: 네 칸을 KPI 와 같은 머리(아이콘+제목) → 큰 숫자 → 보조 글 → 목록 구조로 통일
@@ -265,7 +280,13 @@ export function dashboard(): HTMLElement {
     const legend = el("div", "chart-legend", el("span", "lg recv", "수신"), el("span", "lg sent", "송신"), el("span", "lg crit", LEVEL.critical), el("span", "lg high", LEVEL.suspicious));
     const trafficSent = th ? th.sent : o.hourlySent;
     const trafficRecv = th ? th.recv : o.hourlyRecv;
-    hours.append(el("div", "chart-head", el("h3", undefined, "트래픽 · 인시던트 (오늘, 시간대별)"), legend), barChart({ sent: trafficSent, recv: trafficRecv, critical: critHourly, high: highHourly }, nowH));
+    hours.append(el("div", "chart-head", el("h3", undefined, "트래픽 · 인시던트 (오늘, 시간대별)"), legend), barChart({ sent: trafficSent, recv: trafficRecv, critical: critHourly, high: highHourly }, nowH, (h) => {
+      // 4판 3-2: 인시던트가 있는 시간 칸을 누르면 그 한 시간의 인시던트
+      const d0 = new Date();
+      d0.setHours(h, 0, 0, 0);
+      const from = d0.getTime() / 1000;
+      state.go("story", { from, to: from + 3600, level: "suspicious", triage: "all" });
+    }));
     const peakConn = th ? Math.max(...th.conns) : maxH;
     hours.append(el("p", "muted small", peakConn || th ? `막대 = 시간대별 수신+송신 바이트 · 막대 위 점 = 그 시간의 인시던트 · 접속이 가장 많은 시간 ${peakConn}건${th ? "" : " · 마지막 접속 시각 기준"}` : "오늘 접속 기록이 없습니다."));
     const whereCard = el("section", "card where-dash", el("div", "kpi-head", icon("globe"), el("h3", undefined, "오늘 어디와 통신했나")));
@@ -303,9 +324,10 @@ export function dashboard(): HTMLElement {
       { label: LEVEL.watch, value: levelN.watch, cls: "d-watch" },
     ], String(open), "사건"));
     const dl = el("ul", "donut-legend");
-    dl.append(el("li", "d-crit", el("span", "sw"), `${LEVEL.critical} `, el("b", undefined, String(levelN.critical))));
-    dl.append(el("li", "d-sus", el("span", "sw"), `${LEVEL.suspicious} `, el("b", undefined, String(levelN.suspicious))));
-    dl.append(el("li", "d-watch", el("span", "sw"), "중간 ", el("b", undefined, String(levelN.watch))));
+    // 4판 3-2: 도넛 범례를 누르면 그 심각도만(미조치)
+    dl.append(clickable(el("li", "d-crit", el("span", "sw"), `${LEVEL.critical} `, el("b", undefined, String(levelN.critical))), () => state.go("story", { levelEq: "critical", triage: "open" }), `미조치 ${LEVEL.critical} 인시던트 보기`));
+    dl.append(clickable(el("li", "d-sus", el("span", "sw"), `${LEVEL.suspicious} `, el("b", undefined, String(levelN.suspicious))), () => state.go("story", { levelEq: "suspicious", triage: "open" }), `미조치 ${LEVEL.suspicious} 인시던트 보기`));
+    dl.append(clickable(el("li", "d-watch", el("span", "sw"), `${LEVEL.watch} `, el("b", undefined, String(levelN.watch))), () => state.go("story", { levelEq: "watch", triage: "open" }), `미조치 ${LEVEL.watch} 인시던트 보기`));
     dnRow.append(dl);
     // 사용자 2026-11-07: 도넛 아래 빈 공간 → 처리 상태 막대(신규/분석 완료/조치 완료/예외 처리). 도넛은 틀 안 세로 중앙
     const tc = triageCounts;
@@ -316,7 +338,7 @@ export function dashboard(): HTMLElement {
         const n = tc[k];
         const row = el("div", "triage-bar-row", el("span", "lbl", TRIAGE_STATE[k]), el("span", "bar", el("span", `fill ${cls}`)), el("b", undefined, String(n)));
         (row.querySelector(".fill") as HTMLElement).style.width = `${Math.round((n / tot) * 100)}%`;
-        bars.append(row);
+        bars.append(clickable(row, () => state.go("story", { state: k, level: "normal" }), `${TRIAGE_STATE[k]} 인시던트 보기`));
       }
       dn.append(el("div", "donut-body", dnRow, el("h4", "muted small", "처리 상태 (전체)"), bars));
     } else {
@@ -330,9 +352,9 @@ export function dashboard(): HTMLElement {
     names.forEach((nm, i) => {
       const n = reach[i] ?? 0;
       const step = el("div", `flow-step${n ? " on" : ""}`, el("div", "flow-n", String(n)), el("div", "flow-name", nm), el("div", "muted small", subs[i] ?? ""));
-      step.title = `${nm}까지 간 사건 ${n}건`;
-      strip.append(step);
-      if (i < 3) strip.append(el("div", "flow-arrow", "→"));
+      strip.append(clickable(step, () => state.go("story", { stage: i + 1, level: "watch", triage: "open" }), `${nm}까지 간 미조치 인시던트 ${n}건 보기`));
+      // 4판 1-3a: 앞뒤 칸이 모두 도달했으면 연결선을 굵은 브랜드 색으로(색만이 아니라 칸 숫자가 근거)
+      if (i < 3) strip.append(el("div", `flow-arrow${n && (reach[i + 1] ?? 0) ? " on" : ""}`, "→"));
     });
     flow.append(strip, el("p", "muted small", "MITRE ATT&CK 전술 순서. 인시던트 하나는 도달한 모든 단계에 들어갑니다. 오른쪽으로 갈수록 위험합니다."));
     // 개편안 2판 3-1 방어 피드: 서비스 사건을 시간순 한 줄씩(같은 종류·대상 반복은 N회로). 연출 없음
@@ -428,13 +450,13 @@ export function dashboard(): HTMLElement {
     if (ev.ok && groups.length !== sus.length) susBody.append(el("div", "muted small", `사건 ${sus.length}건`));
     if (staleN) susBody.append(el("div", "muted small", `그 밖에 수집 전부터 실행 중 ${staleN}건`));
     // 사건 추적: story.events 기본(triage=open)이라 조치함·닫힘은 빠진다 — 제목도 그렇게
-    status.append(card("미조치 심각·높음", susBody, sus.length ? "card alert alert-bad" : "card", "shield", sus.length ? "bad" : "ok", susSpark));
+    status.append(clickable(card("미조치 심각·높음", susBody, sus.length ? "card alert alert-bad" : "card", "shield", sus.length ? "bad" : "ok", susSpark), () => state.go("story", { level: "suspicious", triage: "open" }), "미조치 심각·높음 인시던트 보기"));
     // D006-3: 지금 Windows 에 걸려 있는 정책 수(확인 대기 + 적용 중, 일시 중지 제외). 서비스는 상태를 "Applied"·"Confirmed"로 준다 —
     // 전에는 소문자와 비교해 늘 0 이었다
     // KPI ③ 샌드박스 관찰 중: 첫 실행 관찰실에서 아직 관찰 끝 시각이 지나지 않은 프로그램 수
     const nowSec = Date.now() / 1000;
     const watching = se.ok ? se.result.items.filter((e) => e.kind === "first_run_watch" && typeof e.target?.until_ts === "number" && e.target.until_ts > nowSec).length : 0;
-    status.append(card("샌드박스 관찰 중", se.ok ? el("div", undefined, el("div", "big", String(watching)), el("div", "muted small", watching ? "인터넷에서 받은 프로그램의 첫 실행" : "관찰 중인 프로그램 없음")) : cardFail(se.error, "샌드박스 관찰"), "card", "eye", watching ? "info" : "neutral"));
+    status.append(clickable(card("샌드박스 관찰 중", se.ok ? el("div", undefined, el("div", "big", String(watching)), el("div", "muted small", watching ? "인터넷에서 받은 프로그램의 첫 실행" : "관찰 중인 프로그램 없음")) : cardFail(se.error, "샌드박스 관찰"), "card", "eye", watching ? "info" : "neutral"), () => state.go("story", { sandbox: true, level: "normal", triage: "all" }), "샌드박스 관찰 중인 프로그램의 인시던트 보기"));
     void drawOverview();
     // C1: 카드 아래, 상태 줄과 별개. D014: 기록 없는 구간에 시작한 의심 사건이 있으면 맨 앞 주황 경고
     const inGap = all.filter((s) => s.started_in_gap);

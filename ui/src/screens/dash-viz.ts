@@ -282,7 +282,7 @@ export function dualChart(d: DualInput, nowHour: number, w = 520, h = 160): SVGE
 
 /// 사용자 2026-11-07 "다른 그래프로": 시간대별 막대 — 수신 위에 송신을 쌓고(왼쪽 축 바이트), 인시던트는 막대 위 점(심각 진홍·높음 빨강 --bad).
 /// 한 시간에 몰린 자료도 면적 선과 달리 막대 하나로 또렷이 보인다
-export function barChart(d: DualInput, nowHour: number, w = 520, h = 160): SVGElement {
+export function barChart(d: DualInput, nowHour: number, onHour?: (hour: number) => void, w = 520, h = 160): SVGElement {
   const L = 44, R = 8, T = 14, B = 22;
   const s = document.createElementNS(NS, "svg");
   s.setAttribute("viewBox", `0 0 ${w} ${h}`);
@@ -317,6 +317,11 @@ export function barChart(d: DualInput, nowHour: number, w = 520, h = 160): SVGEl
     r.setAttribute("rx", "2"); r.setAttribute("class", cls);
     return r;
   };
+  // 4판 1-3b: 심각·높음이 있는 시간 칸 전체를 옅게 음영(막대 뒤)
+  for (let i = 0; i <= last; i++) {
+    const cr = d.critical[i] ?? 0, hi = d.high[i] ?? 0;
+    if (cr || hi) s.append(rect(L + i * slot, T, slot, h - T - B, cr ? "shade shade-crit" : "shade shade-high"));
+  }
   for (let i = 0; i <= last; i++) {
     const rv = d.recv[i] ?? 0, sn = d.sent[i] ?? 0;
     if (rv) s.append(rect(x(i), yB(rv), bw, yB(0) - yB(rv), "bar b-recv"));
@@ -336,8 +341,17 @@ export function barChart(d: DualInput, nowHour: number, w = 520, h = 160): SVGEl
     }
     const hit = rect(L + i * slot, T, slot, h - T - B, "hit");
     const title = document.createElementNS(NS, "title");
-    title.textContent = `${i}시 · 송신 ${bytesAxis(sn)} · 수신 ${bytesAxis(rv)} · 심각 ${cr} · 높음 ${hi}`;
+    title.textContent = `${i}시 · 송신 ${bytesAxis(sn)} · 수신 ${bytesAxis(rv)} · 심각 ${cr} · 높음 ${hi}${onHour && cr + hi ? " — 눌러서 이 시간의 인시던트 보기" : ""}`;
     hit.append(title);
+    if (onHour && cr + hi) {
+      const hour = i;
+      hit.setAttribute("class", "hit drill");
+      hit.setAttribute("role", "button");
+      hit.setAttribute("tabindex", "0");
+      hit.setAttribute("aria-label", `${i}시 인시던트 ${cr + hi}건 보기`);
+      hit.addEventListener("click", () => onHour(hour));
+      hit.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") onHour(hour); });
+    }
     s.append(hit);
   }
   return s;

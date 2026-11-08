@@ -1,3 +1,4 @@
+import { parseFilter, matches, filterChips, dropChip, type StoryFilter } from "./story-filter";
 import { STAGES, STAGE_NAMES_4, TRIAGE_STATE, TRIAGE_ACTION, ACT, LEVEL, isHigh } from "../terms";
 import { mutation, rpc, uuid, type RpcResult, type RpcError } from "../rpc";
 import { approvalBox, countdown, type ApplyReply } from "../confirm";
@@ -318,6 +319,8 @@ const HASH_TEXT: Record<string, [string, string]> = {
 
 /// 오늘의 이야기 + 사건 카드. "왜?" → story.explain (근거 원시 이벤트).
 export function story(args: Record<string, unknown> = {}): HTMLElement {
+  // UI 명세 4판 3-2: 대시보드·띠·팔레트가 넘긴 필터. 심각도·처리 상태는 선택 상자에, 나머지는 지울 수 있는 칩으로
+  let filt: StoryFilter = parseFilter(args);
   const root = el("section", "screen");
   root.append(el("h1", undefined, "인시던트"));
   const level = el("select");
@@ -334,7 +337,22 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     o.value = v;
     triageSel.append(o);
   }
+  if (filt.level) level.value = filt.level;
+  if (filt.triage) triageSel.value = filt.triage;
   triageSel.addEventListener("change", () => void load());
+  const chipRow = el("div", "filter-chips");
+  chipRow.setAttribute("aria-label", "적용된 필터");
+  const paintChips = () => {
+    const cs = filterChips(filt);
+    chipRow.replaceChildren(...cs.map((c) => {
+      const b = button(`${c.label} ×`, () => { filt = dropChip(filt, c.key); paintChips(); void load(); }, "chip filter-chip");
+      b.title = "이 필터 지우기";
+      b.setAttribute("aria-label", `${c.label} 필터 지우기`);
+      return b;
+    }));
+    chipRow.hidden = !cs.length;
+  };
+  paintChips();
   const countsLine = el("div", "muted small triage-counts");
   // 사건 추적 개수(화면이 새 사건을 조사됨으로 올릴 때 서비스를 다시 부르지 않고 이 값을 고쳐 보인다)
   let counts: TriageCounts | undefined;
@@ -349,7 +367,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     range.append(o);
   }
   range.addEventListener("change", () => void load());
-  root.append(el("div", "toolbar", "심각도 ", level, " 처리 상태 ", triageSel), countsLine, cards, el("h2", "today-head", "엔드포인트 활동 타임라인 ", range), today);
+  root.append(el("div", "toolbar", "심각도 ", level, " 처리 상태 ", triageSel), chipRow, countsLine, cards, el("h2", "today-head", "엔드포인트 활동 타임라인 ", range), today);
 
   const explain = async (edgeId: number, into: HTMLElement) => {
     clear(into);
@@ -390,10 +408,14 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     }
     // D015-4: 0건이어도 수집이 멈췄으면 "없음"이 아니라 "수집 안 됨"
     if (!r.result.items.length) cards.append(collectionStalled(health) ? noDataBox() : el("p", "muted", emptyText(triageSel.value, r.result.counts)));
+    // 4판 3-2: 칩 필터(단계·시간·샌드박스·심각도만·처리 상태) — 서비스가 못 거르는 것
+    const nowSec = Date.now() / 1000;
+    const items = r.result.items.filter((ev) => matches(ev, filt, nowSec));
+    if (r.result.items.length && !items.length) cards.append(el("p", "muted", "이 필터에 맞는 인시던트가 없습니다. 위 칩을 지우면 전체 목록으로 돌아갑니다."));
     // D004-2: 오늘 새 활동이 없는 "수집 전부터 실행 중" 사건은 아래 접힌 묶음(한 줄 목록)으로
-    const stale = r.result.items.filter((ev) => ev.fresh === false);
+    const stale = items.filter((ev) => ev.fresh === false);
     // D020-2: 같은 프로그램·같은 판정은 한 장 + "N건" + 발생 시각 목록(최신 먼저)
-    const groups = groupStories(r.result.items.filter((ev) => ev.fresh !== false));
+    const groups = groupStories(items.filter((ev) => ev.fresh !== false));
     // 39차 Q4: 묶음(카드) 수를 앞세운다 — 처리 안 한 사건 필터일 때만 카드 수가 "처리 안 한 묶음"이다
     openCards = triageSel.value === "open" ? groups.length : undefined; // 수집 전부터 실행 중 묶음(stale)은 한 줄 목록이라 세지 않는다
     countsLine.textContent = triageCountsText(counts, openCards);
