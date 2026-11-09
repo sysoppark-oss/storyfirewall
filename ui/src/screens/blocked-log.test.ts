@@ -14,7 +14,8 @@ describe("차단 기록(사용자 요청 2026-11-09)", () => {
     expect(ruleText(rule("windows_firewall", { name: "Block Edge" }), 1).what).toBe("Windows 방화벽 규칙 'Block Edge'");
     expect(ruleText(rule("other", { provider: "Acme AV", name: "web" }), 1).what).toBe("다른 보안 프로그램 'Acme AV'의 규칙 'web'");
     expect(ruleText(rule("unknown"), 77).what).toContain("#77");
-    for (const k of ["ours", "windows_firewall", "windows_service_hardening", "windows_app_isolation", "windows_other", "system", "other", "unknown"] as const) {
+    expect(ruleText(rule("ours_unknown", { name: "Story Firewall core" }), 1).what).toContain("지금 우리 정책 목록에 없음");
+    for (const k of ["ours", "ours_unknown", "windows_firewall", "windows_service_hardening", "windows_app_isolation", "windows_other", "system", "other", "unknown"] as const) {
       const t = ruleText(rule(k, { name: "x" }), 1);
       expect(t.what + t.fix).not.toMatch(/악성|의심|위험|안전/);
     }

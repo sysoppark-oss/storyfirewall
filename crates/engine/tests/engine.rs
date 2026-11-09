@@ -1424,4 +1424,12 @@ fn emergency_extend_moves_only_expiry() {
     let (_, _, exp3, _) = e.emergency_status().unwrap().unwrap();
     assert_eq!(exp3, MONDAY_0000 + 1440 * 60);
     assert!(e.extend_emergency(30, "z", "ui").is_err(), "이미 최대");
+    // 45차 답변 Q5: 시간이 지나도 누적 상한은 "걸린 때부터 하루" — 20시간 뒤에 늘려도 그 너머로 가지 않는다
+    clock.advance(20 * 3600);
+    assert!(
+        e.extend_emergency(120, "z2", "ui").is_err(),
+        "걸린 때부터 하루가 상한"
+    );
+    let (_, _, exp4, _) = e.emergency_status().unwrap().unwrap();
+    assert_eq!(exp4, MONDAY_0000 + 1440 * 60);
 }

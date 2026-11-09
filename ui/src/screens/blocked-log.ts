@@ -8,7 +8,7 @@ import { state } from "../state";
 import { failBox, loadingBox } from "../list-state";
 import { copyButton } from "./dash-viz";
 
-export type RuleKind = "ours" | "windows_firewall" | "windows_service_hardening" | "windows_app_isolation" | "windows_other" | "system" | "other" | "unknown";
+export type RuleKind = "ours" | "ours_unknown" | "windows_firewall" | "windows_service_hardening" | "windows_app_isolation" | "windows_other" | "system" | "other" | "unknown";
 
 export interface BlockedItem {
   ts: number;
@@ -32,8 +32,23 @@ export interface BlockedItem {
   };
 }
 
+/// 규칙·프로그램별 누적 한 줄
+export interface RuleSum {
+  filter_id: number;
+  app: string;
+  n: number;
+  first: number;
+  last: number;
+  remote: string;
+  rport: number;
+  dir: BlockedItem["dir"];
+  loopback: boolean;
+  rule: Pick<BlockedItem["rule"], "kind" | "name" | "provider" | "policy_id" | "policy_name">;
+}
+
 export const KIND_LABEL: Record<RuleKind, string> = {
   ours: "Story Firewall 정책",
+  ours_unknown: "우리 목록에 없는 필터",
   windows_firewall: "Windows 방화벽 규칙",
   windows_service_hardening: "Windows 서비스 강화",
   windows_app_isolation: "Windows 앱 격리",
@@ -62,6 +77,9 @@ export function ruleText(r: BlockedItem["rule"], filterId: number): { what: stri
   switch (r.kind) {
     case "ours":
       return { what: `Story Firewall 정책${q}${r.gone && !r.policy_id ? " (지금은 해제됨)" : ""}`, fix: "정책 화면에서 이 정책을 보고 해제하거나 고칠 수 있습니다." };
+    case "ours_unknown":
+      // 46차 Q2·Q3: 우리 공급자 키를 달았지만 받은 때 우리 정책 필터 목록에 없던 필터 — 단정하지 않는다
+      return { what: `Story Firewall 공급자 키를 단 필터${q} — 지금 우리 정책 목록에 없음`, fix: "해제한 정책의 옛 기록이거나, 다른 프로그램이 우리 공급자 키를 단 필터일 수 있습니다. 정책 화면에 없는 이름이면 진단 정보를 남겨 주세요." };
     case "windows_firewall":
       return {
         what: `Windows 방화벽 규칙${q}`,
@@ -123,10 +141,16 @@ export function blockedLog(): { root: HTMLElement; stop: () => void } {
   const status = el("span", "muted small");
   const chips = el("div", "kind-chips");
   const box = el("div");
+  // 46차 Q2: 규칙·프로그램별 누적 — 최근 3,000건이 다량 차단으로 밀려나도 남는다
+  const rulesBox = el("details", "where-panel blocked-rules");
+  const rulesBody = el("div");
+  const rulesSum = el("summary", undefined, "규칙·프로그램별 누적");
+  rulesBox.append(rulesSum, rulesBody);
   root.append(
-    el("p", "callout small", "브라우저에 \"인터넷 액세스가 차단되었습니다\"(ERR_NETWORK_ACCESS_DENIED)가 뜨면, 그 시각의 브라우저 줄(msedge.exe·chrome.exe 등)을 찾으세요. 막은 규칙과 그 규칙을 고치는 곳이 나옵니다. 여기에 줄이 없으면 Windows 필터(WFP)가 막은 것이 아닙니다 — 브라우저 설정·프록시·백신의 웹 보호일 수 있습니다."),
+    el("p", "callout small", "브라우저에 \"인터넷 액세스가 차단되었습니다\"(ERR_NETWORK_ACCESS_DENIED)가 뜨면, 그 시각의 브라우저 줄(msedge.exe·chrome.exe 등)을 찾으세요. 막은 규칙과 그 규칙을 고치는 곳이 나옵니다. 여기에 줄이 없으면 Windows 필터(WFP)가 막은 것이 아닙니다 — 브라우저 설정·확장 프로그램·프록시·백신의 웹 보호일 수 있습니다. 규칙의 주인(Windows 방화벽 등)은 필터에 적힌 공급자로 가립니다. 관리자 권한 프로그램은 다른 공급자를 흉내 낼 수 있습니다."),
     el("div", "toolbar", q, " ", pause, " ", status),
     chips,
+    rulesBox,
     box,
   );
   let paused = false;
@@ -135,6 +159,28 @@ export function blockedLog(): { root: HTMLElement; stop: () => void } {
   let gen = 0;
   let qT = 0;
   q.addEventListener("input", () => { window.clearTimeout(qT); qT = window.setTimeout(() => void refresh(), 250); });
+
+  const paintRules = (rules: RuleSum[], n: number, evicted: number, overflow: number) => {
+    rulesSum.textContent = `규칙·프로그램별 누적 (${n}가지${evicted ? ` · 목록에서 밀려난 ${evicted}건 포함` : ""})`;
+    clear(rulesBody);
+    if (!rules.length) return void rulesBody.append(el("p", "muted small", "아직 없습니다."));
+    const t = el("table", "grid blocked-sum");
+    const h = el("tr");
+    for (const x of ["횟수", "마지막", "프로그램", "막은 규칙", "최근 대상"]) h.append(el("th", undefined, x));
+    const tb = el("tbody");
+    for (const a of rules) {
+      const tr = el("tr", `k-${a.rule.kind}`);
+      const app = sanitize(a.app || "", 400).text;
+      const pc = ext("td", app ? fileName(app) : "(프로그램 모름)");
+      if (app) pc.title = app;
+      tr.append(el("td", "mono", String(a.n)), el("td", "mono", new Date(a.last * 1000).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })), pc,
+        el("td", `rule-what k-${a.rule.kind}`, ruleText({ ...a.rule, description: "", gone: false }, a.filter_id).what), el("td", "mono", targetText({ ...a, lport: 0 })));
+      tb.append(tr);
+    }
+    t.append(el("thead", undefined, h), tb);
+    rulesBody.append(t);
+    if (overflow) rulesBody.append(el("p", "muted small", `가짓수 상한(2,000)을 넘어 따로 세지 못한 사건 ${overflow}건`));
+  };
 
   const paint = (items: BlockedItem[], kinds: Partial<Record<RuleKind, number>>, total: number, oldest: number | null) => {
     clear(chips);
@@ -191,7 +237,7 @@ export function blockedLog(): { root: HTMLElement; stop: () => void } {
   const refresh = async () => {
     const my = ++gen;
     if (!box.firstChild) box.append(loadingBox());
-    const r = await rpc<{ items: BlockedItem[]; kinds: Partial<Record<RuleKind, number>>; total: number; oldest?: number | null }>("blocked.recent", { limit: 500, q: q.value.slice(0, 128) });
+    const r = await rpc<{ items: BlockedItem[]; kinds: Partial<Record<RuleKind, number>>; total: number; oldest?: number | null; rules?: RuleSum[]; rules_total?: number; evicted?: number; rules_overflow?: number }>("blocked.recent", { limit: 500, q: q.value.slice(0, 128) });
     if (my !== gen) return;
     if (!r.ok) {
       clear(box);
@@ -201,6 +247,7 @@ export function blockedLog(): { root: HTMLElement; stop: () => void } {
     status.textContent = `마지막 갱신 ${new Date().toLocaleTimeString("ko-KR")}`;
     // 표를 보고(포인터·포커스) 있는 동안에는 줄을 움직이지 않는다
     if (box.matches(":hover") || box.contains(document.activeElement)) return;
+    paintRules(r.result.rules ?? [], r.result.rules_total ?? 0, r.result.evicted ?? 0, r.result.rules_overflow ?? 0);
     paint(r.result.items, r.result.kinds, r.result.total, r.result.oldest ?? null);
   };
   void refresh();

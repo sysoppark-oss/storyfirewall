@@ -49,7 +49,26 @@ pub struct BlockRec {
     pub proto: u8,
     pub dir: &'static str,
     pub loopback: bool,
+    /// 받은 때 이 필터가 우리 정책 필터 목록(엔진 DB)에 있었나 — 공급자 키만으로 "우리 것"이라 하지 않는다(46차 Q2·Q3)
+    pub ours_at: bool,
 }
+
+/// 규칙·프로그램별 누적(46차 답변 Q2 수용): 최근 3,000건 고리가 다량 차단으로 밀려나도 "어느 규칙이 어느 프로그램을 몇 번" 은 남는다
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RuleAgg {
+    pub filter_id: u64,
+    pub app: String,
+    pub n: u64,
+    pub first: i64,
+    pub last: i64,
+    pub remote: String,
+    pub rport: u16,
+    pub dir: &'static str,
+    pub loopback: bool,
+    pub ours_at: bool,
+}
+/// 누적 칸 상한(넘으면 새 칸은 만들지 않고 overflow 로 센다)
+pub const RULES_CAP: usize = 2000;
 
 /// 최근 차단 기록(메모리, 서비스가 꺼지면 사라지지만 시작 때 BFE 기록 최근 것을 되읽는다) + 필터 정보 표
 #[derive(Default)]
@@ -58,6 +77,11 @@ pub struct RecentInner {
     pub filters: HashMap<u64, Option<policy::FilterInfo>>,
     /// 같은 (필터, 프로그램, 원격, 포트)가 1초 안에 거듭 오면 하나로(폭주 때 기록이 한 프로그램으로 덮이지 않게)
     pub dup_skipped: u64,
+    /// (필터, 프로그램) → 누적
+    pub rules: HashMap<(u64, String), RuleAgg>,
+    pub rules_overflow: u64,
+    /// 고리에서 밀려난 줄 수
+    pub evicted: u64,
 }
 pub type Recent = Arc<std::sync::Mutex<RecentInner>>;
 /// 기록 상한
@@ -76,8 +100,37 @@ pub fn dir_word(d: u32) -> &'static str {
 
 impl RecentInner {
     /// 한 줄 넣기(최신이 뒤). 바로 앞 몇 줄과 같은 것이 1초 안이면 건너뛴다
-    pub fn push(&mut self, d: &Drop) {
+    pub fn push(&mut self, d: &Drop, ours_at: bool) {
         let ts = crate::runtime::filetime_to_unix(d.ts_ft);
+        // 누적은 묶기·밀려남과 상관없이 모든 사건을 센다
+        let key = (d.filter_id, d.app.clone());
+        if let Some(a) = self.rules.get_mut(&key) {
+            a.n += 1;
+            a.first = a.first.min(ts);
+            if ts >= a.last {
+                a.last = ts;
+                a.remote = d.remote.clone();
+                a.rport = d.rport;
+            }
+        } else if self.rules.len() < RULES_CAP {
+            self.rules.insert(
+                key,
+                RuleAgg {
+                    filter_id: d.filter_id,
+                    app: d.app.clone(),
+                    n: 1,
+                    first: ts,
+                    last: ts,
+                    remote: d.remote.clone(),
+                    rport: d.rport,
+                    dir: dir_word(d.dir),
+                    loopback: d.loopback,
+                    ours_at,
+                },
+            );
+        } else {
+            self.rules_overflow += 1;
+        }
         let dup = self.items.iter().rev().take(8).any(|r| {
             r.filter_id == d.filter_id
                 && r.app == d.app
@@ -99,6 +152,7 @@ impl RecentInner {
             proto: d.proto,
             dir: dir_word(d.dir),
             loopback: d.loopback,
+            ours_at,
         });
         // 되읽은 옛 기록(backfill)은 시각이 앞설 수 있다 — 시각 순을 지킨다(3000건이라 정렬은 싸다)
         if self.items.len() >= 2 && self.items[self.items.len() - 2].ts > ts {
@@ -106,6 +160,7 @@ impl RecentInner {
         }
         while self.items.len() > RECENT_CAP {
             self.items.pop_front();
+            self.evicted += 1;
         }
     }
 }
@@ -196,7 +251,8 @@ pub fn run(
                         let info = resolve(d.filter_id);
                         g.filters.insert(d.filter_id, info);
                     }
-                    g.push(&d);
+                    let ours_at = set.contains(&d.filter_id);
+                    g.push(&d, ours_at);
                 }
                 // 폭주 때 recv 만 계속 성공하면 flush 가 밀린다 → 시간으로도 끊는다
                 if last.elapsed() < FLUSH_EVERY {
@@ -307,10 +363,10 @@ mod recent_tests {
             loopback: true,
             ..Default::default()
         };
-        r.push(&d(5, "msedge.exe", 0));
-        r.push(&d(5, "msedge.exe", 1)); // 1초 안 같은 것 → 하나로
-        r.push(&d(5, "msedge.exe", 3));
-        r.push(&d(77, "chrome.exe", 3)); // 다른 공급자 필터도 남는다
+        r.push(&d(5, "msedge.exe", 0), false);
+        r.push(&d(5, "msedge.exe", 1), false); // 1초 안 같은 것 → 하나로
+        r.push(&d(5, "msedge.exe", 3), false);
+        r.push(&d(77, "chrome.exe", 3), false); // 다른 공급자 필터도 남는다
         assert_eq!(r.items.len(), 3);
         assert_eq!(r.dup_skipped, 1);
         assert_eq!(r.items[0].dir, "out");
@@ -323,10 +379,24 @@ mod recent_tests {
             ),
             ("in", "out", "fwd", "")
         );
+        assert_eq!(
+            r.rules[&(5, "msedge.exe".to_string())].n,
+            3,
+            "묶인 것도 누적에는 센다"
+        );
+        // 46차 Q2: 한 프로그램이 포트를 바꿔 가며 쏟아내 고리를 밀어내도, 앞의 규칙·프로그램 누적은 남는다
         for i in 0..(RECENT_CAP as i64 + 10) {
-            r.push(&d(9, &format!("p{i}.exe"), 10 + i));
+            let mut x = d(9, "flood.exe", 10 + i);
+            x.rport = (i % 60000) as u16;
+            r.push(&x, false);
         }
         assert_eq!(r.items.len(), RECENT_CAP);
+        assert!(r.evicted >= 3);
+        assert_eq!(r.rules[&(77, "chrome.exe".to_string())].n, 1);
+        assert_eq!(
+            r.rules[&(9, "flood.exe".to_string())].n,
+            RECENT_CAP as u64 + 10
+        );
     }
     #[test]
     fn backfill_is_recorded_but_not_counted() {

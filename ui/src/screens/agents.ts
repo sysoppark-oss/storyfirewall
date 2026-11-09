@@ -62,7 +62,7 @@ function blockDialog(a: AgentRun, status: HTMLElement): void {
   dlg.append(el("h3", undefined, `${a.display} 외부 통신 차단`));
   const p = el("p", undefined, "대상 실행 파일: ");
   p.append(ext("span", sanitize(path, 400).text, "mono"));
-  dlg.append(p, el("p", "muted small", "이 실행 파일이 인터넷 쪽으로 나가는 연결을 막습니다. 같은 PC 안(로컬 MCP 서버)·사설망 연결은 막지 않습니다. 이미 열린 연결은 다음 연결부터 막힐 수 있습니다."));
+  dlg.append(p, el("p", "muted small", "이 경로의 실행 파일이 인터넷 쪽으로 나가는 연결을 막습니다. 같은 PC 안(로컬 MCP 서버)·사설망 연결은 막지 않습니다. 이미 열린 연결은 다음 연결부터 막힐 수 있습니다. 경로로 막으므로, 같은 파일을 다른 폴더로 복사하거나 다른 이름(링크)으로 실행하면 막히지 않습니다."));
   // 공용 실행기면 함께 막히는 범위를 먼저 알린다(주의 — 판정 아님)
   // 스토어(WindowsApps) 앱은 업데이트 때 판 번호가 든 폴더가 바뀐다 → 경로 차단이 새 판에는 걸리지 않는다
   if (isPackagePath(path)) dlg.append(el("p", "warn", "스토어 앱 경로입니다. 앱이 업데이트되면 폴더 이름(판 번호)이 바뀌어 이 차단이 새 판에는 걸리지 않습니다. 기한을 짧게 두고, 업데이트 뒤에는 다시 확인하세요."));

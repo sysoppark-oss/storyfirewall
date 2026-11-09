@@ -561,7 +561,7 @@ impl<'a> Engine<'a> {
 
     /// 긴급 차단 연장(UI 명세 4판 3-1 [연장 30분]): 필터는 그대로 두고 만료 시각만 늦춘다.
     /// - 확인(유지)된 긴급 차단에만. 60초 확인 중이면 거부(확인 전 상태를 늘리지 않는다)
-    /// - 한 번에 1~120분. 새 만료는 지금부터 1440분(하루)을 넘지 않는다(처음 걸 때 상한과 같음)
+    /// - 한 번에 1~120분. 새 만료는 이 긴급 차단이 걸린 때부터 1440분(하루)을 넘지 않는다(누적 상한)
     /// - 멱등: 같은 request_id 면 처음 결과(새 만료 시각)를 돌려준다
     pub fn extend_emergency(&mut self, minutes: u32, request_id: &str, actor: &str) -> Result<i64> {
         if let Some(prev) = self.store.idempotent_lookup(request_id)? {
@@ -589,7 +589,10 @@ impl<'a> Engine<'a> {
             notify_on_expire: true,
         });
         let now = self.clock.wall();
-        let cap = now + 1440 * 60;
+        // 45차 답변 Q5 수용: 연장을 거듭해도 이 긴급 차단이 걸린 때부터 하루(1440분)를 넘지 않는다(누적 상한).
+        // 전에는 "지금부터 하루"라 연장을 계속하면 끝없이 늘릴 수 있었다(매번 승인 창은 뜬다)
+        let started = self.store.version_ts(id, version)?.unwrap_or(now);
+        let cap = (now + 1440 * 60).min(started + 1440 * 60);
         let new_exp = (exp.max(now) + i64::from(minutes) * 60).min(cap);
         if new_exp <= exp {
             return Err(EngineError::Invalid(vec![

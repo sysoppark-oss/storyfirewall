@@ -85,6 +85,8 @@ describe("설치 사실 칩(UI 명세 4판 3-6)", () => {
     expect(silentFlag("setup.exe --silent")).toBe("--silent");
     expect(silentFlag("msiexec /i x.msi /qb-")).toBe("/qb-");
     expect(silentFlag("setup.exe /SILENT=1")).toBe("/SILENT=1");
+    expect(silentFlag("bundle.exe -quiet")).toBe("-quiet");
+    expect(silentFlag("app.exe --quiet")).toBe("--quiet");
   });
   it("경로·다른 옵션 안의 글자는 플래그가 아니다", () => {
     expect(silentFlag('"C:\\tools\\/s\\setup.exe" /norestart')).toBeNull();

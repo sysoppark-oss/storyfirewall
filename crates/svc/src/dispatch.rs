@@ -2231,13 +2231,18 @@ fn find_open_conn(
 }
 
 /// TCP 상태 숫자 → 화면 말(UI 명세 4판 3-4: 연결됨 · 연결 중 · 닫는 중)
-/// 차단 규칙 공급자 → 종류. Windows 방화벽 계열 공급자 GUID 는 windows-sys(FWPM_PROVIDER_MPSSVC_*)와 같다
-pub fn rule_kind(info: Option<&policy::FilterInfo>, ours_now: bool) -> &'static str {
-    let Some(i) = info else {
-        return if ours_now { "ours" } else { "unknown" };
-    };
-    if i.ours || ours_now {
+/// 차단 규칙 → 종류. Windows 방화벽 계열 공급자 GUID 는 windows-sys(FWPM_PROVIDER_MPSSVC_*)와 같다.
+/// "우리 것"은 공급자 키가 아니라 받은 때 우리 정책 필터 목록(엔진 DB)에 있었는지로 정한다(46차 Q2·Q3 — 키는 관리자면 흉내 낼 수 있다).
+/// 우리 공급자 키인데 목록에 없으면 ours_unknown(해제한 정책의 옛 기록이거나 키를 쓴 다른 필터)
+pub fn rule_kind(info: Option<&policy::FilterInfo>, ours_at: bool) -> &'static str {
+    if ours_at {
         return "ours";
+    }
+    let Some(i) = info else {
+        return "unknown";
+    };
+    if i.ours {
+        return "ours_unknown";
     }
     match i.provider_key.as_str() {
         // 방화벽 규칙(WF)·서비스 강화(WSH)·앱 격리(AppContainer 루프백 등)·EDP·테넌트 제한
@@ -2270,7 +2275,7 @@ pub fn blocked_recent_json(world: &World, limit: usize, q: &str) -> serde_json::
     let oldest = g.items.front().map(|r| r.ts);
     for r in g.items.iter().rev() {
         let info = g.filters.get(&r.filter_id).and_then(|x| x.as_ref());
-        let kind = rule_kind(info, ours_now.contains(&r.filter_id));
+        let kind = rule_kind(info, r.ours_at);
         *kinds.entry(kind).or_default() += 1;
         if items.len() >= limit {
             continue;
@@ -2316,7 +2321,27 @@ pub fn blocked_recent_json(world: &World, limit: usize, q: &str) -> serde_json::
             }
         }));
     }
-    serde_json::json!({ "items": items, "kinds": kinds, "total": total, "oldest": oldest, "dup_skipped": g.dup_skipped })
+    // 46차 Q2: 규칙·프로그램별 누적(많은 순 50) — 고리에서 밀려난 것까지
+    let mut rules: Vec<&crate::blocked::RuleAgg> = g.rules.values().collect();
+    rules.sort_by(|a, b| b.n.cmp(&a.n).then(b.last.cmp(&a.last)));
+    let rules: Vec<serde_json::Value> = rules
+        .into_iter()
+        .take(50)
+        .map(|a| {
+            let info = g.filters.get(&a.filter_id).and_then(|x| x.as_ref());
+            let kind = rule_kind(info, a.ours_at);
+            let pol = if kind == "ours" { world.engine.store.policy_for_filter(a.filter_id).ok().flatten() } else { None };
+            serde_json::json!({
+                "filter_id": a.filter_id, "app": a.app, "n": a.n, "first": a.first, "last": a.last,
+                "remote": a.remote, "rport": a.rport, "dir": a.dir, "loopback": a.loopback,
+                "rule": { "kind": kind, "name": info.map(|i| i.name.as_str()).unwrap_or(""),
+                          "provider": info.map(|i| i.provider_name.as_str()).unwrap_or(""),
+                          "policy_id": pol.as_ref().map(|p| p.0), "policy_name": pol.as_ref().map(|p| p.1.clone()) }
+            })
+        })
+        .collect();
+    serde_json::json!({ "items": items, "kinds": kinds, "total": total, "oldest": oldest, "dup_skipped": g.dup_skipped,
+        "rules": rules, "rules_total": g.rules.len(), "rules_overflow": g.rules_overflow, "evicted": g.evicted })
 }
 
 pub fn tcp_state_word(st: u32) -> &'static str {

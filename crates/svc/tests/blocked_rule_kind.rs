@@ -12,7 +12,9 @@ fn info(key: &str, ours: bool) -> policy::FilterInfo {
 
 #[test]
 fn rule_kinds() {
-    assert_eq!(rule_kind(Some(&info("x", true)), false), "ours");
+    assert_eq!(rule_kind(Some(&info("x", true)), true), "ours");
+    // 46차 Q2·Q3: 우리 공급자 키라도 받은 때 우리 정책 목록에 없으면 "우리 것"이라 하지 않는다
+    assert_eq!(rule_kind(Some(&info("x", true)), false), "ours_unknown");
     assert_eq!(
         rule_kind(None, true),
         "ours",

@@ -148,7 +148,7 @@ const USER_PARENTS = new Set([
 
 /// 조용한 설치 플래그(단어 단위, 대소문자 무시): msiexec /q·/qn·/quiet·/passive, NSIS /S, InstallShield /s,
 /// Inno /SILENT·/VERYSILENT, 일반 --silent·/silent. /qn+ /qb- 같은 꼬리 기호는 허용한다
-const SILENT_RE = /^(?:\/(?:q[nb]?[+-]?|quiet|passive|s|silent|verysilent)|--silent)$/i;
+const SILENT_RE = /^(?:\/(?:q[nb]?[+-]?|quiet|passive|s|silent|verysilent)|--silent|--quiet|-quiet|-passive|-silent)$/i;
 
 /// 명령줄에서 조용한 설치 플래그 하나를 찾는다(표시용 조각). 따옴표 안 경로는 건너뛴다. 없으면 null
 export function silentFlag(cmdline: string | null | undefined): string | null {

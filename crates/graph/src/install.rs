@@ -566,7 +566,11 @@ pub fn silent_flags_only(cmdline: &str) -> Option<String> {
 
 fn is_silent_switch(t: &str) -> bool {
     let l = t.to_ascii_lowercase();
-    if l == "--silent" {
+    // 45차 답변 Q4 수용: WiX burn(-quiet·-passive·-silent), 일반 --quiet 도. 단어 전체가 같을 때만(--quietly 등은 아님)
+    if matches!(
+        l.as_str(),
+        "--silent" | "--quiet" | "-quiet" | "-passive" | "-silent"
+    ) {
         return true;
     }
     let Some(s) = l.strip_prefix('/') else {
@@ -597,6 +601,20 @@ mod silent_tests {
             Some("setup.exe /VERYSILENT")
         );
         assert_eq!(silent_flags_only("setup.exe /norestart"), None);
+        assert_eq!(
+            silent_flags_only("bundle.exe -quiet -norestart").as_deref(),
+            Some("bundle.exe -quiet")
+        );
+        assert_eq!(
+            silent_flags_only("app.exe --quiet --token=abc").as_deref(),
+            Some("app.exe --quiet")
+        );
+        assert_eq!(silent_flags_only("app.exe --quietly -s"), None);
+        // 붙어 들어온 비밀: "=" 앞 스위치 이름만, 다른 토큰은 버린다
+        assert_eq!(
+            silent_flags_only("setup.exe /SILENT=1 /PASSWORD=secret123").as_deref(),
+            Some("setup.exe /SILENT")
+        );
         assert_eq!(silent_flags_only("setup.exe /silently /sp-"), None);
         assert!(!silent_flags_only("msiexec /qn KEY=secret")
             .unwrap()
