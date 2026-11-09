@@ -370,6 +370,13 @@ fn size_rotation_on_large_raw_is_fast() {
             st.execute(rusqlite::params![i, body]).unwrap();
         }
         drop(st);
+        // 실제처럼 선이 원시 기록을 근거로 가리킨다(외래 키 자식 표) — 색인이 없으면 지우는 줄마다 이 표를 훑는다
+        tx.execute("INSERT INTO nodes(id, kind, key, label, first_ts, last_ts) VALUES (1, 'process', 'p', 'p', 0, 0)", []).unwrap();
+        tx.execute(
+            "INSERT INTO edges(src, dst, rel, ts, evidence_id) SELECT 1, 1, 'connected', id + 10000000, id FROM raw_events",
+            [],
+        )
+        .unwrap();
         tx.commit().unwrap();
     }
     let total = store.raw_bytes().unwrap().unwrap();

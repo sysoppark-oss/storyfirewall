@@ -93,6 +93,10 @@ CREATE INDEX IF NOT EXISTS ix_edges_ts  ON edges(ts);
 CREATE INDEX IF NOT EXISTS ix_edges_conn ON edges(ts, src, dst) WHERE rel = 'connected';
 CREATE INDEX IF NOT EXISTS ix_nodes_kind_ts ON nodes(kind, last_ts);
 CREATE INDEX IF NOT EXISTS ix_raw_ts ON raw_events(ts);
+-- install-132 실측(보관 정리 용량 단계 수 분): foreign_keys=ON 이라 raw_events 한 줄을 지울 때마다 SQLite 가 자식 표
+-- edges.evidence_id·edge_evidence.raw_id 에서 참조를 찾는다. 색인이 없으면 지우는 줄마다 표 전체를 훑는다(SQLite 외래 키 문서 3장 "child key 색인")
+CREATE INDEX IF NOT EXISTS ix_edges_evidence ON edges(evidence_id);
+CREATE INDEX IF NOT EXISTS ix_edge_evidence_raw ON edge_evidence(raw_id);
 -- L028: 스냅샷 시각 목록(이야기의 "이미 열려 있음")을 매 호출 전체 훑기 없이. 스냅샷 행만 담는 작은 부분 색인(쓰기 비용은 스냅샷 때만)
 CREATE INDEX IF NOT EXISTS ix_raw_snapshot ON raw_events(ts) WHERE source = 'snapshot';
 "#;
