@@ -296,3 +296,42 @@ fn chunked_apply_matches_single_apply() {
         assert_eq!(count(&c, q), count(&d, q), "{q}");
     }
 }
+
+/// install-128 실측(용량 계산 434초): 원시 기록 바이트 합은 트리거로 유지되고 실제 합과 같다. 옛 큰 DB(합 행 없음)는 용량 순환을 건너뛴다
+#[test]
+fn raw_size_tracks_inserts_and_deletes() {
+    let store = graph::Store::open_in_memory().unwrap();
+    let sum = |s: &graph::Store| -> i64 {
+        s.conn()
+            .query_row(
+                "SELECT COALESCE(SUM(LENGTH(payload_json)),0) FROM raw_events",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(store.raw_bytes().unwrap(), Some(0));
+    for i in 0..50 {
+        store
+            .insert_raw(
+                i,
+                "t",
+                &format!("{{\"n\":\"{}\"}}", "가".repeat(i as usize)),
+            )
+            .unwrap();
+    }
+    assert_eq!(store.raw_bytes().unwrap(), Some(sum(&store)));
+    store
+        .conn()
+        .execute("DELETE FROM raw_events WHERE ts < 20", [])
+        .unwrap();
+    assert_eq!(store.raw_bytes().unwrap(), Some(sum(&store)));
+    // 합 행이 없는 옛 DB: 용량 순환을 하지 않는다(-1)
+    store.conn().execute("DELETE FROM raw_size", []).unwrap();
+    let policy = RetentionPolicy {
+        raw_max_bytes: 1,
+        ..RetentionPolicy::default()
+    };
+    let rep = apply(&store, 100, policy).unwrap();
+    assert_eq!((rep.raw_deleted_by_size, rep.raw_bytes_after), (0, -1));
+}

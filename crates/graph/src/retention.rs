@@ -284,8 +284,14 @@ fn apply_inner(
     // 4-b) 용량 상한 순환: 평범한 원시 이벤트를 오래된 순으로, 상한 아래로 내려올 때까지.
     //      원시 기록 내용 전체를 읽으므로 마지막 정리에서만(measure_size). 적용 후 크기는 다시 읽지 않고 뺀다
     let mut total_after: i64 = -1;
-    if measure_size {
-        let mut total: i64 = raw_bytes(&tx)?;
+    // 합은 트리거로 유지되는 값(raw_size). 아직 세지 않은 옛 DB 면 이번엔 용량 순환을 건너뛴다(-1)
+    let known: Option<i64> = if measure_size {
+        tx.query_row("SELECT bytes FROM raw_size WHERE k = 1", [], |r| r.get(0))
+            .optional()?
+    } else {
+        None
+    };
+    if let Some(mut total) = known {
         total_after = total;
         if policy.raw_max_bytes > 0 && total > policy.raw_max_bytes {
             // 한 번에 지울 양을 오래된 순 누적 합으로 계산 (의심 사건 근거는 제외)
@@ -352,14 +358,6 @@ fn apply_inner(
     )?;
     tx.commit()?;
     Ok(rep)
-}
-
-fn raw_bytes(tx: &rusqlite::Connection) -> Result<i64> {
-    Ok(tx.query_row(
-        "SELECT COALESCE(SUM(LENGTH(payload_json)), 0) FROM raw_events",
-        [],
-        |r| r.get(0),
-    )?)
 }
 
 fn count_raw_del(tx: &rusqlite::Connection) -> Result<usize> {

@@ -300,6 +300,22 @@ mod real {
                 None
             }
         };
+        // install-128 실측: 옛 큰 DB 는 원시 기록 바이트 합이 없다 — 한 번만, 낮은 우선순위로 따로 센다(읽기 연결 → 엔진·수집을 막지 않음)
+        {
+            let db = dir.join("graph.db");
+            let log4 = log.clone();
+            std::thread::spawn(move || {
+                let t = std::time::Instant::now();
+                match graph::store::Store::init_raw_size(&db) {
+                    Ok(Some(b)) => log4.w(format!(
+                        "raw_size: bytes={b} ms={}",
+                        t.elapsed().as_millis()
+                    )),
+                    Ok(None) => {}
+                    Err(e) => log4.w(format!("raw_size: failed {e}")),
+                }
+            });
+        }
         // 개편안 2판 1-2②: 차단 통신 집계 — WFP CLASSIFY_DROP 구독(감사 정책 불필요) → 채널 → 집계 스레드 → traffic_hourly.blocked
         {
             let (sink, rx, lost) = svc::blocked::channel();

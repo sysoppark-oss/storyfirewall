@@ -5,6 +5,17 @@ use crate::{Edge, GraphError, Node, NodeKind, Rel, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 
+/// 원시 기록 바이트 합(용량 상한 순환용). 합 행이 있을 때만 트리거가 더하고 뺀다
+const RAW_SIZE_DDL: &str = "
+CREATE TABLE IF NOT EXISTS raw_size (k INTEGER PRIMARY KEY CHECK (k = 1), bytes INTEGER NOT NULL);
+CREATE TRIGGER IF NOT EXISTS tr_raw_size_ins AFTER INSERT ON raw_events BEGIN
+  UPDATE raw_size SET bytes = bytes + LENGTH(NEW.payload_json) WHERE k = 1;
+END;
+CREATE TRIGGER IF NOT EXISTS tr_raw_size_del AFTER DELETE ON raw_events BEGIN
+  UPDATE raw_size SET bytes = bytes - LENGTH(OLD.payload_json) WHERE k = 1;
+END;
+";
+
 pub struct Store {
     pub(crate) conn: Connection,
 }
@@ -97,6 +108,27 @@ impl Store {
             [],
         );
         let _ = conn.execute("ALTER TABLE origins ADD COLUMN sha256_ts INTEGER", []);
+        // install-128 실측(시작 때 보관 정리 6분 중 434초가 원시 기록 용량 계산 SUM(LENGTH) — 250만 행 전부 읽기):
+        // 원시 기록 바이트 합을 표 하나에 들고 트리거로 더하고 뺀다. 합 행이 없으면(옛 DB) 작은 DB 는 바로 세고,
+        // 큰 DB 는 서비스가 따로 읽기 연결로 한 번 센다(init_raw_size) — 그 전까지 보관 정리는 용량 순환을 건너뛴다
+        conn.execute_batch(RAW_SIZE_DDL)?;
+        let have: bool = conn
+            .query_row("SELECT 1 FROM raw_size WHERE k = 1", [], |_| Ok(true))
+            .optional()?
+            .unwrap_or(false);
+        if !have {
+            let small: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM (SELECT 1 FROM raw_events LIMIT 200001)",
+                [],
+                |r| r.get(0),
+            )?;
+            if small <= 200_000 {
+                conn.execute(
+                    "INSERT OR IGNORE INTO raw_size(k, bytes) SELECT 1, COALESCE(SUM(LENGTH(payload_json)), 0) FROM raw_events",
+                    [],
+                )?;
+            }
+        }
         // 검수 122-1 한 번 정리: 생성 시각을 못 읽은 스냅샷 프로세스(노드 시각 = 스냅샷 시각)에 이어 둔 부모 선은
         // PID 재사용으로 엉뚱한 프로세스가 부모로 잡혔을 수 있다(wininit ← UI 실측). 근거 원시 이벤트가 남은 것만 가린다
         let done: bool = conn
@@ -130,6 +162,34 @@ impl Store {
             params![SCHEMA_VERSION.to_string()],
         )?;
         Ok(Self { conn })
+    }
+
+    /// 원시 기록 바이트 합(트리거로 유지). 아직 세지 않은 옛 DB 면 None
+    pub fn raw_bytes(&self) -> Result<Option<i64>> {
+        Ok(self
+            .conn
+            .query_row("SELECT bytes FROM raw_size WHERE k = 1", [], |r| r.get(0))
+            .optional()?)
+    }
+
+    /// 큰 옛 DB 의 원시 기록 바이트 합을 한 번 센다. 읽기 연결(WAL — 기록자를 막지 않음)로 세고, 짧은 쓰기 한 번으로 넣는다.
+    /// 세는 동안 들어온 기록은 빠질 수 있다(용량 상한은 대략값이라 괜찮다). 이미 있으면 아무것도 안 한다
+    pub fn init_raw_size<P: AsRef<Path>>(path: P) -> Result<Option<i64>> {
+        let w = Self::open(path.as_ref())?;
+        if let Some(b) = w.raw_bytes()? {
+            return Ok(Some(b));
+        }
+        let r = Self::open_read_only(path.as_ref())?;
+        let total: i64 = r.conn.query_row(
+            "SELECT COALESCE(SUM(LENGTH(payload_json)), 0) FROM raw_events",
+            [],
+            |x| x.get(0),
+        )?;
+        w.conn.execute(
+            "INSERT OR IGNORE INTO raw_size(k, bytes) VALUES (1, ?1)",
+            params![total],
+        )?;
+        Ok(Some(total))
     }
 
     pub fn conn(&self) -> &Connection {
