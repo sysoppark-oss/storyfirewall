@@ -5,7 +5,6 @@ name: Dev build for the laptop (test-signed installer, pinned)
 # orphan branch `dev-builds` (one commit, force-pushed). The laptop job runner installs it (job "install").
 # Never a release artifact: test-signer feature + per-run self-signed certificate.
 
-# Needs the orphan branch `geo-data` (made by geo-data.yml) before the first build in a new repository.
 on:
   push:
     branches: [main]
@@ -156,14 +155,14 @@ jobs:
           $un = & .\target\release\svc-poc-unsigned.exe client 2>&1 | Out-String
           Log $un
           # the server may drop the pipe before the client even sets its read mode (0xe9 ERROR_PIPE_NOT_CONNECTED) - also a rejection
-          Check (($un -match 'closed by server|connect failed: .*0xe9') -and ($un -notmatch '"result"')) "unsigned client rejected"
+          Check (($un -match 'closed by server|send failed|connect failed: .*0xe9') -and ($un -notmatch '"result"')) "unsigned client rejected"
           # a different self-signed cert with the same CN must be rejected (pin, not name)
           $other = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=StoryFirewall Dev" -CertStoreLocation Cert:\CurrentUser\My
           Copy-Item .\target\release\svc-poc-unsigned.exe .\target\release\svc-poc-other.exe
           Set-AuthenticodeSignature -FilePath .\target\release\svc-poc-other.exe -Certificate $other -HashAlgorithm SHA256 | Out-Null
           $ot = & .\target\release\svc-poc-other.exe client 2>&1 | Out-String
           Log $ot
-          Check (($ot -match 'closed by server|connect failed: .*0xe9') -and ($ot -notmatch '"result"')) "same-CN different cert rejected"
+          Check (($ot -match 'closed by server|send failed|connect failed: .*0xe9') -and ($ot -notmatch '"result"')) "same-CN different cert rejected"
           $st = & $svcExe status 2>&1 | Out-String
           Log $st
           Check ((Get-Service StoryFirewall).Status -eq 'Running') "service running"

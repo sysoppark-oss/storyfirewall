@@ -124,7 +124,7 @@ jobs:
           # signed with the release key but outside the install folder -> rejected (sideloading guard)
           $out = & .\target\release\svc-poc-signed.exe client 2>&1 | Out-String
           Log $out
-          Check (($out -match 'closed by server|connect failed: .*0xe9') -and ($out -notmatch '"result"')) "signed client outside install dir rejected"
+          Check (($out -match 'closed by server|send failed|connect failed: .*0xe9') -and ($out -notmatch '"result"')) "signed client outside install dir rejected"
           # inside the install folder -> accepted
           $inside = Join-Path $dir "svc-poc-test.exe"
           Copy-Item .\target\release\svc-poc-signed.exe $inside
@@ -138,13 +138,13 @@ jobs:
           Set-AuthenticodeSignature -FilePath $oexe -Certificate $other -HashAlgorithm SHA256 | Out-Null
           $ot = & $oexe client 2>&1 | Out-String
           Log $ot
-          Check (($ot -match 'closed by server|connect failed: .*0xe9') -and ($ot -notmatch '"result"')) "same-CN different key rejected"
-          # unsigned inside the folder -> rejected
+          Check (($ot -match 'closed by server|send failed|connect failed: .*0xe9') -and ($ot -notmatch '"result"')) "same-CN different key rejected"
+          # unsigned inside the folder -> rejected (server may drop the pipe before the client writes: 'send failed' is also a rejection, run #15)
           $uexe = Join-Path $dir "svc-poc-unsigned.exe"
           Copy-Item .\target\release\svc-poc.exe $uexe
           $un = & $uexe client 2>&1 | Out-String
           Log $un
-          Check (($un -match 'closed by server|connect failed: .*0xe9') -and ($un -notmatch '"result"')) "unsigned client rejected"
+          Check (($un -match 'closed by server|send failed|connect failed: .*0xe9') -and ($un -notmatch '"result"')) "unsigned client rejected"
           # v0.1.5 run #13: the just-exited test client was still locked (scanner/handle close race) -> retry, then give up quietly
           foreach ($f in @($inside, $oexe, $uexe)) {
             for ($i = 0; $i -lt 20 -and (Test-Path $f); $i++) {
