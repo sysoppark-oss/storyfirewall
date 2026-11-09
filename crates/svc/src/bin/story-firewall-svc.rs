@@ -597,6 +597,10 @@ mod real {
             }
         };
         println!("diag: open ms={}", t0.elapsed().as_millis());
+        // install-124·126 실측(시작 때 보관 정리 6분): 마지막 보관 정리의 단계별 시간
+        if let Ok(Some(v)) = store.get_meta("retention_last") {
+            println!("diag: retention_last {v}");
+        }
         let ms = |name: &str, f: &mut dyn FnMut() -> String| {
             let t = std::time::Instant::now();
             let r = f();
