@@ -177,8 +177,13 @@ export function openPalette(): void {
     findT = window.setTimeout(async () => {
       const r = await rpc<{ items: { node_id: number; label: string; image?: string | null }[] }>("process.find", { q: t.slice(0, 64), limit: 8 });
       if (!r.ok || seq !== findSeq || !open) return;
+      // 이름이 같은 다른 실행 파일(System32·SysWOW64 등)을 가를 수 있게 보조 글자에 폴더 끝 두 단계
+      const folder = (img?: string | null) => {
+        const parts = (img ?? "").split(/[\\/]/).filter(Boolean);
+        return parts.length > 1 ? parts.slice(-3, -1).join("\\") : "";
+      };
       const found: PaletteItem[] = r.result.items.map((f) => ({
-        kind: "program", label: sanitize(f.label, 120).text, hint: "프로그램 상세", target: f.node_id, keys: sanitize(f.image ?? f.label, 300).text,
+        kind: "program", label: sanitize(f.label, 120).text, hint: `프로그램 상세${folder(f.image) ? ` · ${sanitize(folder(f.image), 80).text}` : ""}`, target: f.node_id, keys: sanitize(f.image ?? f.label, 300).text,
       }));
       // 지금 연결이 열린 프로그램(먼저 읽은 것)과 이름이 같으면 하나만
       const names = new Set(found.map((x) => x.label.toLowerCase()));

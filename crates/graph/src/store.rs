@@ -108,13 +108,16 @@ impl Store {
             .optional()?
             .unwrap_or(false);
         if !done {
+            // install-124 실측: 처음 쓴 질의(edges 전체를 훑고 원시 이벤트·노드 JSON 과 맞춤)가 830MB DB 에서 수 분 걸려
+            // 서비스 시작 동안 엔진이 묶였다. 스냅샷 시각(부분 색인 ix_raw_snapshot, 몇 개뿐) → 그 시각에 생긴 프로세스 노드
+            // → 그 노드로 들어오는 선(ix_edges_dst) 순서로 좁힌다
             conn.execute(
                 "DELETE FROM edges WHERE id IN (
-                   SELECT e.id FROM edges e
-                   JOIN nodes n ON n.id = e.dst
-                   JOIN raw_events r ON r.id = e.evidence_id
-                   WHERE e.rel = 'spawned' AND r.source = 'snapshot' AND r.ts = n.first_ts
-                     AND json_extract(n.attrs_json, '$.preexisting') = 1)",
+                   SELECT e.id FROM nodes n
+                   JOIN edges e ON e.dst = n.id AND e.ts = n.first_ts
+                   WHERE n.kind = 'process'
+                     AND n.first_ts IN (SELECT DISTINCT ts FROM raw_events WHERE source = 'snapshot')
+                     AND e.rel = 'spawned')",
                 [],
             )?;
             conn.execute(

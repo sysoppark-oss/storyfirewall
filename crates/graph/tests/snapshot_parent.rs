@@ -186,3 +186,27 @@ fn find_processes_dedups_by_image_latest_first() {
         .unwrap()
         .is_empty());
 }
+
+/// install-124 실측(정리 질의가 수 분): 정리 질의가 edges 전체를 훑지 않는다(색인 사용)
+#[test]
+fn cleanup_query_uses_indexes() {
+    let st = Store::open_in_memory().unwrap();
+    let mut plan = st
+        .conn()
+        .prepare(
+            "EXPLAIN QUERY PLAN SELECT e.id FROM nodes n
+             JOIN edges e ON e.dst = n.id AND e.ts = n.first_ts
+             WHERE n.kind = 'process'
+               AND n.first_ts IN (SELECT DISTINCT ts FROM raw_events WHERE source = 'snapshot')
+               AND e.rel = 'spawned'",
+        )
+        .unwrap();
+    let rows: Vec<String> = plan
+        .query_map([], |r| r.get::<_, String>(3))
+        .unwrap()
+        .map(|x| x.unwrap())
+        .collect();
+    let text = rows.join(" | ");
+    assert!(!text.contains("SCAN e"), "edges 전체 훑기 없음: {text}");
+    assert!(text.contains("ix_edges_dst"), "{text}");
+}
