@@ -1,6 +1,6 @@
 [package]
 name = "svc"
-version = "0.1.5"
+version = "0.1.6"
 edition.workspace = true
 license.workspace = true
 description = "서비스 골격: 엔진 스레드(명령 큐) + 저장 스레드 + 연결 핸들러(디스패처). 파이프·토큰·서명·SCM 은 Windows 단계"
