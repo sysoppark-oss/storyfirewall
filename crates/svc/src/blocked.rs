@@ -63,10 +63,13 @@ pub type Recent = Arc<std::sync::Mutex<RecentInner>>;
 /// 기록 상한
 pub const RECENT_CAP: usize = 3000;
 
-fn dir_word(d: u32) -> &'static str {
+/// msFwpDirection: FWP_DIRECTION_IN 0x3900 · OUT 0x3901 · FORWARD 0x3902 (FWPM_NET_EVENT_CLASSIFY_DROP1/2 문서).
+/// FWP_DIRECTION_OUTBOUND 0 · INBOUND 1 꼴도 받는다(CLASSIFY_ALLOW0 은 이쪽). install-136 실측: 0x3900 이 와서 빈칸이었다
+pub fn dir_word(d: u32) -> &'static str {
     match d {
-        0 => "out",
-        1 => "in",
+        0x3901 | 0 => "out",
+        0x3900 | 1 => "in",
+        0x3902 => "fwd",
         _ => "",
     }
 }
@@ -311,6 +314,15 @@ mod recent_tests {
         assert_eq!(r.items.len(), 3);
         assert_eq!(r.dup_skipped, 1);
         assert_eq!(r.items[0].dir, "out");
+        assert_eq!(
+            (
+                dir_word(0x3900),
+                dir_word(0x3901),
+                dir_word(0x3902),
+                dir_word(7)
+            ),
+            ("in", "out", "fwd", "")
+        );
         for i in 0..(RECENT_CAP as i64 + 10) {
             r.push(&d(9, &format!("p{i}.exe"), 10 + i));
         }

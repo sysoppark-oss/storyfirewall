@@ -13,7 +13,7 @@ export type RuleKind = "ours" | "windows_firewall" | "windows_service_hardening"
 export interface BlockedItem {
   ts: number;
   app: string;
-  dir: "in" | "out" | "";
+  dir: "in" | "out" | "fwd" | "";
   proto: number;
   remote: string;
   rport: number;
@@ -63,7 +63,10 @@ export function ruleText(r: BlockedItem["rule"], filterId: number): { what: stri
     case "ours":
       return { what: `Story Firewall 정책${q}${r.gone && !r.policy_id ? " (지금은 해제됨)" : ""}`, fix: "정책 화면에서 이 정책을 보고 해제하거나 고칠 수 있습니다." };
     case "windows_firewall":
-      return { what: `Windows 방화벽 규칙${q}`, fix: "Windows 보안 › 방화벽 및 네트워크 보호 › 고급 설정(wf.msc)에서 이 이름의 규칙을 찾아 끄거나 고칩니다. 이름이 \"Default\"로 시작하면 맞는 허용 규칙이 없어 기본 정책으로 막힌 것입니다." };
+      return {
+        what: `Windows 방화벽 규칙${q}`,
+        fix: /^(default|기본)/i.test(nm) ? "맞는 허용 규칙이 없어 Windows 방화벽 기본 정책으로 막혔습니다. wf.msc 에서 허용 규칙을 만듭니다." : "wf.msc(Windows Defender 방화벽 고급 설정)에서 이 이름의 규칙을 찾아 끄거나 고칩니다.",
+      };
     case "windows_service_hardening":
       return { what: `Windows 서비스 강화 규칙${q}`, fix: "Windows 가 서비스마다 허용한 통신 밖을 막은 것입니다. 보통 고칠 대상이 아닙니다." };
     case "windows_app_isolation":
@@ -79,6 +82,28 @@ export function ruleText(r: BlockedItem["rule"], filterId: number): { what: stri
     default:
       return { what: `필터 #${filterId} (이미 지워져 이름을 모름)`, fix: "막은 뒤 그 필터가 지워졌습니다. 같은 일이 다시 일어나면 그때 이름이 남습니다." };
   }
+}
+
+export interface BlockedGroup {
+  first: BlockedItem;
+  n: number;
+  from: number;
+  to: number;
+}
+
+/// 같은 일(규칙·프로그램·대상·방향·프로토콜)이 잇달아 오면 한 줄로(새것부터 받은 순서 유지). 순수 함수
+export function groupBlocked(items: BlockedItem[]): BlockedGroup[] {
+  const key = (b: BlockedItem) => `${b.rule.kind}|${b.rule.name}|${b.app}|${targetText(b)}|${b.dir}|${b.proto}`;
+  const out: BlockedGroup[] = [];
+  for (const b of items) {
+    const last = out[out.length - 1];
+    if (last && key(last.first) === key(b)) {
+      last.n++;
+      last.from = Math.min(last.from, b.ts);
+      last.to = Math.max(last.to, b.ts);
+    } else out.push({ first: b, n: 1, from: b.ts, to: b.ts });
+  }
+  return out;
 }
 
 /// 글자 거르기(화면 쪽 — 서비스도 q 로 거르지만, 종류 칩 거르기와 함께 쓰려고 순수 함수로 둔다)
@@ -133,15 +158,20 @@ export function blockedLog(): { root: HTMLElement; stop: () => void } {
     const head = el("tr");
     for (const [h, cls] of [["시각", "c-time"], ["프로그램", "c-prog"], ["방향", "c-dir"], ["대상", "c-remote"], ["막은 규칙", "c-rule"]] as const) head.append(el("th", cls, h));
     const body = el("tbody");
-    for (const b of shown) {
+    const fmt = (ts: number) => new Date(ts * 1000).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    for (const g of groupBlocked(shown)) {
+      const b = g.first;
       const tr = el("tr", `k-${b.rule.kind}`);
-      const t = new Date(b.ts * 1000);
-      tr.append(el("td", "c-time mono", t.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })));
+      const tcell = el("td", "c-time mono", fmt(g.to));
+      if (g.n > 1) {
+        tcell.append(el("div", "muted small", `×${g.n} · ${fmt(g.from)} 부터`));
+      }
+      tr.append(tcell);
       const prog = el("td", "c-prog");
       const appTxt = sanitize(b.app || "", 400).text;
       prog.append(ext("span", appTxt ? fileName(appTxt) : "(프로그램 모름)", "prog"));
       if (appTxt) prog.title = appTxt;
-      tr.append(prog, el("td", "c-dir", `${b.dir === "in" ? "들어옴" : b.dir === "out" ? "나감" : ""} ${protoWord(b.proto)}`.trim()), el("td", "c-remote mono", targetText(b)));
+      tr.append(prog, el("td", "c-dir", `${b.dir === "in" ? "들어옴" : b.dir === "out" ? "나감" : b.dir === "fwd" ? "거쳐 감" : ""} ${protoWord(b.proto)}`.trim()), el("td", "c-remote mono", targetText(b)));
       const rt = ruleText(b.rule, b.filter_id);
       const cell = el("td", "c-rule");
       cell.append(el("div", `rule-what k-${b.rule.kind}`, rt.what), el("div", "muted small", rt.fix));

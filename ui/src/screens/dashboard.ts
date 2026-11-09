@@ -355,7 +355,7 @@ export function dashboard(): HTMLElement {
       if (!whereCard.isConnected && distPainted) return;
       distPainted = true;
       if (distSrc === "today") {
-        distSub.textContent = `오늘 연결 기록 ${conns.length}곳`;
+        distSub.textContent = `오늘 연결 기록 ${conns.length}곳${conns.length >= 500 ? "(많은 순 500곳까지)" : ""}`;
         dist.paint(conns, null);
         return;
       }

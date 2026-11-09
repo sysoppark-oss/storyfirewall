@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { targetText, ruleText, protoWord, kindFilter, type BlockedItem } from "./blocked-log";
+import { targetText, ruleText, protoWord, kindFilter, groupBlocked, type BlockedItem } from "./blocked-log";
 
 const rule = (kind: BlockedItem["rule"]["kind"], extra: Partial<BlockedItem["rule"]> = {}): BlockedItem["rule"] => ({ kind, name: "", description: "", provider: "", gone: false, ...extra });
 
@@ -28,5 +28,17 @@ describe("차단 기록(사용자 요청 2026-11-09)", () => {
     const items = [{ rule: rule("ours") }, { rule: rule("other") }] as BlockedItem[];
     expect(kindFilter(items, "other").length).toBe(1);
     expect(kindFilter(items, null).length).toBe(2);
+  });
+});
+
+describe("차단 기록 묶기", () => {
+  const it0 = (ts: number, app = "a.exe", name = "Query User"): BlockedItem => ({ ts, app, dir: "in", proto: 6, remote: "192.168.0.3", rport: 7680, lport: 7680, loopback: false, filter_id: 1, rule: rule("windows_firewall", { name }) });
+  it("잇단 같은 일은 한 줄, 사이에 다른 것이 끼면 따로", () => {
+    const g = groupBlocked([it0(30), it0(20), it0(10), it0(5, "b.exe"), it0(1)]);
+    expect(g.map((x) => x.n)).toEqual([3, 1, 1]);
+    expect([g[0]!.from, g[0]!.to]).toEqual([10, 30]);
+  });
+  it("Default 규칙은 허용 규칙이 없다는 설명", () => {
+    expect(ruleText(rule("windows_firewall", { name: "Default Outbound" }), 1).fix).toContain("허용 규칙");
   });
 });
