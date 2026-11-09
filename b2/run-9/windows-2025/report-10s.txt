@@ -1,0 +1,8 @@
+B2 누락률 — 구간 2026-11-09 06:24:41.116Z ~ 2026-11-09 06:25:57.700Z (허용치 10000ms)
+sysmon_lines=295 sysmon_bad=0 sysmon_keyed=293 ours_keyed=469 sysmon_etw_offset_ms=0
+category               sysmon  matched   missed     miss%  ours_only  by_offset  boundary
+dns(22)                    55       55        0     0.00%         22          0         0
+network_in(3)               5        5        0     0.00%          0          0         0
+network_out(3)             82       82        0     0.00%          5          0         0
+process_start(1)           55       55        0     0.00%          0          0         0
+process_stop(5)            54       54        0     0.00%          0          0         0

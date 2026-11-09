@@ -1,0 +1,11 @@
+﻿b2 run 20261109-062250
+commit=9280fb9
+os=Microsoft Windows Server 2025 Datacenter build=26100
+ram_gb=16 free_gb=13.3
+cpu=INTEL(R) XEON(R) PLATINUM 8573C
+sysmon=15.22
+seconds=90 scenario=True
+window_utc=2026-11-09 06:24:41.116 .. 2026-11-09 06:25:57.700
+sysmon_events_exported=295
+collector_exit=0
+mem_free_mb_start=13534 mem_free_mb_end=13586 collector_ws_max_mb=37 product_svc_ws_mb=-
