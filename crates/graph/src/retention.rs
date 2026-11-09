@@ -295,19 +295,33 @@ fn apply_inner(
         total_after = total;
         if policy.raw_max_bytes > 0 && total > policy.raw_max_bytes {
             // 한 번에 지울 양을 오래된 순 누적 합으로 계산 (의심 사건 근거는 제외)
+            // install-130 실측(이 단계 434초): "NOT IN susp_raw ... ORDER BY ts, id" 를 플래너가 전체 훑기 + 정렬로 풀어
+            // 첫 줄을 내기 전에 250만 행의 길이를 모두 읽었다. 시각 색인 순으로 앞에서부터 읽고(필요한 만큼만),
+            // 의심 사건 근거는 메모리 집합으로 건너뛴다
+            let susp: std::collections::HashSet<i64> = {
+                let mut q = tx.prepare("SELECT id FROM susp_raw")?;
+                let v = q
+                    .query_map([], |r| r.get::<_, i64>(0))?
+                    .collect::<std::result::Result<_, _>>()?;
+                v
+            };
             let mut st = tx.prepare(
-                "SELECT id, LENGTH(payload_json) FROM raw_events
-                 WHERE id NOT IN (SELECT id FROM susp_raw) ORDER BY ts, id",
+                "SELECT id, LENGTH(payload_json) FROM raw_events INDEXED BY ix_raw_ts ORDER BY ts, id",
             )?;
             let mut victims: Vec<i64> = Vec::new();
-            for row in st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
-                if policy.raw_max_bytes == 0 || total <= policy.raw_max_bytes {
+            let mut rows = st.query([])?;
+            while let Some(r) = rows.next()? {
+                if total <= policy.raw_max_bytes {
                     break;
                 }
-                let (id, len) = row?;
+                let id: i64 = r.get(0)?;
+                if susp.contains(&id) {
+                    continue;
+                }
                 victims.push(id);
-                total -= len;
+                total -= r.get::<_, i64>(1)?;
             }
+            drop(rows);
             drop(st);
             if !victims.is_empty() {
                 tx.execute("DELETE FROM raw_del", [])?;

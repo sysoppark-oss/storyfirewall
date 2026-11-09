@@ -335,3 +335,51 @@ fn raw_size_tracks_inserts_and_deletes() {
     let rep = apply(&store, 100, policy).unwrap();
     assert_eq!((rep.raw_deleted_by_size, rep.raw_bytes_after), (0, -1));
 }
+
+/// install-130 실측(용량 단계 434초): 용량 순환의 후보 질의는 시각 색인 순으로 읽고 정렬하지 않는다(필요한 만큼만 읽고 멈춤)
+#[test]
+fn size_victim_query_uses_ts_index_without_sort() {
+    let store = graph::Store::open_in_memory().unwrap();
+    let mut q = store
+        .conn()
+        .prepare("EXPLAIN QUERY PLAN SELECT id, LENGTH(payload_json) FROM raw_events INDEXED BY ix_raw_ts ORDER BY ts, id")
+        .unwrap();
+    let plan: Vec<String> = q
+        .query_map([], |r| r.get::<_, String>(3))
+        .unwrap()
+        .map(|x| x.unwrap())
+        .collect();
+    let text = plan.join(" | ");
+    assert!(
+        text.contains("ix_raw_ts") && !text.contains("TEMP B-TREE"),
+        "{text}"
+    );
+}
+
+/// 상한을 조금 넘긴 큰 원시 기록에서 용량 순환이 빨리 끝난다(앞에서 필요한 만큼만)
+#[test]
+fn size_rotation_on_large_raw_is_fast() {
+    let store = graph::Store::open_in_memory().unwrap();
+    {
+        let tx = store.begin_write().unwrap();
+        let mut st = tx
+            .prepare("INSERT INTO raw_events(ts, source, payload_json) VALUES (?1, 't', ?2)")
+            .unwrap();
+        let body = "x".repeat(180);
+        for i in 0..300_000i64 {
+            st.execute(rusqlite::params![i, body]).unwrap();
+        }
+        drop(st);
+        tx.commit().unwrap();
+    }
+    let total = store.raw_bytes().unwrap().unwrap();
+    let policy = RetentionPolicy {
+        raw_max_bytes: total - 180 * 1000,
+        ..RetentionPolicy::default()
+    };
+    let t = std::time::Instant::now();
+    let rep = apply(&store, 400_000, policy).unwrap();
+    let ms = t.elapsed().as_millis();
+    assert_eq!(rep.raw_deleted_by_size, 1000);
+    assert!(ms < 3000, "용량 순환 {ms}ms");
+}
