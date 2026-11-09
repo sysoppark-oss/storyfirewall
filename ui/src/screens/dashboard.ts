@@ -12,7 +12,7 @@ import { LEDGER_SCOPE, LEDGER_PROXY_NOTE, ledgerSummary } from "./first-run";
 import { bars, type ConnLike } from "./conn-group";
 import { icon, sparkline, barChart, hourlyCounts, donut, chapterReach, type Tone } from "./dash-viz";
 import { STAGES, TRIAGE_STATE, LEVEL, ACT, isHigh } from "../terms";
-import { flagPath } from "./connections";
+import { distPanel, openAsConnLike } from "./dist-panel";
 import { overview, type DashConn, type DashListener } from "./dash-overview";
 import { bytes } from "./connections";
 import { fileName } from "../sanitize";
@@ -175,6 +175,22 @@ export function clickable<T extends Element>(x: T, go: () => void, label: string
   return x;
 }
 
+const DIST_SRC_KEY = "sf.dash.distSrc";
+function loadDistSrc(): "today" | "now" {
+  try {
+    return localStorage.getItem(DIST_SRC_KEY) === "now" ? "now" : "today";
+  } catch {
+    return "today";
+  }
+}
+function saveDistSrc(v: "today" | "now") {
+  try {
+    localStorage.setItem(DIST_SRC_KEY, v);
+  } catch {
+    /* 기억 못 해도 동작은 같다 */
+  }
+}
+
 export function dashboard(): HTMLElement {
   const root = el("section", "screen");
   root.append(el("h1", undefined, "대시보드"));
@@ -246,7 +262,7 @@ export function dashboard(): HTMLElement {
     const blocked = th ? th.blocked.reduce((a, b) => a + b, 0) : 0;
     const lost = th ? th.lost : 0;
     const blockedSub = !th ? "서비스 판이 낮아 집계 없음" : lost > 0 ? `최소 ${blocked}건 · 유실 ${lost}건(폭주)` : blocked ? "우리 정책이 막은 연결" : "막은 연결 없음";
-    status.insertBefore(tile("오늘 차단 통신", th ? `${blocked}건` : "—", blockedSub, () => state.go("policy", {}), "shield", blocked ? "bad" : "neutral", th ? th.blocked : undefined), anchor);
+    status.insertBefore(tile("오늘 차단 통신", th ? `${blocked}건` : "—", blockedSub, () => state.go("connections", { tab: "blocked" }), "shield", blocked ? "bad" : "neutral", th ? th.blocked : undefined), anchor);
     // KPI ④ 일일 트래픽 — 보조 줄에 접속한 곳·프로그램 수
     status.append(tile("일일 트래픽", bytes(o.sent + o.recv), o.sent + o.recv ? `송신 ${bytes(o.sent)} · 수신 ${bytes(o.recv)}` : `${o.remotes}곳 · 프로그램 ${o.programs}개`, () => state.go("connections", { tab: "history" }), "swap", "neutral", th ? th.conns : o.hourly));
 
@@ -315,32 +331,44 @@ export function dashboard(): HTMLElement {
     }));
     const peakConn = th ? Math.max(...th.conns) : maxH;
     hours.append(el("p", "muted small", peakConn || th ? `막대 = 시간대별 수신+송신 바이트 · 막대 위 점 = 그 시간의 인시던트 · 접속이 가장 많은 시간 ${peakConn}건${th ? "" : " · 마지막 접속 시각 기준"}` : "오늘 접속 기록이 없습니다."));
-    const whereCard = el("section", "card where-dash", el("div", "kpi-head", icon("globe"), el("h3", undefined, "오늘 어디와 통신했나")));
-    const cols = el("div", "where-dash-cols");
-    for (const [by, title] of [["country", "나라별 (접속 수)"], ["org", "망(조직)별 (접속 수)"]] as const) {
-      const { bars: bs, rest } = bars(conns, by, 5);
-      const col = el("div", "bar-col", el("h4", undefined, title));
-      const max = Math.max(1, ...bs.map((b) => b.value));
-      for (const b of bs) {
-        const row = el("div", `bar-row${b.isNew ? " is-new" : ""}`);
-        // 40차 Q5: [국기] 나라 (망) — 대시보드 나라별 막대에도 국기
-        const name = ext("span", b.label, "bar-name");
-        name.title = b.label;
-        const fp = by === "country" ? flagPath(b.key) : null;
-        if (fp) { const im = document.createElement("img"); im.src = fp; im.alt = ""; im.className = "flag"; im.width = 16; im.height = 12; name.prepend(im, " "); }
-        const fill = el("span", "bar-fill");
-        fill.style.width = `${Math.round((b.value / max) * 100)}%`;
-        row.append(name, el("span", "bar-track", fill), el("span", "bar-val", String(b.value)));
-        if (b.isNew) row.append(el("span", "badge-new", "오늘 처음"));
-        row.addEventListener("click", () => state.go("connections", {}));
-        col.append(row);
+    // 사용자 요청(2026-11-09): 대시보드에도 통신 대상 분포 막대·지도. 오늘(연결 기록) / 지금(열린 연결, 10초마다) 전환.
+    // 막대·나라를 누르면 연결 화면의 그 조건으로(오늘 → 연결 이력, 지금 → 지금 열린 연결)
+    const whereCard = el("section", "card where-dash dist-card");
+    const srcBtns = (["today", "now"] as const).map((v) => {
+      const b = button(v === "today" ? "오늘" : "지금 열린 연결", () => { distSrc = v; saveDistSrc(v); srcBtns.forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", String(x === b)); }); void paintDist(); }, "btn small seg-btn");
+      b.classList.toggle("on", v === distSrc);
+      b.setAttribute("aria-pressed", String(v === distSrc));
+      return b;
+    });
+    const distTitle = el("h3", undefined, "통신 대상 분포");
+    const distSub = el("span", "muted small");
+    const dist = distPanel({ scope: "dashboard", defaultView: "map", compact: true, onPick: (f) => {
+      if (!f) return;
+      if (distSrc === "now") state.go("connections", { tab: "live", pick: f });
+      else state.go("connections", { tab: "history", ...(f.by === "country" ? { cc: f.key, map: true } : { org: f.key }) });
+    } });
+    whereCard.append(el("div", "kpi-head", icon("globe"), distTitle, el("span", "seg dist-src", ...srcBtns), distSub), dist.root,
+      el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."),
+      el("div", "q-more", button("연결 화면에서 자세히", () => state.go("connections", { tab: distSrc === "now" ? "live" : "history" }), "btn small")));
+    const paintDist = async () => {
+      window.clearTimeout(distTimer);
+      if (!whereCard.isConnected && distPainted) return;
+      distPainted = true;
+      if (distSrc === "today") {
+        distSub.textContent = `오늘 연결 기록 ${conns.length}곳`;
+        dist.paint(conns, null);
+        return;
       }
-      if (rest) col.append(el("div", "muted small", `그 밖에 ${rest}곳`));
-      if (!bs.length) col.append(el("div", "muted small", "공인 주소 접속이 없습니다."));
-      cols.append(col);
-    }
-    whereCard.append(cols, el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."),
-      el("div", "q-more", button("연결 화면에서 자세히", () => state.go("connections", {}), "btn small")));
+      const r = await rpc<{ items: { image?: string | null; raddr: string; where?: ConnLike["where"] }[] }>("connections.open", {});
+      if (distSrc !== "now") return;
+      if (r.ok) {
+        distSub.textContent = `지금 열린 연결 ${r.result.items.length}건 · ${new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+        dist.paint(openAsConnLike(r.result.items), null);
+      } else distSub.textContent = "지금 열린 연결을 읽지 못했습니다";
+      // 대시보드에 있는 동안만 10초마다(화면을 떠나면 isConnected 가 false 라 멈춘다)
+      distTimer = window.setTimeout(() => { if (whereCard.isConnected) void paintDist(); }, 10_000);
+    };
+    void paintDist();
     // 수준별 도넛(처리 안 한 사건) + 4장 흐름 띠(유입 → 실행 → 자리잡기 → 외부 접속, 오늘 도달한 사건 수)
     const open = levelN.critical + levelN.suspicious + levelN.watch;
     const dn = el("section", "card donut-card", el("h3", undefined, "심각도별 미조치 인시던트"));
@@ -416,11 +444,14 @@ export function dashboard(): HTMLElement {
     if (!fg.length && !(feedIncidents.length && !feedAll)) flist.append(el("p", "muted small", feedAll ? "최근 7일 서비스 사건이 없습니다." : "최근 7일 차단·대응 기록이 없습니다. [모두 보기]로 다른 서비스 사건을 볼 수 있습니다."));
     feed.append(flist);
     // 2판 화면 구성: [킬체인 | 도넛] → [트래픽 그래프 | 방어 피드]
-    viz.append(el("div", "dash-row2 row-chain", flow, dn), el("div", "dash-row2", hours, feed));
-    where.append(whereCard);
+    viz.append(el("div", "dash-row2 row-chain", flow, dn), el("div", "dash-row2", hours, feed), whereCard);
   };
   // install-99 실측: 화면 진입과 서비스 이벤트로 refresh 가 겹치면 둘 다 clear 뒤 KPI 칸을 덧붙여 6칸이 됐다 → 늦게 끝난 옛 호출은 버린다
   let rfGen = 0;
+  // 통신 대상 분포 카드: 오늘 / 지금(열린 연결) 고른 것 기억, 지금이면 10초 갱신 타이머
+  let distSrc: "today" | "now" = loadDistSrc();
+  let distTimer = 0;
+  let distPainted = false;
   const refresh = async () => {
     const my = ++rfGen;
     clear(status);

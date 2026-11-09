@@ -275,6 +275,18 @@ impl EngineStore {
             expires_at: r.get(4)?,
         })
     }
+    /// 차단 기록: WFP 필터 번호 → (정책 번호, 이름, 상태). 지금 걸린 필터만(되돌린 정책의 필터는 지워져 없다)
+    pub fn policy_for_filter(&self, filter_id: u64) -> Result<Option<(i64, String, String)>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT p.id, p.name, p.state FROM wfp_filters f JOIN policies p ON p.id = f.policy_id WHERE f.filter_id = ?1",
+                params![filter_id as i64],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?)
+    }
+
     pub fn filters_of(&self, policy_id: i64) -> Result<Vec<FilterRow>> {
         let mut st = self.conn.prepare("SELECT filter_id, policy_id, version, spec_json, expires_at FROM wfp_filters WHERE policy_id = ?1 ORDER BY filter_id")?;
         let rows = st.query_map([policy_id], Self::row_to_filter)?;

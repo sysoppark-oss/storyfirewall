@@ -13,6 +13,18 @@ pub mod spec;
 #[cfg(any(windows, feature = "host-check"))]
 pub mod wfp;
 
+/// 차단한 필터의 이름·공급자(차단 기록의 "막은 것")
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct FilterInfo {
+    pub name: String,
+    pub description: String,
+    pub provider_name: String,
+    /// 공급자 GUID 문자열(없으면 빈 문자열)
+    pub provider_key: String,
+    /// 우리(Story Firewall) 공급자인가
+    pub ours: bool,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum PolicyError {
     #[error("가드 거부: {0}")]

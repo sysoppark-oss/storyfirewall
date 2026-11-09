@@ -15,7 +15,7 @@ use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::*;
 use windows_sys::Win32::System::Rpc::RPC_C_AUTHN_WINNT;
 
 use crate::spec::{Action, BlockSpec, Direction};
-use crate::{PolicyError, Result};
+use crate::{FilterInfo, PolicyError, Result};
 
 /// 고정 GUID (제품 식별자). 바꾸면 이전 설치의 필터를 못 찾는다.
 pub const PROVIDER_KEY: GUID = GUID::from_u128(0x5f1a2b3c_4d5e_4f60_8172_839405a6b7c8);
@@ -124,9 +124,7 @@ unsafe fn drop_event_from(e: &FWPM_NET_EVENT2) -> Option<DropEvent> {
         return None;
     }
     let d = &*e.Anonymous.classifyDrop;
-    if d.isLoopback != 0 {
-        return None;
-    }
+    // 2026-11-09: 루프백도 남긴다(localhost 가 막혔을 때 원인을 찾을 수 있게). 집계(blocked)는 우리 필터만 세므로 영향 없음
     let h = &e.header;
     let ts = ((h.timeStamp.dwHighDateTime as i64) << 32) | h.timeStamp.dwLowDateTime as i64;
     let remote_v4 =
@@ -159,6 +157,22 @@ unsafe fn drop_event_from(e: &FWPM_NET_EVENT2) -> Option<DropEvent> {
             0
         },
         app_id,
+        remote_v6: if h.flags & FWPM_NET_EVENT_FLAG_REMOTE_ADDR_SET != 0
+            && h.ipVersion == FWP_IP_VERSION_V6
+        {
+            Some(std::net::Ipv6Addr::from(
+                h.Anonymous2.remoteAddrV6.byteArray16,
+            ))
+        } else {
+            None
+        },
+        local_port: if h.flags & FWPM_NET_EVENT_FLAG_LOCAL_PORT_SET != 0 {
+            h.localPort
+        } else {
+            0
+        },
+        direction: d.msFwpDirection,
+        loopback: d.isLoopback != 0,
     })
 }
 
@@ -217,6 +231,12 @@ pub struct DropEvent {
     pub remote_v4: Option<std::net::Ipv4Addr>,
     pub remote_port: u16,
     pub app_id: String,
+    /// 차단 기록(사용자 요청 2026-11-09, localhost 차단 원인 찾기): IPv6 원격 주소, 로컬 포트, 방향, 같은 PC 안(루프백) 여부
+    pub remote_v6: Option<std::net::Ipv6Addr>,
+    pub local_port: u16,
+    /// FWP_DIRECTION: 0 = 나가기, 1 = 들어오기, 그 밖 = 모름
+    pub direction: u32,
+    pub loopback: bool,
 }
 
 impl Engine {
@@ -812,6 +832,59 @@ impl Engine {
         Ok(())
     }
 
+    /// 필터 번호 → 이름·공급자(차단 기록). 지워진 필터면 None
+    pub fn filter_info(&self, filter_id: u64) -> Option<FilterInfo> {
+        unsafe fn wstr(p: *const u16) -> String {
+            if p.is_null() {
+                return String::new();
+            }
+            let mut n = 0;
+            while *p.add(n) != 0 && n < 4096 {
+                n += 1;
+            }
+            String::from_utf16_lossy(std::slice::from_raw_parts(p, n))
+        }
+        let mut f: *mut FWPM_FILTER0 = std::ptr::null_mut();
+        let rc = unsafe { FwpmFilterGetById0(self.h, filter_id, &mut f) };
+        if rc != 0 || f.is_null() {
+            return None;
+        }
+        let mut info = FilterInfo::default();
+        unsafe {
+            let fr = &*f;
+            info.name = wstr(fr.displayData.name);
+            info.description = wstr(fr.displayData.description);
+            if !fr.providerKey.is_null() {
+                let k = *fr.providerKey;
+                info.ours = k.data1 == PROVIDER_KEY.data1
+                    && k.data2 == PROVIDER_KEY.data2
+                    && k.data3 == PROVIDER_KEY.data3
+                    && k.data4 == PROVIDER_KEY.data4;
+                info.provider_key = format!(
+                    "{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                    k.data1,
+                    k.data2,
+                    k.data3,
+                    k.data4[0],
+                    k.data4[1],
+                    k.data4[2],
+                    k.data4[3],
+                    k.data4[4],
+                    k.data4[5],
+                    k.data4[6],
+                    k.data4[7]
+                );
+                let mut p: *mut FWPM_PROVIDER0 = std::ptr::null_mut();
+                if FwpmProviderGetByKey0(self.h, &k, &mut p) == 0 && !p.is_null() {
+                    info.provider_name = wstr((*p).displayData.name);
+                    FwpmFreeMemory0(&mut p as *mut _ as *mut *mut core::ffi::c_void);
+                }
+            }
+            FwpmFreeMemory0(&mut f as *mut _ as *mut *mut core::ffi::c_void);
+        }
+        Some(info)
+    }
+
     /// since(FILETIME) 이후의 CLASSIFY_DROP 이벤트, 최대 200건 (5차 검증 Q5)
     pub fn drops_since(&self, since: i64) -> Result<Vec<DropEvent>> {
         let mut tmpl: FWPM_NET_EVENT_ENUM_TEMPLATE0 = unsafe { std::mem::zeroed() };
@@ -871,6 +944,10 @@ impl Engine {
                     remote_v4,
                     remote_port: h.remotePort,
                     app_id,
+                    remote_v6: None,
+                    local_port: h.localPort,
+                    direction: d.msFwpDirection,
+                    loopback: d.isLoopback != 0,
                 });
             }
             unsafe { FwpmFreeMemory0(&mut entries as *mut _ as *mut *mut core::ffi::c_void) };

@@ -735,3 +735,21 @@ dialog.palette input { width: 100%; box-sizing: border-box; border: 0; border-bo
 .pal-empty { padding: 10px 14px; }
 .pal-foot { border-top: 1px solid var(--line); padding: 6px 14px; }
 .tb-menu-actions { display: flex; gap: 8px; }
+/* 사용자 요청 2026-11-09: 통신 대상 분포 패널(연결 이력·지금 열린 연결·대시보드 공용) */
+button.bar-row { width: 100%; background: transparent; border: 0; color: inherit; font: inherit; text-align: left; }
+button.bar-row:focus-visible { outline: 2px solid var(--brand-strong); outline-offset: 1px; }
+.dist-panel .where-head { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.dist-panel .where-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.dist-panel .where-bars.map-view { display: block; }
+.dist-card .kpi-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dist-card .dist-src { margin-left: auto; }
+.live-dist summary { cursor: pointer; }
+@media (max-width: 900px) { .dist-panel .where-bars { grid-template-columns: 1fr; } }
+/* 차단 기록 탭(2026-11-09) */
+.kind-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+table.grid.blocked td { vertical-align: top; }
+table.grid.blocked .c-time { white-space: nowrap; }
+table.grid.blocked .c-rule { min-width: 280px; }
+.rule-what { font-weight: 600; }
+.rule-what.k-ours { color: var(--brand-strong); }
+.rule-acts { display: flex; align-items: center; gap: 6px; margin-top: 4px; }

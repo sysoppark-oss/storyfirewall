@@ -177,6 +177,8 @@ pub struct World<'a> {
     pub if_seen: Option<Vec<(String, u64)>>,
     /// 개편안 2판 1-2②: 우리 WFP 필터 id 집합 — 차단 집계 스레드와 공유, 주기 판정마다 갱신
     pub our_filters: crate::blocked::OurFilters,
+    /// 차단 기록(최근 N건, 모든 공급자) — 차단 집계 스레드가 채우고 blocked.recent 가 읽는다
+    pub blocked_recent: crate::blocked::Recent,
     /// 갈래 C: 증분 주기 판정기(메모리 뷰·사슬 캐시). 결과는 전체 판정과 같다(judge 시험).
     /// 30번에 한 번·보관 정리 뒤·기준선 학습 뒤·"정상" 피드백 뒤·오류 뒤에는 전체를 다시 읽는다.
     /// SF_JUDGE_INCREMENTAL=0 이면 매번 전체(현장에서 되돌리기용)
@@ -188,6 +190,8 @@ pub struct Runtime {
     handle: Option<JoinHandle<()>>,
     /// 차단 집계 스레드가 참조하는 우리 필터 집합(엔진 스레드가 채움)
     pub our_filters: crate::blocked::OurFilters,
+    /// 차단 기록(집계 스레드가 채우고 엔진 스레드의 blocked.recent 가 읽음)
+    pub blocked_recent: crate::blocked::Recent,
 }
 
 pub use crate::host::{Host, NoHost};
@@ -221,6 +225,8 @@ impl Runtime {
     ) -> Runtime {
         let our_filters: crate::blocked::OurFilters = Default::default();
         let our_filters_thread = our_filters.clone();
+        let blocked_recent: crate::blocked::Recent = Default::default();
+        let blocked_recent_thread = blocked_recent.clone();
         let host: Box<dyn Host> = host.unwrap_or_else(|| Box::new(NoHost));
         let (tx, rx) = mpsc::channel::<Command>();
         let ver = server_version.to_string();
@@ -304,6 +310,7 @@ impl Runtime {
                     agent_cache: None,
                     if_seen: None,
                     our_filters: our_filters_thread.clone(),
+                    blocked_recent: blocked_recent_thread.clone(),
                 };
                 crate::first_run::ensure_table(&world.graph);
                 crate::triage::ensure_table(&world.graph);
@@ -324,6 +331,7 @@ impl Runtime {
             tx,
             handle: Some(handle),
             our_filters,
+            blocked_recent,
         }
     }
 
@@ -338,6 +346,11 @@ impl Runtime {
 /// unix 초 → Windows FILETIME (100ns, 1601-01-01 기준)
 pub fn unix_to_filetime(unix_secs: i64) -> i64 {
     (unix_secs + 11_644_473_600) * 10_000_000
+}
+
+/// Windows FILETIME → unix 초
+pub fn filetime_to_unix(ft: i64) -> i64 {
+    ft / 10_000_000 - 11_644_473_600
 }
 
 /// AI 도구 목록을 다시 계산하는 간격(초)

@@ -203,6 +203,7 @@ const TIMING_KO: Record<string, string> = {
   "connections.subscribe": "실시간 연결 알림",
   "process.detail": "프로세스 상세",
   "process.find": "프로그램 찾기",
+  "blocked.recent": "차단 기록",
   "graph.neighbors": "마인드맵",
   "retention.get": "보관 설정",
   "settings.get": "설정",

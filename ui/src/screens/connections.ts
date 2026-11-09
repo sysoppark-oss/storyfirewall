@@ -4,8 +4,8 @@ import { el, ext, clear, errorBox, button, filetimeToUnix, fmtTs, fmtHms } from 
 import { failBox, noDataBox, collectionStalled, loadingBox, type HealthLike } from "../list-state";
 import { fileName } from "../sanitize";
 import { openProcessDrawer } from "./process";
-import { bars, groupConns, matchesFilter, offMapLine, type GroupMode } from "./conn-group";
-import { worldMap } from "./worldmap";
+import { groupConns, matchesFilter, type GroupMode } from "./conn-group";
+import { distPanel } from "./dist-panel";
 
 interface Conn {
   process_id: number;
@@ -124,7 +124,7 @@ export function textMatch(c: { raddr: string; domain: string | null; image: stri
   if (!t) return true;
   return [c.raddr, c.domain ?? "", c.image].some((x) => x.toLowerCase().includes(t));
 }
-export function connections(opts: { map?: boolean; cc?: string; q?: string } = {}): HTMLElement {
+export function connections(opts: { map?: boolean; cc?: string; org?: string; q?: string } = {}): HTMLElement {
   let textQ = (opts.q ?? "").slice(0, 253);
   const root = el("section", "screen");
   root.append(el("h1", undefined, "네트워크 연결"));
@@ -185,18 +185,13 @@ export function connections(opts: { map?: boolean; cc?: string; q?: string } = {
   paintSeg();
   const expanded = new Set<string>();
   // A3: "통신 대상 분포 (오늘)" 접이식 막대 패널(기본 접힘). 막대를 누르면 표를 거른다(다시 누르면 해제)
-  let filter: { by: "country" | "org"; key: string } | null = opts.cc && /^[A-Z]{2}$/.test(opts.cc) ? { by: "country", key: opts.cc } : null;
+  let filter: { by: "country" | "org"; key: string } | null = opts.cc && /^[A-Z]{2}$/.test(opts.cc) ? { by: "country", key: opts.cc } : opts.org && /^\d{1,10}$/.test(opts.org) ? { by: "org", key: opts.org } : null;
   const where3 = el("details", "where-panel");
+  if (filter) where3.open = true;
   if (opts.map) where3.open = true;
-  const where3Body = el("div", "where-bars");
-  // 막대 / 지도 전환(사용자 요청). 지도도 같은 거르기
-  let view: "bars" | "map" = opts.map ? "map" : "bars";
-  const viewBtns = (["bars", "map"] as const).map((v) => {
-    const b = button(v === "bars" ? "막대" : "지도", () => { view = v; viewBtns.forEach((x) => x.classList.toggle("on", x === b)); void tick(); }, "btn small seg-btn");
-    if (v === view) b.classList.add("on");
-    return b;
-  });
-  where3.append(el("summary", undefined, "통신 대상 분포 (오늘)"), el("div", "where-head", el("span", "seg", ...viewBtns)), where3Body,
+  // 분포 패널(막대/지도)은 지금 열린 연결·대시보드와 함께 쓰는 dist-panel
+  const dist = distPanel({ scope: "history", initial: opts.map ? "map" : undefined, onPick: (f) => { filter = f; void tick(); } });
+  where3.append(el("summary", undefined, "통신 대상 분포 (오늘)"), dist.root,
     el("p", "callout small", "나라는 IP 주소의 위치 정보(DB-IP)로 표시합니다. 실제 서버 위치와 다를 수 있습니다. 국가 표기는 정치적 입장을 뜻하지 않습니다."));
   root.append(
     el("div", "toolbar", "묶음 ", seg, " · 범위 ", windowSel, el("span", "muted", " · 지금 열린 연결이 아니라 이 범위 안의 연결 기록(이력)입니다")),
@@ -300,49 +295,7 @@ export function connections(opts: { map?: boolean; cc?: string; q?: string } = {
       if (open1) for (const c of g.items) body.append(rowOf(c, true));
     }
   };
-  const paintBars = (items: Conn[]) => {
-    clear(where3Body);
-    where3Body.classList.toggle("map-view", view === "map");
-    if (view === "map") {
-      const { bars: bs } = bars(items, "country", 1000);
-      const sel = filter?.by === "country" ? filter.key : null;
-      where3Body.append(
-        worldMap(bs.map((b) => ({ cc: b.key, label: b.label, value: b.value, isNew: b.isNew })), sel, (cc) => {
-          filter = sel === cc ? null : { by: "country", key: cc };
-          void tick();
-        }),
-        el("div", "map-legend muted small", "연결 수 ", el("i", "lg lv0"), " 0 ", el("i", "lg lv1"), " 1 ", el("i", "lg lv2"), " 2–5 ", el("i", "lg lv3"), " 6–20 ", el("i", "lg lv4"), " 21+ · ", el("i", "lg new"), " 최초 관측"),
-      );
-      const off = offMapLine(items);
-      if (off) where3Body.append(el("div", "muted small", off));
-      return;
-    }
-    for (const [by, title] of [["country", "국가별 (연결 수)"], ["org", "ASN(망 사업자)별 (연결 수)"]] as const) {
-      const { bars: bs, rest } = bars(items, by);
-      const col = el("div", "bar-col", el("h4", undefined, title));
-      const max = Math.max(1, ...bs.map((b) => b.value));
-      for (const b of bs) {
-        const on = filter?.by === by && filter.key === b.key;
-        const row = el("div", `bar-row${b.isNew ? " is-new" : ""}${on ? " on" : ""}`);
-        const name = ext("span", b.label, "bar-name");
-        name.title = b.label;
-        const fill = el("span", "bar-fill");
-        fill.style.width = `${Math.round((b.value / max) * 100)}%`;
-        row.append(name, el("span", "bar-track", fill), el("span", "bar-val", String(b.value)));
-        if (b.isNew) row.append(el("span", "badge-new", "최초 관측"));
-        row.addEventListener("click", () => { filter = on ? null : { by, key: b.key }; void tick(); });
-        col.append(row);
-      }
-      if (rest) col.append(el("div", "muted small", `그 밖에 ${rest}곳`));
-      // D010-2: 막대 보기에도 같은 줄(국가 막대 아래)
-      if (by === "country") {
-        const off = offMapLine(items, "막대");
-        if (off) col.append(el("div", "muted small", off));
-      }
-      if (!bs.length) col.append(el("div", "muted small", "공인 주소로의 연결이 없습니다."));
-      where3Body.append(col);
-    }
-  };
+  const paintBars = (items: Conn[]) => dist.paint(items, filter);
   const rowOf = (c: Conn, child = false): HTMLElement => {
     {
       const tr = el("tr", child ? "clickable child-row" : "clickable");

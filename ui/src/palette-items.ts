@@ -22,6 +22,7 @@ export const SCREEN_ITEMS: PaletteItem[] = [
   { kind: "screen", label: "대시보드", hint: "화면", target: "dashboard", keys: "dashboard 홈" },
   { kind: "screen", label: "연결 · 지금 열린 연결", hint: "화면", target: "connections", keys: "connections live 연결" },
   { kind: "screen", label: "연결 · 연결 이력", hint: "화면", target: "connections:history", keys: "history 이력 지도 map" },
+  { kind: "screen", label: "연결 · 차단 기록", hint: "화면", target: "connections:blocked", keys: "blocked 차단 막힘 액세스 거부 access denied 방화벽" },
   { kind: "screen", label: "인시던트", hint: "화면", target: "story", keys: "story 이야기 사건" },
   { kind: "screen", label: "설치 이력", hint: "화면", target: "installs", keys: "installs 설치" },
   { kind: "screen", label: "AI 에이전트", hint: "화면", target: "agents", keys: "agents ai 에이전트 claude mcp" },

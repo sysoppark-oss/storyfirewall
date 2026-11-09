@@ -5,6 +5,9 @@
 import { rpc, mutation } from "../rpc";
 import { el, ext, button, clear } from "../ui";
 import { state } from "../state";
+import { distPanel, openAsConnLike, type DistFilter } from "./dist-panel";
+import { matchesFilter } from "./conn-group";
+import { blockedLog } from "./blocked-log";
 import { fileName } from "../sanitize";
 import { failBox, loadingBox } from "../list-state";
 import { connections, whereCell, type Where } from "./connections";
@@ -54,24 +57,30 @@ export function connectionsScreen(args: Record<string, unknown> = {}): HTMLEleme
   const panel = el("div", "u-tab-panel");
   const liveBtn = button("지금 열린 연결", () => show("live"), "u-tab");
   const histBtn = button("연결 이력", () => show("history"), "u-tab");
-  for (const b of [liveBtn, histBtn]) b.setAttribute("role", "tab");
-  tabs.append(liveBtn, histBtn);
+  // 사용자 요청(2026-11-09): 차단 목록·차단 이유 추적
+  const blkBtn = button("차단 기록", () => show("blocked"), "u-tab");
+  for (const b of [liveBtn, histBtn, blkBtn]) b.setAttribute("role", "tab");
+  tabs.append(liveBtn, histBtn, blkBtn);
   root.append(tabs, panel);
-  let live: ReturnType<typeof liveConns> | null = null;
+  let live: { root: HTMLElement; stop: () => void } | null = null;
   let lastOpenN: number | null = null;
-  const show = (which: "live" | "history") => {
+  const show = (which: "live" | "history" | "blocked") => {
     liveBtn.setAttribute("aria-selected", String(which === "live"));
     histBtn.setAttribute("aria-selected", String(which === "history"));
+    blkBtn.setAttribute("aria-selected", String(which === "blocked"));
     live?.stop();
     live = null;
     // 이력 탭(connections)은 자기 root 에서 screen-leave 를 듣고 구독을 끊는다
     for (const ch of [...panel.children]) ch.dispatchEvent(new Event("screen-leave"));
     clear(panel);
     if (which === "live") {
-      live = liveConns((n) => { lastOpenN = n; });
+      live = liveConns((n) => { lastOpenN = n; }, pickArg(args["pick"]));
+      panel.append(live.root);
+    } else if (which === "blocked") {
+      live = blockedLog();
       panel.append(live.root);
     } else {
-      const h = connections({ map: args["map"] === true, cc: typeof args["cc"] === "string" ? args["cc"] : undefined, q: typeof args["q"] === "string" ? args["q"] : undefined });
+      const h = connections({ map: args["map"] === true, cc: typeof args["cc"] === "string" ? args["cc"] : undefined, org: typeof args["org"] === "string" ? args["org"] : undefined, q: typeof args["q"] === "string" ? args["q"] : undefined });
       h.querySelector("h1")?.remove();
       // 4판 2-2: 이력 안내 옆 "지금 열린 연결 N건 ›" 바로 가기
       const quick = button(lastOpenN == null ? "지금 열린 연결 보기 ›" : `지금 열린 연결 ${lastOpenN}건 ›`, () => show("live"), "btn small link-btn");
@@ -80,12 +89,21 @@ export function connectionsScreen(args: Record<string, unknown> = {}): HTMLEleme
   };
   // 화면을 떠나면 갱신을 멈춘다
   root.addEventListener("screen-leave", () => { live?.stop(); for (const ch of [...panel.children]) ch.dispatchEvent(new Event("screen-leave")); });
-  show(args["tab"] === "history" ? "history" : "live");
+  show(args["tab"] === "history" ? "history" : args["tab"] === "blocked" ? "blocked" : "live");
   return root;
 }
 
 /// 지금 열린 연결 탭
-function liveConns(onCount: (n: number) => void): { root: HTMLElement; stop: () => void } {
+/// 대시보드 분포 카드에서 넘어온 거르기(나라 코드 두 글자 또는 AS 번호만 받는다)
+function pickArg(v: unknown): DistFilter {
+  const o = v as { by?: unknown; key?: unknown } | null;
+  if (!o || typeof o.key !== "string") return null;
+  if (o.by === "country" && /^[A-Z]{2}$/.test(o.key)) return { by: "country", key: o.key };
+  if (o.by === "org" && /^\d{1,10}$/.test(o.key)) return { by: "org", key: o.key };
+  return null;
+}
+
+function liveConns(onCount: (n: number) => void, initial: DistFilter = null): { root: HTMLElement; stop: () => void } {
   const root = el("div", "live-conns");
   const every = el("select") as HTMLSelectElement;
   for (const [v, t] of [[5, "5초"], [15, "15초"], [30, "30초"]] as const) {
@@ -103,7 +121,15 @@ function liveConns(onCount: (n: number) => void): { root: HTMLElement; stop: () 
   const status = el("span", "muted small");
   const pill = el("div", "new-pill-row");
   const box = el("div");
-  root.append(el("div", "toolbar", "갱신 ", every, " ", pause, " ", status), el("p", "muted small", "지금 소켓이 열려 있는 이 PC 의 TCP 연결입니다(이 PC 안 연결 제외). 듣는 포트는 연결 이력 탭 아래에 있습니다."), pill, box);
+  // 사용자 요청(2026-11-09): 지금 열린 연결도 통신 대상 분포(막대·지도)를 실시간으로 — 갱신 때마다 다시 그린다.
+  // 막대·나라를 누르면 아래 표를 거른다(다시 누르면 해제)
+  let filter: DistFilter = initial;
+  const dist = distPanel({ scope: "live", onPick: (f) => { filter = f; if (pending) paint(pending.now, pending.closed); else paint(shown, []); } });
+  const distBox = el("details", "where-panel live-dist");
+  distBox.open = true;
+  const distNote = el("span", "muted small");
+  distBox.append(el("summary", undefined, "통신 대상 분포 (지금 열린 연결) ", distNote), dist.root);
+  root.append(el("div", "toolbar", "갱신 ", every, " ", pause, " ", status), el("p", "muted small", "지금 소켓이 열려 있는 이 PC 의 TCP 연결입니다(이 PC 안 연결 제외). 듣는 포트는 연결 이력 탭 아래에 있습니다."), distBox, pill, box);
   let paused = false;
   let timer = 0;
   let prev: OpenConn[] = [];
@@ -118,8 +144,17 @@ function liveConns(onCount: (n: number) => void): { root: HTMLElement; stop: () 
     clear(pill);
     clear(box);
     onCount(now.length);
+    dist.paint(openAsConnLike(now), filter);
+    if (filter) {
+      const n = now.filter((c) => matchesFilter({ where: c.where ?? null } as never, filter)).length;
+      const chip = button(`거름: ${filter.by === "country" ? "나라" : "망"} ${filter.key} · ${n}건 ×`, () => { filter = null; paint(now, closed); }, "filter-chip");
+      chip.setAttribute("aria-label", "분포 거르기 해제");
+      box.append(el("p", "muted small", chip));
+      now = now.filter((c) => matchesFilter({ where: c.where ?? null } as never, filter));
+      closed = closed.filter((c) => matchesFilter({ where: c.where ?? null } as never, filter));
+    }
     if (!now.length && !closed.length) {
-      box.append(el("p", "muted", "지금 열린 외부 연결이 없습니다."));
+      box.append(el("p", "muted", filter ? "거른 조건에 맞는 열린 연결이 없습니다." : "지금 열린 외부 연결이 없습니다."));
       return;
     }
     const table = el("table", "grid conn live");
@@ -192,8 +227,9 @@ function liveConns(onCount: (n: number) => void): { root: HTMLElement; stop: () 
     prev = now;
     status.textContent = `${now.length}건 · 마지막 갱신 ${new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
     if (!force && shown.length && hovering()) {
-      // 2판 2-10: 보고 있는 동안 행을 움직이지 않는다
+      // 2판 2-10: 보고 있는 동안 행을 움직이지 않는다(분포 막대·지도는 계속 실시간)
       pending = { now, closed };
+      dist.paint(openAsConnLike(now), filter);
       const added = now.filter((c) => !shown.some((s) => connKey(s) === connKey(c))).length;
       clear(pill);
       pill.append(button(`변경 ${added + closed.length}건 — 보기`, () => pending && paint(pending.now, pending.closed), "new-pill"));

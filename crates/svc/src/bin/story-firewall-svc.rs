@@ -322,7 +322,15 @@ mod real {
             let ours = rt.our_filters.clone();
             let db = dir.join("graph.db").to_string_lossy().into_owned();
             let log2 = log.clone();
-            std::thread::spawn(move || svc::blocked::run(rx, lost, ours, db, move |s| log2.w(s)));
+            let recent = rt.blocked_recent.clone();
+            // 필터 번호 → 이름·공급자: 집계 스레드 안에서 WFP 세션을 열어 쓴다(열지 못하면 정보 없이 기록만)
+            let resolver: svc::blocked::ResolverFactory = Box::new(|| {
+                let eng = policy::wfp::Engine::open().ok();
+                Box::new(move |id| eng.as_ref().and_then(|e| e.filter_info(id)))
+            });
+            std::thread::spawn(move || {
+                svc::blocked::run(rx, lost, ours, recent, resolver, db, move |s| log2.w(s))
+            });
             let log3 = log.clone();
             std::thread::spawn(move || {
                 // 구독용 엔진 세션은 이 스레드가 평생 들고 있는다(끊기면 1분 뒤 다시 연다)
@@ -330,14 +338,44 @@ mod real {
                     match policy::wfp::Engine::open() {
                         Ok(mut eng) => {
                             let s = sink.clone();
-                            match eng.subscribe_drops(Box::new(move |d| {
-                                s.push(svc::blocked::Drop {
+                            let conv =
+                                |d: policy::wfp::DropEvent, backfill: bool| svc::blocked::Drop {
                                     ts_ft: d.ts,
                                     filter_id: d.filter_id,
-                                })
-                            })) {
+                                    remote: d
+                                        .remote_v4
+                                        .map(|a| a.to_string())
+                                        .or_else(|| d.remote_v6.map(|a| a.to_string()))
+                                        .unwrap_or_default(),
+                                    rport: d.remote_port,
+                                    lport: d.local_port,
+                                    proto: d.protocol,
+                                    dir: d.direction,
+                                    loopback: d.loopback,
+                                    app: d.app_id,
+                                    backfill,
+                                };
+                            match eng.subscribe_drops(Box::new(move |d| s.push(conv(d, false)))) {
                                 Ok(()) => {
                                     log3.w("blocked: WFP 차단 사건 구독 시작");
+                                    // 차단 기록: 서비스가 꺼져 있던 동안 것도 보이게 BFE 기록의 최근 하루(최대 200건)를 되읽는다(시간대 집계에는 넣지 않음)
+                                    let since = svc::runtime::unix_to_filetime(
+                                        std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .map(|d| d.as_secs() as i64)
+                                            .unwrap_or(0)
+                                            - 86_400,
+                                    );
+                                    match eng.drops_since(since) {
+                                        Ok(xs) => {
+                                            let n = xs.len();
+                                            for d in xs {
+                                                sink.push(conv(d, true));
+                                            }
+                                            log3.w(format!("blocked: backfill {n}"));
+                                        }
+                                        Err(e) => log3.w(format!("blocked: backfill failed {e}")),
+                                    }
                                     loop {
                                         std::thread::sleep(Duration::from_secs(3600));
                                     }

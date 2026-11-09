@@ -1750,6 +1750,11 @@ fn handle(
                 .collect();
             j(serde_json::json!({ "items": items }))
         }
+        Method::BlockedRecent => {
+            let v: api::methods::BlockedRecentParams = serde_json::from_value(p)
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            j(blocked_recent_json(world, v.limit as usize, &v.q))
+        }
         Method::ProcessFind => {
             let v: api::methods::ProcessFindParams = serde_json::from_value(p)
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
@@ -2226,6 +2231,94 @@ fn find_open_conn(
 }
 
 /// TCP 상태 숫자 → 화면 말(UI 명세 4판 3-4: 연결됨 · 연결 중 · 닫는 중)
+/// 차단 규칙 공급자 → 종류. Windows 방화벽 계열 공급자 GUID 는 windows-sys(FWPM_PROVIDER_MPSSVC_*)와 같다
+pub fn rule_kind(info: Option<&policy::FilterInfo>, ours_now: bool) -> &'static str {
+    let Some(i) = info else {
+        return if ours_now { "ours" } else { "unknown" };
+    };
+    if i.ours || ours_now {
+        return "ours";
+    }
+    match i.provider_key.as_str() {
+        // 방화벽 규칙(WF)·서비스 강화(WSH)·앱 격리(AppContainer 루프백 등)·EDP·테넌트 제한
+        "decc16ca-3f33-4346-be1e-8fb4ae0f3d62" => "windows_firewall",
+        "4b153735-1049-4480-aab4-d1b9bdc03710" => "windows_service_hardening",
+        "3cc2631f-2d5d-43a0-b174-614837d863a1" => "windows_app_isolation",
+        "a90296f7-46b8-4457-8f84-b05e05d3c622" | "d0718ff9-44da-4f50-9dc2-c963a4247613" => {
+            "windows_other"
+        }
+        "" => "system",
+        _ => "other",
+    }
+}
+
+/// blocked.recent: 최근 차단 기록(새것부터) + 막은 규칙 + 종류별 수. 읽기만(메모리 기록 + 엔진 DB 조회)
+pub fn blocked_recent_json(world: &World, limit: usize, q: &str) -> serde_json::Value {
+    let q = q.trim().to_lowercase();
+    let g = match world.blocked_recent.lock() {
+        Ok(g) => g,
+        Err(_) => return serde_json::json!({ "items": [], "kinds": {}, "total": 0 }),
+    };
+    let ours_now: std::collections::HashSet<u64> = world
+        .our_filters
+        .read()
+        .map(|s| s.clone())
+        .unwrap_or_default();
+    let mut kinds: std::collections::BTreeMap<&'static str, u64> = Default::default();
+    let mut items = Vec::new();
+    let total = g.items.len();
+    let oldest = g.items.front().map(|r| r.ts);
+    for r in g.items.iter().rev() {
+        let info = g.filters.get(&r.filter_id).and_then(|x| x.as_ref());
+        let kind = rule_kind(info, ours_now.contains(&r.filter_id));
+        *kinds.entry(kind).or_default() += 1;
+        if items.len() >= limit {
+            continue;
+        }
+        let pol = if kind == "ours" {
+            world
+                .engine
+                .store
+                .policy_for_filter(r.filter_id)
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        let name = info.map(|i| i.name.as_str()).unwrap_or("");
+        if !q.is_empty() {
+            let hay = format!(
+                "{} {} {} {} {} {}",
+                r.app,
+                r.remote,
+                r.rport,
+                r.lport,
+                name,
+                pol.as_ref().map(|p| p.1.as_str()).unwrap_or("")
+            )
+            .to_lowercase();
+            if !hay.contains(&q) {
+                continue;
+            }
+        }
+        items.push(serde_json::json!({
+            "ts": r.ts, "app": r.app, "dir": r.dir, "proto": r.proto, "remote": r.remote, "rport": r.rport, "lport": r.lport,
+            "loopback": r.loopback, "filter_id": r.filter_id,
+            "rule": {
+                "kind": kind,
+                "name": name,
+                "description": info.map(|i| i.description.as_str()).unwrap_or(""),
+                "provider": info.map(|i| i.provider_name.as_str()).unwrap_or(""),
+                "gone": info.is_none(),
+                "policy_id": pol.as_ref().map(|p| p.0),
+                "policy_name": pol.as_ref().map(|p| p.1.clone()),
+                "policy_state": pol.as_ref().map(|p| p.2.clone()),
+            }
+        }));
+    }
+    serde_json::json!({ "items": items, "kinds": kinds, "total": total, "oldest": oldest, "dup_skipped": g.dup_skipped })
+}
+
 pub fn tcp_state_word(st: u32) -> &'static str {
     match st {
         5 => "연결됨",

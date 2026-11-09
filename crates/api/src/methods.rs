@@ -28,6 +28,8 @@ pub enum Method {
     ProcessDetail,
     /// 프로그램 이름으로 프로세스 찾기(UI 명세 4판 3-9 명령 팔레트). 조회(사용자), 읽기만
     ProcessFind,
+    /// 차단 기록(최근 차단된 연결과 막은 규칙 — 모든 공급자). 조회(사용자), 읽기만
+    BlockedRecent,
     StoryToday,
     StoryExplain,
     /// 자동 조사(사용자 "지금과 같은 것을 할 수 있는 분석이 프로그램에 필요함" 2026-11-07): 사건 주인공의 실물 확인(PID·생성 시각·경로·명령줄),
@@ -101,6 +103,7 @@ impl Method {
         ("graph.timeline", Method::GraphTimeline),
         ("process.detail", Method::ProcessDetail),
         ("process.find", Method::ProcessFind),
+        ("blocked.recent", Method::BlockedRecent),
         ("story.today", Method::StoryToday),
         ("story.explain", Method::StoryExplain),
         ("story.investigate", Method::StoryInvestigate),
@@ -351,6 +354,19 @@ pub struct TriageLogParams {
 impl TriageLogParams {
     fn default_limit() -> usize {
         50
+    }
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BlockedRecentParams {
+    #[serde(default = "BlockedRecentParams::default_limit")]
+    pub limit: u32,
+    /// 프로그램·주소·포트·규칙 이름 글자 거르기(대소문자 무시)
+    #[serde(default)]
+    pub q: String,
+}
+impl BlockedRecentParams {
+    fn default_limit() -> u32 {
+        300
     }
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -606,6 +622,12 @@ pub fn validate_params(
         Method::StoryInvestigate => {
             let _: InvestigateParams = serde_json::from_value(p.clone())
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+        }
+        Method::BlockedRecent => {
+            let v: BlockedRecentParams = serde_json::from_value(p.clone())
+                .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
+            check((1..=1000).contains(&v.limit), "limit 은 1~1000")?;
+            check(v.q.chars().count() <= 128, "q 는 128자 이하")?;
         }
         Method::ProcessFind => {
             let v: ProcessFindParams = serde_json::from_value(p.clone())
