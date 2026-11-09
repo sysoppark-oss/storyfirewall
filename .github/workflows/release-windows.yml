@@ -59,6 +59,13 @@ jobs:
           Copy-Item target\release\svc-poc.exe target\release\svc-poc-signed.exe
           & ui\scripts\sign-release.ps1 -Path (Resolve-Path target\release\svc-poc-signed.exe).Path
 
+      # NSIS tools that tauri downloads at bundle time (%LOCALAPPDATA%\tauri) - cached like devbuild (GitHub 504s)
+      - name: Cache Tauri bundler tools (NSIS)
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/tauri
+          key: tauri-tools-nsis-3.13-utils-0.5.3
+
       - name: Build NSIS installer (UI and sidecar signed via signCommand)
         working-directory: ui
         shell: pwsh
@@ -80,8 +87,18 @@ jobs:
           $c.bundle | Add-Member -NotePropertyName createUpdaterArtifacts -NotePropertyValue $true -Force
           $c | ConvertTo-Json -Depth 10 | Set-Content src-tauri\tauri.release.conf.json -Encoding utf8
           npm ci
-          npx tauri build --config src-tauri/tauri.release.conf.json 2>&1 | Tee-Object -FilePath ../build-installer.log
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # v0.1.5 run #14: nsis_tauri_utils.dll download from GitHub releases returned 504 (same as devbuild 2026-11-08).
+          # retry the bundle (compile output is kept, so a retry is short) up to 3 times, 60 s apart, only for download errors
+          $ok = $false
+          for ($i = 1; $i -le 3 -and -not $ok; $i++) {
+            npx tauri build --config src-tauri/tauri.release.conf.json 2>&1 | Tee-Object -FilePath ../build-installer.log
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            $retry = Select-String -Path ../build-installer.log -Pattern 'http status: 5\d\d|failed to download|timed out' -Quiet
+            if (-not $retry) { break }
+            "bundle attempt $i failed on download - retrying in 60 s"
+            Start-Sleep -Seconds 60
+          }
+          if (-not $ok) { exit 1 }
 
       - name: Install on the runner and check authentication
         shell: pwsh
