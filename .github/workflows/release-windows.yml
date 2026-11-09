@@ -128,7 +128,14 @@ jobs:
           $un = & $uexe client 2>&1 | Out-String
           Log $un
           Check (($un -match 'closed by server|connect failed: .*0xe9') -and ($un -notmatch '"result"')) "unsigned client rejected"
-          Remove-Item $inside, $oexe, $uexe -Force
+          # v0.1.5 run #13: the just-exited test client was still locked (scanner/handle close race) -> retry, then give up quietly
+          foreach ($f in @($inside, $oexe, $uexe)) {
+            for ($i = 0; $i -lt 20 -and (Test-Path $f); $i++) {
+              Remove-Item $f -Force -ErrorAction SilentlyContinue
+              if (Test-Path $f) { Start-Sleep -Milliseconds 500 }
+            }
+            if (Test-Path $f) { Log "warn: could not remove $f (uninstall will retry)" }
+          }
           $p = Start-Process -FilePath (Join-Path $dir "uninstall.exe") -ArgumentList "/S" -Wait -PassThru
           Log "uninstall exit=$($p.ExitCode)"
           Check (-not (Get-Service StoryFirewall -ErrorAction SilentlyContinue)) "service removed by uninstall"
