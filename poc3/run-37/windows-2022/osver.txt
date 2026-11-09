@@ -1,2 +1,0 @@
-Microsoft Windows NT 10.0.20348.0
-21H2 build 20348
