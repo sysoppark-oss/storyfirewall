@@ -1,10 +1,10 @@
-setup=D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\bundle\nsis\Story Firewall_0.1.4_x64-setup.exe
+setup=D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\bundle\nsis\Story Firewall_0.1.6_x64-setup.exe
 install exit=0
 PASS  ui exe in Program Files
 PASS  svc exe in Program Files
 PASS  geo data installed
 PASS  service running after install (Running)
-status: state=4 published=\\.\pipe\story-firewall-00c3ae00ab6140ceaedcee16c612b8a8 wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+status: state=4 published=\\.\pipe\story-firewall-c46f448809534c759a14a089c70a41e7 wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
 
 PASS  pipe name published
 PASS  data dir owner trusted
@@ -15,17 +15,17 @@ PASS  service path in Program Files ("C:\Program Files\Story Firewall\story-fire
 install: updated existing service ("C:\Program Files\Story Firewall\story-firewall-svc.exe" run --test-signer "StoryFirewall Test")
 stop: ok state=Some(1)
 start: ok state=Some(4)
-apply: hello {"id":1,"jsonrpc":"2.0","result":{"api":[1,0],"engine_busy_ms":0,"server_version":"0.1.4"}}
+apply: hello {"id":1,"jsonrpc":"2.0","result":{"api":[1,0],"engine_busy_ms":0,"server_version":"0.1.6"}}
 apply: policy_id=1 version=1 filters=2 confirm=ok
 
 PASS  policy applied and confirmed before upgrade
 PASS  WFP filters present before upgrade (2)
 reinstall exit=0
-during upgrade: samples=40 min=2
+during upgrade: samples=35 min=2
 PASS  filters never dropped during upgrade (min=2, before=2)
 PASS  service running after reinstall
-service pid before=6692 after=4736 (restarted = files replaced)
-status: state=4 published=\\.\pipe\story-firewall-ce7ae19474164f4ebd9a2189693b6c8d wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+service pid before=4348 after=4364 (restarted = files replaced)
+status: state=4 published=\\.\pipe\story-firewall-bbbaa8348cb148599c6bca1d8a2957d4 wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
 
 PASS  same filter count after upgrade + restart reconcile
 uninstall exit=0
