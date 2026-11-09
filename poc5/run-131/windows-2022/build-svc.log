@@ -1,0 +1,22 @@
+   Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
+   Compiling policy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\policy)
+   Compiling ferrisetw v1.2.0 (D:\a\storyfirewall\storyfirewall\third_party\ferrisetw)
+   Compiling geo v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\geo)
+   Compiling graph v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\graph)
+   Compiling dsl v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\dsl)
+   Compiling api v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\api)
+   Compiling judge v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\judge)
+   Compiling story v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\story)
+   Compiling collector v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\collector)
+   Compiling engine v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\engine)
+   Compiling svc v0.1.6 (D:\a\storyfirewall\storyfirewall\crates\svc)
+warning: unused variable: `ours_now`
+    --> crates\svc\src\dispatch.rs:2267:9
+     |
+2267 |     let ours_now: std::collections::HashSet<u64> = world
+     |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_ours_now`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `svc` (lib) generated 1 warning (run `cargo fix --lib -p svc` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 57.28s
