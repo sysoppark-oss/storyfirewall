@@ -2,7 +2,7 @@
    Compiling ferrisetw v1.2.0 (D:\a\storyfirewall\storyfirewall\third_party\ferrisetw)
    Compiling graph v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\graph)
    Compiling collector v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\collector)
-    Finished `release` profile [optimized] target(s) in 26.26s
+    Finished `release` profile [optimized] target(s) in 28.49s
    Compiling graph v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\graph)
    Compiling policy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\policy)
    Compiling geo v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\geo)
@@ -12,5 +12,5 @@
    Compiling engine v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\engine)
    Compiling story v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\story)
    Compiling collector v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\collector)
-   Compiling svc v0.1.4 (D:\a\storyfirewall\storyfirewall\crates\svc)
-    Finished `release` profile [optimized] target(s) in 31.11s
+   Compiling svc v0.1.6 (D:\a\storyfirewall\storyfirewall\crates\svc)
+    Finished `release` profile [optimized] target(s) in 33.48s
