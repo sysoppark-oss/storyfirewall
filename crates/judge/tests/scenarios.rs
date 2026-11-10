@@ -492,6 +492,46 @@ fn svchost_started_after_collection_gets_services_from_scm_poll() {
     );
 }
 
+/// diag-146(노트북): 트리거로 켜졌다 몇 초 만에 끝난 분리 svchost(-s wlidsvc 등)는 SCM 폴링이 못 봐 서비스 목록이 비고,
+/// Microsoft 인증 주소 접속이 "고립 svchost" 높음 12건이 됐다. 명령줄의 -s 서비스 이름(ServiceArg)으로 알아본다.
+/// 단, 부모가 services.exe 가 아니면(명령줄을 꾸밀 수 있음) 믿지 않는다
+#[test]
+fn short_lived_split_svchost_known_by_service_arg_only_from_services_exe() {
+    let run_case = |parent: u32, image: &str, service: &str| -> bool {
+        let store = Store::open_in_memory().unwrap();
+        let mut ing = Ingester::new(&store);
+        ing.ingest_all(&[
+            snap(T0, 4, 0, "System", &[]),
+            snap(T0, 700, 4, r"C:\Windows\System32\services.exe", &[]),
+            snap(T0, 1000, 4, r"C:\Windows\explorer.exe", &[]),
+            sig(T0, SVCHOST, Some("Microsoft Windows"), "valid", true),
+            start(T0 + 10 * SEC, 900, parent, image),
+            ev(
+                T0 + 10 * SEC,
+                "etw:process",
+                EventKind::ServiceArg {
+                    pid: 900,
+                    create_time: T0 + 10 * SEC,
+                    service: service.into(),
+                },
+            ),
+            conn(T0 + 12 * SEC, 900, "20.190.144.163", 443),
+        ])
+        .unwrap();
+        let bl = Baseline::open(&store, T0 + DAY).unwrap();
+        judge::run(&store, 0, i64::MAX, &bl)
+            .unwrap()
+            .iter()
+            .any(|s| s.root_kind == RootKind::IsolatedSvchost)
+    };
+    // 서비스 관리자가 띄운 System32 svchost, 알려진 서비스 → 고립 아님
+    assert!(!run_case(700, SVCHOST, "wlidsvc"));
+    // 알려지지 않은 서비스 이름 → 그대로 고립
+    assert!(run_case(700, SVCHOST, "EvilSvc"));
+    // 부모가 services.exe 가 아님(명령줄을 꾸밀 수 있음) → 믿지 않음
+    assert!(run_case(1000, SVCHOST, "wlidsvc"));
+}
+
 /// 구조 개선 B: 조회용 판정(assess)은 run 과 같은 결과를 내되 edges.chapter 를 쓰지 않는다
 #[test]
 fn assess_matches_run_without_writing() {

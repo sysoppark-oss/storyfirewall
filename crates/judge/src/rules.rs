@@ -700,9 +700,23 @@ pub fn root_kind_of(v: &View, n: &Node) -> Option<RootKind> {
             .attr("services")
             .and_then(|s| serde_json::from_value(s).ok())
             .unwrap_or_default();
-        let known = services
-            .iter()
-            .any(|s| KNOWN_MS_SERVICES.contains(&s.to_ascii_lowercase().as_str()));
+        let is_known = |s: &str| KNOWN_MS_SERVICES.contains(&s.to_ascii_lowercase().as_str());
+        // diag-146: 짧게 살다 끝나 SCM 폴링이 못 본 분리 svchost 는 명령줄의 -s 서비스 이름(service_arg)으로 본다.
+        // 명령줄은 부모가 꾸밀 수 있어, System32 svchost 이고 부모가 services.exe(서비스 관리자가 띄운 것)일 때만 믿는다
+        let known = services.iter().any(|s| is_known(s))
+            || (services.is_empty()
+                && n.attr("service_arg")
+                    .and_then(|x| x.as_str().map(is_known))
+                    .unwrap_or(false)
+                && n.attr("image")
+                    .and_then(|x| x.as_str().map(graph::svchost::is_system_svchost))
+                    .unwrap_or(false)
+                && v.ins(n.id).any(|e| {
+                    e.rel == "spawned" && {
+                        let p = v.node(e.src);
+                        p.kind == "process" && proc_image_name(p) == "services.exe"
+                    }
+                }));
         if !known {
             // 원격지 판단은 원격지마다 한 번(속성 JSON 풀기) — svchost 는 접속 선이 수만이라 선마다 풀면 수십 ms(갈래 C perf_scale)
             let mut memo: HashMap<i64, bool> = HashMap::new();

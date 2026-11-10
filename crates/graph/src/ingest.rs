@@ -347,6 +347,20 @@ impl<'a> Ingester<'a> {
                 true,
                 services,
             ),
+            EventKind::ServiceArg {
+                pid,
+                create_time,
+                service,
+            } => {
+                if let Some(id) = self
+                    .store
+                    .find_node(NodeKind::Process, &format!("{pid}@{create_time}"))?
+                {
+                    self.store
+                        .merge_node_attrs(id, &serde_json::json!({ "service_arg": service }))?;
+                }
+                Ok(0)
+            }
             EventKind::ProcessSession {
                 pid,
                 create_time,

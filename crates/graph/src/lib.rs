@@ -23,6 +23,7 @@ pub mod remote;
 pub mod retention;
 pub mod schema;
 pub mod store;
+pub mod svchost;
 pub mod textlog;
 pub mod vault;
 pub mod views;

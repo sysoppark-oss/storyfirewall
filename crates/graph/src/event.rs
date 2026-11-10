@@ -88,6 +88,14 @@ pub enum EventKind {
         create_time: i64,
         session: u32,
     },
+    /// svchost 명령줄의 서비스 이름(`-s <이름>`) — 원문 명령줄은 보내지 않는다(graph::svchost).
+    /// 짧게 살다 끝나 SCM 폴링이 못 본 분리 svchost 의 서비스를 알려 준다(diag-146). 노드 `pid@create_time` 의 속성 `service_arg`.
+    /// SCM 매핑(services)과 달리 명령줄은 부모가 꾸밀 수 있어, 판정은 부모가 services.exe 일 때만 믿는다
+    ServiceArg {
+        pid: u32,
+        create_time: i64,
+        service: String,
+    },
     /// 프로세스 명령줄 (10판 5-9). Kernel-Process 시작 이벤트에는 명령줄이 없어(poc3 스키마 확인) 수집기가 시작 직후
     /// 그 프로세스에서 읽는다. 명령줄에는 암호·토큰이 들어갈 수 있어 **복구 수단을 다루는 도구 몇 개만** 읽는다(수집기 T1490_TOOLS).
     /// ProcessStart 바로 뒤에 따로 보낸다(기존 이벤트 형식을 바꾸지 않으려고)

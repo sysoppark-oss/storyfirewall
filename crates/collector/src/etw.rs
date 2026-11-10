@@ -146,7 +146,12 @@ pub fn process_provider(ctx: Arc<Ctx>) -> Provider {
                     // 검수 122-2(UI 명세 4판 3-6): 설치 프로그램도 명령줄을 읽되 조용한 설치 스위치만 남긴다(graph::install::silent_flags_only)
                     let installer =
                         ident.is_none() && !browser && graph::install::is_installer_image(&image);
-                    let cmd = if ident.is_some() || browser || installer {
+                    // diag-146: System32 svchost 도 명령줄을 읽되 서비스 이름(-s)만 남긴다(graph::svchost::service_arg)
+                    let svchost = ident.is_none()
+                        && !browser
+                        && !installer
+                        && graph::svchost::is_system_svchost(&image);
+                    let cmd = if ident.is_some() || browser || installer || svchost {
                         let mut rv = ctx.cmd_rv.lock().unwrap();
                         match rv.on_start(pid, ts, create_time, tool.clone()) {
                             Some(c) => {
@@ -213,6 +218,36 @@ pub fn process_provider(ctx: Arc<Ctx>) -> Provider {
                             create_time,
                         },
                     ));
+                    // svchost: 서비스 이름만 ServiceArg 로. 명령줄 원문(ProcessCommand)은 보내지 않는다
+                    let cmd = if svchost {
+                        match cmd {
+                            Some(Ok(c)) => {
+                                match graph::svchost::service_arg(&c) {
+                                    Some(service) => {
+                                        ctx.count("svchost_service_arg");
+                                        ctx.emit(Event::new(
+                                            ts,
+                                            "etw:process",
+                                            EventKind::ServiceArg {
+                                                pid,
+                                                create_time: create_time.unwrap_or(ts),
+                                                service,
+                                            },
+                                        ));
+                                    }
+                                    None => ctx.count("svchost_shared_host"),
+                                }
+                                None
+                            }
+                            Some(Err(why)) => {
+                                ctx.count(why);
+                                None
+                            }
+                            None => None,
+                        }
+                    } else {
+                        cmd
+                    };
                     if let Some(r) = cmd {
                         let r = match r {
                             Ok(c) if browser => match graph::vault::debug_flags_only(&c) {
@@ -306,6 +341,26 @@ pub fn kernel_process_provider(ctx: Arc<Ctx>) -> Provider {
             let ts = ctx.ts(record.raw_timestamp());
             let met = ctx.cmd_rv.lock().unwrap().on_cmd(pid, ts, cmdline.clone());
             if let Some((create_time, tool)) = met {
+                // diag-146: svchost 는 서비스 이름(-s)만 ServiceArg 로 — 원문은 보내지 않는다
+                // (만남 장소에 시작을 남긴 것은 Kernel-Process 쪽에서 System32 경로를 확인한 svchost 뿐이다)
+                if tool.is_none() && name.eq_ignore_ascii_case("svchost.exe") {
+                    match graph::svchost::service_arg(&cmdline) {
+                        Some(service) => {
+                            ctx.count("svchost_service_arg");
+                            ctx.emit(Event::new(
+                                ts,
+                                "etw:kernel-process",
+                                EventKind::ServiceArg {
+                                    pid,
+                                    create_time: create_time.unwrap_or(ts),
+                                    service,
+                                },
+                            ));
+                        }
+                        None => ctx.count("svchost_shared_host"),
+                    }
+                    return;
+                }
                 // 17판 23-2 ②: 만남 장소에 시작을 남기는 것은 복구 도구와 브라우저 본체뿐이다. 복구 도구(이름 또는 원래 이름)가 아니면
                 // 브라우저로 보고 디버깅 스위치만 남긴다 — 그 밖의 명령줄이 원문 그대로 나가는 일이 없게(안전한 쪽)
                 let cmdline = if tool.is_none() && !crate::cmdline::wanted(&name) {
