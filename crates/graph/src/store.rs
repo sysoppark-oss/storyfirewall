@@ -5,6 +5,30 @@ use crate::{Edge, GraphError, Node, NodeKind, Rel, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 
+/// 차단 기록 한 줄(DB 보관용). svc 의 BlockRec 과 같은 뜻
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockedRow {
+    pub ts: i64,
+    pub filter_id: u64,
+    pub app: String,
+    pub remote: String,
+    pub rport: u16,
+    pub lport: u16,
+    pub proto: u8,
+    pub dir: String,
+    pub loopback: bool,
+    pub ours_at: bool,
+}
+/// 차단한 필터의 이름·공급자(처음 본 때)
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BlockedFilter {
+    pub name: String,
+    pub description: String,
+    pub provider_name: String,
+    pub provider_key: String,
+    pub ours: bool,
+}
+
 /// 원시 기록 바이트 합(용량 상한 순환용). 합 행이 있을 때만 트리거가 더하고 뺀다
 const RAW_SIZE_DDL: &str = "
 CREATE TABLE IF NOT EXISTS raw_size (k INTEGER PRIMARY KEY CHECK (k = 1), bytes INTEGER NOT NULL);
@@ -464,6 +488,110 @@ impl Store {
         )?;
         Ok(())
     }
+    /// 차단 기록 줄 넣기(집계 스레드가 10초마다 묶어서). 트랜잭션 하나
+    pub fn blocked_log_insert(&self, rows: &[BlockedRow]) -> Result<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let tx = self.begin_write()?;
+        {
+            let mut st = tx.prepare_cached(
+                "INSERT INTO blocked_log(ts, filter_id, app, remote, rport, lport, proto, dir, loopback, ours_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            )?;
+            for r in rows {
+                st.execute(params![
+                    r.ts,
+                    r.filter_id as i64,
+                    r.app,
+                    r.remote,
+                    r.rport,
+                    r.lport,
+                    r.proto,
+                    r.dir,
+                    r.loopback,
+                    r.ours_at
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+    /// 필터 이름·공급자(처음 볼 때 한 번). 이미 있으면 그대로 둔다 — 처음 본 때의 이름이 증거다
+    pub fn blocked_filter_put(
+        &self,
+        filter_id: u64,
+        f: &BlockedFilter,
+        seen_ts: i64,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO blocked_filters(filter_id, name, description, provider_name, provider_key, ours, seen_ts)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![filter_id as i64, f.name, f.description, f.provider_name, f.provider_key, f.ours, seen_ts],
+        )?;
+        Ok(())
+    }
+    /// 보관 정리: min_ts 보다 오래된 것, 그리고 max_rows 를 넘는 오래된 것. 남은 줄이 가리키지 않는 필터 정보도 지운다. 지운 줄 수
+    pub fn blocked_log_prune(&self, min_ts: i64, max_rows: i64) -> Result<usize> {
+        let mut n = self
+            .conn
+            .execute("DELETE FROM blocked_log WHERE ts < ?1", params![min_ts])?;
+        n += self.conn.execute(
+            "DELETE FROM blocked_log WHERE id <= (SELECT id FROM blocked_log ORDER BY id DESC LIMIT 1 OFFSET ?1)",
+            params![max_rows],
+        )?;
+        if n > 0 {
+            self.conn.execute(
+                "DELETE FROM blocked_filters WHERE filter_id NOT IN (SELECT DISTINCT filter_id FROM blocked_log)",
+                [],
+            )?;
+        }
+        Ok(n)
+    }
+    /// 시작 때 되읽기: since_ts 이후 줄(시각 순)과 필터 정보 전부
+    pub fn blocked_log_load(
+        &self,
+        since_ts: i64,
+    ) -> Result<(Vec<BlockedRow>, Vec<(u64, BlockedFilter)>)> {
+        let mut st = self.conn.prepare(
+            "SELECT ts, filter_id, app, remote, rport, lport, proto, dir, loopback, ours_at FROM blocked_log WHERE ts >= ?1 ORDER BY ts, id",
+        )?;
+        let rows = st
+            .query_map(params![since_ts], |r| {
+                Ok(BlockedRow {
+                    ts: r.get(0)?,
+                    filter_id: r.get::<_, i64>(1)? as u64,
+                    app: r.get(2)?,
+                    remote: r.get(3)?,
+                    rport: r.get(4)?,
+                    lport: r.get(5)?,
+                    proto: r.get(6)?,
+                    dir: r.get(7)?,
+                    loopback: r.get(8)?,
+                    ours_at: r.get(9)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut st = self.conn.prepare(
+            "SELECT filter_id, name, description, provider_name, provider_key, ours FROM blocked_filters",
+        )?;
+        let fs = st
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)? as u64,
+                    BlockedFilter {
+                        name: r.get(1)?,
+                        description: r.get(2)?,
+                        provider_name: r.get(3)?,
+                        provider_key: r.get(4)?,
+                        ours: r.get(5)?,
+                    },
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok((rows, fs))
+    }
+
     /// 차단 통신 수 더하기(hour 는 unix 초 시 단위, 집계 스레드가 10초마다 부른다)
     pub fn add_blocked_hour(&self, hour_unix: i64, blocked: u64, lost: u64) -> Result<()> {
         self.conn.execute(

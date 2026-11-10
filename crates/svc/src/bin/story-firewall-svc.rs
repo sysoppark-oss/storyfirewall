@@ -655,6 +655,41 @@ mod real {
         if let Ok(Some(v)) = store.get_meta("retention_last") {
             println!("diag: retention_last {v}");
         }
+        // 2026-11-10: 높음·심각 사건의 근거 항목(무엇 때문에 그 등급인지) — 실행 파일 이름과 근거 글자만, 경로·주소 없음.
+        // 판정은 쓰지 않는 assess(읽기만)
+        {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            match judge::Baseline::open(&store, now)
+                .and_then(|b| judge::assess(&store, 0, i64::MAX, &b))
+            {
+                Ok(stories) => {
+                    for s in stories
+                        .iter()
+                        .filter(|s| s.level.rank() >= judge::Level::Suspicious.rank())
+                        .take(20)
+                    {
+                        let name = s.root_label.rsplit(['\\', '/']).next().unwrap_or("");
+                        let why: Vec<String> = s
+                            .reasons
+                            .iter()
+                            .map(|r| format!("{}({:+})", r.what, r.points))
+                            .collect();
+                        println!(
+                            "diag: story level={} ch={:?} score={} root={} reasons={}",
+                            format!("{:?}", s.level),
+                            s.chapter,
+                            s.score,
+                            name,
+                            why.join(" | ")
+                        );
+                    }
+                }
+                Err(e) => println!("diag: story failed {e}"),
+            }
+        }
         let ms = |name: &str, f: &mut dyn FnMut() -> String| {
             let t = std::time::Instant::now();
             let r = f();

@@ -231,7 +231,7 @@ export function blockedLog(): { root: HTMLElement; stop: () => void } {
     }
     table.append(el("thead", undefined, head), body);
     box.append(table);
-    if (oldest) box.append(el("p", "muted small", `기록 범위: ${new Date(oldest * 1000).toLocaleString("ko-KR")} 부터 · 최근 3,000건까지 메모리에 둡니다(서비스를 다시 켜면 Windows 기록에서 최근 하루를 다시 읽습니다).`));
+    if (oldest) box.append(el("p", "muted small", `화면 범위: ${new Date(oldest * 1000).toLocaleString("ko-KR")} 부터(최근 3,000건) · 기록은 PC 안 DB 에 7일(10만 줄까지) 보관해 서비스를 다시 켜거나 업데이트해도 이어집니다.`));
   };
 
   const refresh = async () => {

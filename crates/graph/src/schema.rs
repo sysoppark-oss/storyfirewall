@@ -96,6 +96,31 @@ CREATE INDEX IF NOT EXISTS ix_raw_ts ON raw_events(ts);
 -- install-132 실측(보관 정리 용량 단계 수 분): foreign_keys=ON 이라 raw_events 한 줄을 지울 때마다 SQLite 가 자식 표
 -- edges.evidence_id·edge_evidence.raw_id 에서 참조를 찾는다. 색인이 없으면 지우는 줄마다 표 전체를 훑는다(SQLite 외래 키 문서 3장 "child key 색인")
 CREATE INDEX IF NOT EXISTS ix_edges_evidence ON edges(evidence_id);
+-- 차단 기록 7일 보관(2026-11-10: 메모리에만 두니 업데이트·재시작 때 증거가 사라졌다 — localhost:8815 사례).
+-- 외부 문자열(app·필터 이름)은 자료로만 저장하고, 화면이 위생 처리한다. 원시 기록·그래프와 따로(외래 키 없음)
+CREATE TABLE IF NOT EXISTS blocked_log (
+  id INTEGER PRIMARY KEY,
+  ts INTEGER NOT NULL,
+  filter_id INTEGER NOT NULL,
+  app TEXT NOT NULL,
+  remote TEXT NOT NULL,
+  rport INTEGER NOT NULL,
+  lport INTEGER NOT NULL,
+  proto INTEGER NOT NULL,
+  dir TEXT NOT NULL,
+  loopback INTEGER NOT NULL,
+  ours_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_blocked_log_ts ON blocked_log(ts);
+CREATE TABLE IF NOT EXISTS blocked_filters (
+  filter_id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL,
+  provider_name TEXT NOT NULL,
+  provider_key TEXT NOT NULL,
+  ours INTEGER NOT NULL,
+  seen_ts INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS ix_edge_evidence_raw ON edge_evidence(raw_id);
 -- L028: 스냅샷 시각 목록(이야기의 "이미 열려 있음")을 매 호출 전체 훑기 없이. 스냅샷 행만 담는 작은 부분 색인(쓰기 비용은 스냅샷 때만)
 CREATE INDEX IF NOT EXISTS ix_raw_snapshot ON raw_events(ts) WHERE source = 'snapshot';

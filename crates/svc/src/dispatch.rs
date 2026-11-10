@@ -2264,11 +2264,6 @@ pub fn blocked_recent_json(world: &World, limit: usize, q: &str) -> serde_json::
         Ok(g) => g,
         Err(_) => return serde_json::json!({ "items": [], "kinds": {}, "total": 0 }),
     };
-    let ours_now: std::collections::HashSet<u64> = world
-        .our_filters
-        .read()
-        .map(|s| s.clone())
-        .unwrap_or_default();
     let mut kinds: std::collections::BTreeMap<&'static str, u64> = Default::default();
     let mut items = Vec::new();
     let total = g.items.len();

@@ -100,7 +100,8 @@ pub fn dir_word(d: u32) -> &'static str {
 
 impl RecentInner {
     /// 한 줄 넣기(최신이 뒤). 바로 앞 몇 줄과 같은 것이 1초 안이면 건너뛴다
-    pub fn push(&mut self, d: &Drop, ours_at: bool) {
+    /// 넣었으면 true(1초 안 같은 것으로 묶였으면 false — 누적에만 셈)
+    pub fn push(&mut self, d: &Drop, ours_at: bool) -> bool {
         let ts = crate::runtime::filetime_to_unix(d.ts_ft);
         // 누적은 묶기·밀려남과 상관없이 모든 사건을 센다
         let key = (d.filter_id, d.app.clone());
@@ -140,7 +141,7 @@ impl RecentInner {
         });
         if dup {
             self.dup_skipped += 1;
-            return;
+            return false;
         }
         self.items.push_back(BlockRec {
             ts,
@@ -162,8 +163,73 @@ impl RecentInner {
             self.items.pop_front();
             self.evicted += 1;
         }
+        true
+    }
+
+    /// DB 에서 되읽은 줄 하나(시작 때). 묶기 검사 없이 넣고 누적도 센다
+    pub fn load_row(&mut self, r: &graph::store::BlockedRow) {
+        let d = Drop {
+            ts_ft: crate::runtime::unix_to_filetime(r.ts),
+            filter_id: r.filter_id,
+            app: r.app.clone(),
+            remote: r.remote.clone(),
+            rport: r.rport,
+            lport: r.lport,
+            proto: r.proto,
+            dir: match r.dir.as_str() {
+                "in" => 0x3900,
+                "out" => 0x3901,
+                "fwd" => 0x3902,
+                _ => u32::MAX,
+            },
+            loopback: r.loopback,
+            backfill: true,
+        };
+        // 묶기 검사를 피하려고 바로 넣는다(같은 시각 같은 줄이 DB 에 여럿이면 그대로)
+        let before = self.dup_skipped;
+        if !self.push(&d, r.ours_at) {
+            self.dup_skipped = before;
+            let ts = r.ts;
+            self.items.push_back(BlockRec {
+                ts,
+                filter_id: r.filter_id,
+                app: r.app.clone(),
+                remote: r.remote.clone(),
+                rport: r.rport,
+                lport: r.lport,
+                proto: r.proto,
+                dir: dir_word(d.dir),
+                loopback: r.loopback,
+                ours_at: r.ours_at,
+            });
+            while self.items.len() > RECENT_CAP {
+                self.items.pop_front();
+            }
+        }
     }
 }
+
+/// 기록 한 줄 → DB 줄
+pub fn to_row(r: &BlockRec) -> graph::store::BlockedRow {
+    graph::store::BlockedRow {
+        ts: r.ts,
+        filter_id: r.filter_id,
+        app: r.app.clone(),
+        remote: r.remote.clone(),
+        rport: r.rport,
+        lport: r.lport,
+        proto: r.proto,
+        dir: r.dir.to_string(),
+        loopback: r.loopback,
+        ours_at: r.ours_at,
+    }
+}
+
+/// DB 보관 기간·상한(2026-11-10): 7일, 10만 줄. 한 시간마다 정리
+pub const KEEP_SECS: i64 = 7 * 86_400;
+pub const KEEP_ROWS: i64 = 100_000;
+
+impl RecentInner {}
 
 /// 콜백 쪽 싱크: try_send 만, 넘치면 lost
 #[derive(Clone)]
@@ -238,21 +304,80 @@ pub fn run(
             return;
         }
     };
+    // 차단 기록 되읽기(최근 7일): 서비스를 다시 켜도 기록·누적이 이어진다. 이 시각 이전의 BFE 되읽기는 건너뛴다(겹침)
+    let now_unix = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
+    };
+    let mut db_max_ts = i64::MIN;
+    match store.blocked_log_load(now_unix() - KEEP_SECS) {
+        Ok((rows, fs)) => {
+            if let Ok(mut g) = recent.lock() {
+                for (id, f) in fs {
+                    g.filters.insert(
+                        id,
+                        Some(policy::FilterInfo {
+                            name: f.name,
+                            description: f.description,
+                            provider_name: f.provider_name,
+                            provider_key: f.provider_key,
+                            ours: f.ours,
+                        }),
+                    );
+                }
+                for r in &rows {
+                    g.load_row(r);
+                    db_max_ts = db_max_ts.max(r.ts);
+                }
+            }
+            log(format!("blocked: loaded {} rows from db", rows.len()));
+        }
+        Err(e) => log(format!("blocked: db load failed: {e}")),
+    }
+    let mut pending: Vec<graph::store::BlockedRow> = Vec::new();
+    let mut pending_filters: Vec<(u64, graph::store::BlockedFilter, i64)> = Vec::new();
+    let mut last_prune = std::time::Instant::now() - std::time::Duration::from_secs(3600);
     let mut agg = Agg::default();
     let mut last = std::time::Instant::now();
+    let mut done = false;
     loop {
+        if done {
+            break;
+        }
         match rx.recv_timeout(FLUSH_EVERY) {
             Ok(d) => {
                 let set = ours.read().map(|g| g.clone()).unwrap_or_default();
                 agg.add(&d, &set);
                 // 차단 기록: 처음 보는 필터면 그때 이름·공급자를 읽어 둔다(나중에 필터가 지워져도 남게)
-                if let Ok(mut g) = recent.lock() {
+                let ts_unix = crate::runtime::filetime_to_unix(d.ts_ft);
+                // DB 에 이미 있는 구간의 BFE 되읽기는 건너뛴다(시작 때 겹침)
+                let skip = d.backfill && ts_unix <= db_max_ts;
+                if let (false, Ok(mut g)) = (skip, recent.lock()) {
                     if !g.filters.contains_key(&d.filter_id) {
                         let info = resolve(d.filter_id);
+                        if let Some(i) = &info {
+                            pending_filters.push((
+                                d.filter_id,
+                                graph::store::BlockedFilter {
+                                    name: i.name.clone(),
+                                    description: i.description.clone(),
+                                    provider_name: i.provider_name.clone(),
+                                    provider_key: i.provider_key.clone(),
+                                    ours: i.ours,
+                                },
+                                ts_unix,
+                            ));
+                        }
                         g.filters.insert(d.filter_id, info);
                     }
                     let ours_at = set.contains(&d.filter_id);
-                    g.push(&d, ours_at);
+                    if g.push(&d, ours_at) {
+                        if let Some(r) = g.items.back() {
+                            pending.push(to_row(r));
+                        }
+                    }
                 }
                 // 폭주 때 recv 만 계속 성공하면 flush 가 밀린다 → 시간으로도 끊는다
                 if last.elapsed() < FLUSH_EVERY {
@@ -260,14 +385,36 @@ pub fn run(
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            // 보내는 쪽이 끝나면(서비스 멈춤) 쌓인 것을 쓰고 나간다
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => done = true,
         }
         last = std::time::Instant::now();
+        // 차단 기록 DB 보관(10초마다 묶어서), 한 시간마다 7일·10만 줄 정리
+        for (id, f, ts) in pending_filters.drain(..) {
+            if let Err(e) = store.blocked_filter_put(id, &f, ts) {
+                log(format!("blocked: filter write failed: {e}"));
+            }
+        }
+        if !pending.is_empty() {
+            if let Err(e) = store.blocked_log_insert(&pending) {
+                log(format!("blocked: log write failed: {e}"));
+            }
+            pending.clear();
+        }
+        if last_prune.elapsed() >= std::time::Duration::from_secs(3600) {
+            last_prune = std::time::Instant::now();
+            match store.blocked_log_prune(now_unix() - KEEP_SECS, KEEP_ROWS) {
+                Ok(n) if n > 0 => log(format!("blocked: pruned {n}")),
+                Err(e) => log(format!("blocked: prune failed: {e}")),
+                _ => {}
+            }
+        }
         let lost_n = lost.swap(0, Ordering::Relaxed);
         let hours = agg.take();
         if hours.is_empty() && lost_n == 0 {
             continue;
         }
+        // (done 이면 아래에서 쓰고 다음 바퀴 처음에 나간다)
         let now_hour = graph::Store::hour_bucket(crate::runtime::unix_to_filetime(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -417,5 +564,77 @@ mod recent_tests {
             },
             &ours
         ));
+    }
+}
+
+#[cfg(test)]
+mod persist_tests {
+    use super::*;
+    use std::sync::mpsc::sync_channel;
+
+    /// 2026-11-10: 서비스를 다시 켜도 차단 기록·누적이 이어진다(DB 7일 보관), 겹치는 BFE 되읽기는 건너뛴다
+    #[test]
+    fn records_survive_restart_and_backfill_overlap_is_skipped() {
+        let dir = std::env::temp_dir().join(format!("sf-blocked-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let db = dir.join("graph.db");
+        let _ = std::fs::remove_file(&db);
+        let t = crate::runtime::unix_to_filetime(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64
+                - 600,
+        );
+        let mk = |i: i64, backfill: bool| Drop {
+            ts_ft: t + i * 30_000_000,
+            filter_id: 42,
+            app: "\\device\\harddiskvolume3\\msedge.exe".into(),
+            remote: "127.0.0.1".into(),
+            rport: 8815,
+            dir: 0x3901,
+            loopback: true,
+            backfill,
+            ..Default::default()
+        };
+        let run_once = |drops: Vec<Drop>| -> Recent {
+            let (tx, rx) = sync_channel::<Drop>(64);
+            let recent: Recent = Default::default();
+            let r2 = recent.clone();
+            let path = db.to_string_lossy().to_string();
+            let h = std::thread::spawn(move || {
+                run(
+                    rx,
+                    Arc::new(AtomicU64::new(0)),
+                    Default::default(),
+                    r2,
+                    Box::new(|| Box::new(|_| None)),
+                    path,
+                    |_| {},
+                )
+            });
+            for d in drops {
+                tx.send(d).unwrap();
+            }
+            drop(tx);
+            h.join().unwrap();
+            recent
+        };
+        let a = run_once(vec![mk(0, false), mk(1, false), mk(2, false)]);
+        assert_eq!(a.lock().unwrap().items.len(), 3);
+        // 다시 켬: DB 에서 3줄을 되읽고, 같은 구간의 BFE 되읽기(backfill)는 건너뛰고, 새 것만 더한다
+        let b = run_once(vec![mk(1, true), mk(2, true), mk(5, false)]);
+        let g = b.lock().unwrap();
+        assert_eq!(
+            g.items.len(),
+            4,
+            "{:?}",
+            g.items.iter().map(|x| x.ts).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            g.rules[&(42, "\\device\\harddiskvolume3\\msedge.exe".to_string())].n,
+            4
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
