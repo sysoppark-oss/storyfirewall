@@ -656,7 +656,16 @@ mod real {
             println!("diag: retention_last {v}");
         }
         // 2026-11-10: 높음·심각 사건의 근거 항목(무엇 때문에 그 등급인지) — 실행 파일 이름과 근거 글자만, 경로·주소 없음.
-        // 판정은 쓰지 않는 assess(읽기만)
+        // 판정은 쓰지 않는 assess(읽기만). 서비스와 같게 자기 구성요소 폴더를 알려 준다(안 주면 우리 화면이 뿌리로 잡힌다 — diag-140 실측)
+        if let Some(d) = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|p| p.display().to_string()))
+        {
+            judge::set_self_dirs(vec![d]);
+            judge::rules::set_system_drive(
+                &std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into()),
+            );
+        }
         {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -675,7 +684,26 @@ mod real {
                         let why: Vec<String> = s
                             .reasons
                             .iter()
-                            .map(|r| format!("{}({:+})", r.what, r.points))
+                            .map(|r| {
+                                // 금고 근거면 어느 브라우저의 어느 저장소인지(종류만 — 경로 없음)
+                                let extra = r
+                                    .edge_id
+                                    .filter(|_| r.what.contains("브라우저 저장소"))
+                                    .and_then(|eid| {
+                                        store
+                                            .conn()
+                                            .query_row(
+                                                "SELECT n.key FROM edges e JOIN nodes n ON n.id = e.dst WHERE e.id = ?1",
+                                                [eid],
+                                                |x| x.get::<_, String>(0),
+                                            )
+                                            .ok()
+                                    })
+                                    .and_then(|k| graph::vault::classify(&k))
+                                    .map(|v| format!("[{:?}/{:?}]", v.browser, v.what))
+                                    .unwrap_or_default();
+                                format!("{}{}({:+})", r.what, extra, r.points)
+                            })
                             .collect();
                         println!(
                             "diag: story level={} ch={:?} score={} root={} reasons={}",
