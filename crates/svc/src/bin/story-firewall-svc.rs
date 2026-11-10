@@ -293,6 +293,29 @@ mod real {
             Ok(s) => {
                 log.w("collector: started");
                 let _ = svc::defender::COLLECTOR_COUNTS.set(Box::new(s.counts_reader()));
+                // 명령줄 수집 상태를 서비스 기록에 남긴다(5분 뒤 한 번, 그 뒤 1시간마다) — 진단(diag)이 따로 도는 프로세스라
+                // 수집기 카운터를 직접 못 읽는다. 이름만(값은 개수) — 명령줄 내용은 없다
+                {
+                    let read = s.counts_reader();
+                    let log5 = log.clone();
+                    std::thread::spawn(move || {
+                        let mut wait = std::time::Duration::from_secs(300);
+                        loop {
+                            std::thread::sleep(wait);
+                            wait = std::time::Duration::from_secs(3600);
+                            let line: Vec<String> = read()
+                                .into_iter()
+                                .filter(|(k, _)| {
+                                    k.starts_with("cmdline_")
+                                        || k.starts_with("svchost_")
+                                        || k.starts_with("kernel_")
+                                })
+                                .map(|(k, v)| format!("{k}={v}"))
+                                .collect();
+                            log5.w(format!("collector: counts {}", line.join(" ")));
+                        }
+                    });
+                }
                 Some(s)
             }
             Err(e) => {
