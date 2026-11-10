@@ -389,8 +389,12 @@ fn ordinary_browser_parent(v: &View, parent: i64) -> bool {
 /// (사) 신호 종류. 각각 점수표 항목 하나
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VaultSignal {
-    /// 브라우저가 아닌 프로그램이 금고 파일을 엶 (opened)
+    /// 브라우저가 아닌 프로그램이 금고 파일(로그인 정보·쿠키·자동 완성)을 엶 (opened) — 결정적 근거
     VaultOpen,
+    /// 브라우저가 아닌 프로그램이 Local State(프로필 목록·암호화 키가 든 설정)만 엶 — 결정적 근거 아님.
+    /// diag-142 실측: Claude 데스크톱(Anthropic 서명)이 Chrome Local State 를 열어 "심각"이 됐다. 이 파일은 프로필·확장 목록을
+    /// 찾는 정상 프로그램도 읽는다. 저장소 본체(로그인 정보·쿠키)까지 열면 VaultOpen 이 따로 걸린다
+    VaultKeyOpen,
     /// 등록된 미끼 파일을 엶 (opened)
     DecoyOpen,
     /// 브라우저가 디버깅 스위치로 실행됨 — 부모가 브라우저·탐색기가 아님 (ran)
@@ -430,8 +434,15 @@ pub fn vault_signal(v: &View, e: &Edge) -> Option<(VaultSignal, i64)> {
                 return Some((VaultSignal::DecoyOpen, e.src));
             }
             // 브라우저끼리(가져오기 기능)는 신호가 아니다
-            if graph::vault::classify(&f.key).is_some() && browser_of_proc(v, e.src).is_none() {
-                return Some((VaultSignal::VaultOpen, e.src));
+            if let Some(vf) = graph::vault::classify(&f.key) {
+                if browser_of_proc(v, e.src).is_none() {
+                    let sig = if vf.what == graph::vault::VaultWhat::LocalState {
+                        VaultSignal::VaultKeyOpen
+                    } else {
+                        VaultSignal::VaultOpen
+                    };
+                    return Some((sig, e.src));
+                }
             }
             None
         }

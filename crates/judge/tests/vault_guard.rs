@@ -491,7 +491,11 @@ fn elevation_service_signals() {
     let stories = judge_all(&store);
     assert_eq!(stories.len(), 1, "{stories:#?}");
     let w = whats(&stories[0]);
-    assert!(w.contains(&VAULT_OPEN), "{w:?}");
+    // diag-142 뒤: Local State 만 연 것은 별도 근거(결정적 아님). 권한 상승 서비스 신호는 그대로 함께 걸린다
+    assert!(
+        w.contains(&"브라우저가 아닌 프로그램이 브라우저 설정(Local State)을 엶"),
+        "{w:?}"
+    );
     assert!(
         w.contains(&"브라우저 종료 직후 권한 상승 서비스 시작"),
         "{w:?}"
@@ -588,4 +592,42 @@ fn vault_normal_feedback_is_scoped_to_vault_stories() {
         .find(|s| s.root_kind == RootKind::VaultAccess)
         .unwrap();
     assert_eq!(st.level, Level::Normal, "{:?}", st.reasons);
+}
+
+/// diag-142 실측: 서명된 일반 프로그램(Claude 데스크톱)이 Chrome Local State 만 열고 IP 로 직접 접속 → "심각"이 됐다.
+/// Local State 만 연 것은 결정적 근거가 아니다. 로그인 정보까지 열면 다시 심각.
+#[test]
+fn signed_program_opening_only_local_state_is_not_critical() {
+    const KEY_OPEN: &str = "브라우저가 아닌 프로그램이 브라우저 설정(Local State)을 엶";
+    let store = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&store);
+    let app = r"C:\Users\pjg\AppData\Local\AnthropicClaude\app-1.0.0\claude.exe";
+    let mut evs = base();
+    evs.extend([
+        start(T0 + SEC, 5600, 1000, app),
+        sig(T0 + SEC, app, Some("Anthropic, PBC"), "valid", false),
+        open(T0 + 2 * SEC, 5600, LOCAL_STATE),
+        conn(T0 + 3 * SEC, 5600, "203.0.113.30", 443),
+    ]);
+    ing.ingest_all(&evs).unwrap();
+    let stories = judge_all(&store);
+    let s = stories
+        .iter()
+        .find(|s| whats(s).contains(&KEY_OPEN))
+        .unwrap_or_else(|| panic!("Local State 열기 근거가 이야기에 있어야 함: {stories:#?}"));
+    assert!(!whats(s).contains(&VAULT_OPEN), "{:?}", s.reasons);
+    assert_ne!(s.level, Level::Critical, "{:?}", s.reasons);
+    eprintln!("key-only: {:?} {} {:?}", s.level, s.score, whats(s));
+    // 같은 프로그램이 로그인 정보까지 열면 결정적 근거 → 심각
+    ing.ingest_all(&[
+        open(T0 + 4 * SEC, 5600, LOGIN),
+        conn(T0 + 5 * SEC, 5600, "203.0.113.30", 443),
+    ])
+    .unwrap();
+    let stories = judge_all(&store);
+    let s = stories
+        .iter()
+        .find(|s| whats(s).contains(&VAULT_OPEN))
+        .expect("로그인 정보 열기는 근거여야 함");
+    assert_eq!(s.level, Level::Critical, "{:?}", s.reasons);
 }

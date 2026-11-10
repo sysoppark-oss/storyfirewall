@@ -94,6 +94,11 @@ pub const WEIGHTS: &[(&str, i32)] = &[
     // 17판 23-2 ② 브라우저 금고 경비. 뿌리 (사)는 2장 기본점 30 에서 시작하고 Microsoft 서명 감점(−40)을 받지 않는다.
     // 금고 열기 단독 = 30+15 = 45 주의(설치 폴더의 서명 없는 프로그램이면 30+15−20+15 = 40), 외부 접속까지 = 70+15 이상 의심
     ("브라우저가 아닌 프로그램이 브라우저 저장소를 엶", 15),
+    // diag-142: Local State 만 연 것은 결정적 근거가 아니다(프로필·확장 목록을 찾는 정상 프로그램도 읽음). 점수는 같게
+    (
+        "브라우저가 아닌 프로그램이 브라우저 설정(Local State)을 엶",
+        15,
+    ),
     // 미끼 단독 = 30+45 = 75 의심(설치 폴더의 서명 없는 프로그램이어도 30+15−20+45 = 70). 스토어 패키지 감점(−40)을 받으면 주의로 내려간다
     ("미끼 파일 접근", 45),
     ("디버깅 모드로 브라우저 실행", 15),
@@ -509,6 +514,9 @@ pub fn score(
         }
         let what: &'static str = match sig {
             rules::VaultSignal::VaultOpen => "브라우저가 아닌 프로그램이 브라우저 저장소를 엶",
+            rules::VaultSignal::VaultKeyOpen => {
+                "브라우저가 아닌 프로그램이 브라우저 설정(Local State)을 엶"
+            }
             rules::VaultSignal::DecoyOpen => "미끼 파일 접근",
             rules::VaultSignal::DebugLaunch => "디버깅 모드로 브라우저 실행",
             rules::VaultSignal::DebugPortConnect => "브라우저 디버깅 포트 접속",

@@ -138,6 +138,10 @@ fn reason_item(what: &str) -> Option<(&'static str, &'static str)> {
             "브라우저 저장소",
             "브라우저가 아닌 프로그램이 저장된 로그인 정보·쿠키 파일을 엶",
         ),
+        "브라우저가 아닌 프로그램이 브라우저 설정(Local State)을 엶" => (
+            "브라우저 설정",
+            "브라우저가 아닌 프로그램이 브라우저 설정(프로필 목록·암호화 키가 든 Local State)을 엶",
+        ),
         "미끼 파일 접근" => ("미끼 파일", "Story Firewall 이 둔 미끼 파일을 엶"),
         "디버깅 모드로 브라우저 실행" => (
             "브라우저 디버깅",
@@ -169,7 +173,8 @@ fn vault_detail(store: &Store, r: &Reason) -> Option<(String, String)> {
     let dst = store.node(e.dst).ok()?;
     let actor = crate::render::no_arrows(&src.label);
     Some(match r.what {
-        "브라우저가 아닌 프로그램이 브라우저 저장소를 엶" => {
+        "브라우저가 아닌 프로그램이 브라우저 저장소를 엶"
+        | "브라우저가 아닌 프로그램이 브라우저 설정(Local State)을 엶" => {
             let vf = graph::vault::classify(&dst.key)?;
             let b = vf.browser.name();
             let what = vf.what.label();
@@ -264,6 +269,7 @@ fn reason_text(r: &Reason, root: &str, voice: Voice) -> Option<String> {
         "사용자가 정상으로 확인한 프로그램" => "사용자가 정상으로 확인한 프로그램입니다.".to_string(),
         // 17판 23-2 ②: 사실만(열었다·실행했다·접속했다). 무엇을 읽었는지·왜 했는지는 말하지 않는다
         "브라우저가 아닌 프로그램이 브라우저 저장소를 엶" => "브라우저가 아닌 프로그램이 브라우저의 저장된 로그인 정보·쿠키 파일을 열었습니다.".to_string(),
+        "브라우저가 아닌 프로그램이 브라우저 설정(Local State)을 엶" => "브라우저가 아닌 프로그램이 브라우저 설정 파일(Local State — 프로필 목록과 저장 정보의 암호화 키가 들어 있음)을 열었습니다. 로그인 정보·쿠키 파일 자체를 연 기록은 아닙니다.".to_string(),
         "미끼 파일 접근" => "Story Firewall 이 둔 미끼 파일을 열었습니다. 미끼 파일은 실제 프로그램이 쓰지 않는 파일입니다.".to_string(),
         "디버깅 모드로 브라우저 실행" => "원격 디버깅 기능을 켠 채 브라우저를 실행했습니다(다른 프로그램이 브라우저를 조종할 수 있는 상태).".to_string(),
         "브라우저 디버깅 포트 접속" => "브라우저가 아닌 프로그램이 이 PC 안의 브라우저 원격 디버깅 포트에 접속했습니다.".to_string(),
