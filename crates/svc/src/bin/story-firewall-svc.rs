@@ -713,6 +713,37 @@ mod real {
                             name,
                             why.join(" | ")
                         );
+                        // 고립 svchost 소음 조사: 노드 속성(서비스 목록·PID·시작 상태)과 귀속 없는 외부 원격지 몇 개
+                        if s.root_kind == judge::RootKind::IsolatedSvchost {
+                            let attrs: String = store
+                                .conn()
+                                .query_row(
+                                    "SELECT COALESCE(attrs_json, '{}') FROM nodes WHERE id = ?1",
+                                    [s.root],
+                                    |x| x.get(0),
+                                )
+                                .unwrap_or_default();
+                            let remotes: Vec<String> = store
+                                .conn()
+                                .prepare(
+                                    "SELECT r.key, COUNT(*) FROM edges e JOIN nodes r ON r.id = e.dst
+                                     WHERE e.src = ?1 AND e.rel = 'connected'
+                                       AND NOT EXISTS (SELECT 1 FROM edges v WHERE v.dst = r.id AND v.rel = 'connected_via')
+                                     GROUP BY r.id ORDER BY 2 DESC LIMIT 4",
+                                )
+                                .and_then(|mut st| {
+                                    st.query_map([s.root], |x| {
+                                        Ok(format!("{}×{}", x.get::<_, String>(0)?, x.get::<_, i64>(1)?))
+                                    })?
+                                    .collect()
+                                })
+                                .unwrap_or_default();
+                            println!(
+                                "diag: svchost attrs={} remotes={}",
+                                attrs.chars().take(400).collect::<String>(),
+                                remotes.join(", ")
+                            );
+                        }
                     }
                 }
                 Err(e) => println!("diag: story failed {e}"),
