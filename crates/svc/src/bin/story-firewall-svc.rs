@@ -666,6 +666,43 @@ mod real {
                 &std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into()),
             );
         }
+        // svchost 서비스 이름(명령줄 -s) 수집 확인: 최근 svchost 노드 8개의 SCM 목록·명령줄 서비스 이름
+        {
+            let rows: Vec<String> = store
+                .conn()
+                .prepare(
+                    "SELECT key, COALESCE(json_extract(attrs_json, '$.services'), ''),
+                            COALESCE(json_extract(attrs_json, '$.service_arg'), '-'),
+                            COALESCE(json_extract(attrs_json, '$.ended'), 0)
+                     FROM nodes WHERE kind = 'process' AND lower(json_extract(attrs_json, '$.image')) LIKE '%svchost.exe'
+                     ORDER BY first_ts DESC LIMIT 8",
+                )
+                .and_then(|mut st| {
+                    st.query_map([], |x| {
+                        Ok(format!(
+                            "{} scm={} arg={} ended={}",
+                            x.get::<_, String>(0)?,
+                            x.get::<_, String>(1)?,
+                            x.get::<_, String>(2)?,
+                            x.get::<_, i64>(3)?
+                        ))
+                    })?
+                    .collect()
+                })
+                .unwrap_or_default();
+            let with_arg: i64 = store
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM nodes WHERE kind = 'process' AND json_extract(attrs_json, '$.service_arg') IS NOT NULL",
+                    [],
+                    |x| x.get(0),
+                )
+                .unwrap_or(-1);
+            println!("diag: svchost service_arg nodes={with_arg}");
+            for r in rows {
+                println!("diag: svchost recent {r}");
+            }
+        }
         {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
