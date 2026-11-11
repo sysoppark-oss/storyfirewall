@@ -311,6 +311,33 @@ fn is_windows_file(store: &Store, id: i64) -> bool {
 }
 
 /// judge 결과를 문장으로. OneLine 은 제목만.
+/// 원시 기록 id → (관측 시각, 출처). 없는 id 는 빠진다
+fn raw_ts_source(store: &Store, ids: &[i64]) -> std::collections::HashMap<i64, (i64, String)> {
+    let mut out = std::collections::HashMap::with_capacity(ids.len());
+    for ch in ids.chunks(500) {
+        let marks = vec!["?"; ch.len()].join(",");
+        let Ok(mut st) = store.conn().prepare(&format!(
+            "SELECT id, ts, source FROM raw_events WHERE id IN ({marks})"
+        )) else {
+            continue;
+        };
+        let rows: Vec<(i64, i64, String)> = st
+            .query_map(rusqlite::params_from_iter(ch.iter()), |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })
+            .map(|it| it.flatten().collect())
+            .unwrap_or_default();
+        for (id, ts, src) in rows {
+            out.insert(id, (ts, src));
+        }
+    }
+    out
+}
+
 pub fn narrate(store: &Store, stories: &[Story], voice: Voice) -> Result<Vec<Narrative>> {
     let mut out = Vec::new();
     for s in stories {
@@ -344,8 +371,19 @@ pub fn narrate(store: &Store, stories: &[Story], voice: Voice) -> Result<Vec<Nar
         if voice != Voice::OneLine {
             // 진행 경로 문장: 사건의 선 중 장이 있는 것을 시각순으로
             let mut by_ch: Vec<(Chapter, i64, i64)> = Vec::new(); // (장, edge_id, ts)
+                                                                  // diag-177: 선마다 따로 물어(선·원시 기록) 선이 수천 개인 사건 하나가 6.8초 → 사건 단위로 한 번에 읽는다(결과 같음)
+            let edges = graph::query::edges_by_ids(store, &s.edges).unwrap_or_default();
+            let raws = raw_ts_source(
+                store,
+                &s.edges
+                    .iter()
+                    .filter_map(|id| edges.get(id))
+                    .filter(|e| e.chapter.is_some())
+                    .filter_map(|e| e.evidence_id)
+                    .collect::<Vec<_>>(),
+            );
             for eid in &s.edges {
-                if let Ok(e) = graph::query::edge_by_id(store, *eid) {
+                if let Some(e) = edges.get(eid) {
                     if let Some(c) = e.chapter {
                         let ch = match c {
                             1 => Chapter::Ingress,
@@ -357,14 +395,7 @@ pub fn narrate(store: &Store, stories: &[Story], voice: Voice) -> Result<Vec<Nar
                         // 스냅샷 출신 선: 관측 시각(원시 이벤트 시각)으로 세고, 원래 시각은 running_since 로
                         let mut ts = e.ts;
                         if let Some(raw) = e.evidence_id {
-                            let obs: Option<(i64, String)> = store
-                                .conn()
-                                .query_row(
-                                    "SELECT ts, source FROM raw_events WHERE id = ?1",
-                                    [raw],
-                                    |r| Ok((r.get(0)?, r.get(1)?)),
-                                )
-                                .ok();
+                            let obs: Option<(i64, String)> = raws.get(&raw).cloned();
                             if let Some((obs_ts, src)) = obs {
                                 // 25차 Q1: 스냅샷 출신이면 시작 시각이 기록 없는 구간 안인지(10초 문턱과 상관없이 — Q2 경계 맞추기 방지)
                                 if src == "snapshot" && started_in_gap.is_none() {
@@ -409,8 +440,9 @@ pub fn narrate(store: &Store, stories: &[Story], voice: Voice) -> Result<Vec<Nar
                 let first_ts = by_ch.first().map(|x| x.2).unwrap_or(0);
                 let edge_ids: Vec<i64> = by_ch.iter().map(|x| x.1).collect();
                 let mut evidence = Vec::new();
+                let ev_map = store.evidence_of_many(&edge_ids)?;
                 for eid in &edge_ids {
-                    evidence.extend(store.evidence_of(*eid)?);
+                    evidence.extend(ev_map.get(eid).cloned().unwrap_or_default());
                 }
                 let text = match voice {
                     Voice::Expert => format!("{} {}: {}.", hms(first_ts), root, path),

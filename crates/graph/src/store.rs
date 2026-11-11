@@ -3,6 +3,7 @@
 use crate::schema::{DDL, SCHEMA_VERSION};
 use crate::{Edge, GraphError, Node, NodeKind, Rel, Result};
 use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::HashMap;
 use std::path::Path;
 
 /// 차단 기록 한 줄(DB 보관용). svc 의 BlockRec 과 같은 뜻
@@ -341,6 +342,40 @@ impl Store {
             let v = r?;
             if !out.contains(&v) {
                 out.push(v);
+            }
+        }
+        Ok(out)
+    }
+
+    /// `evidence_of` 를 여러 선에 한 번에(같은 순서·같은 중복 제거). diag-177: 선이 수천 개인 사건의 문장을 만들 때
+    /// 선마다 두 번씩 물어 사건 하나가 6.8초 걸렸다
+    pub fn evidence_of_many(&self, edge_ids: &[i64]) -> Result<HashMap<i64, Vec<i64>>> {
+        let mut out: HashMap<i64, Vec<i64>> = HashMap::with_capacity(edge_ids.len());
+        for ch in edge_ids.chunks(500) {
+            let marks = vec!["?"; ch.len()].join(",");
+            let mut st = self.conn.prepare(&format!(
+                "SELECT id, evidence_id FROM edges WHERE id IN ({marks})"
+            ))?;
+            for r in st.query_map(rusqlite::params_from_iter(ch.iter()), |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?))
+            })? {
+                let (id, ev) = r?;
+                let v = out.entry(id).or_default();
+                if let Some(ev) = ev {
+                    v.push(ev);
+                }
+            }
+            let mut st = self.conn.prepare(&format!(
+                "SELECT edge_id, raw_id FROM edge_evidence WHERE edge_id IN ({marks}) ORDER BY edge_id, raw_id"
+            ))?;
+            for r in st.query_map(rusqlite::params_from_iter(ch.iter()), |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+            })? {
+                let (id, raw) = r?;
+                let v = out.entry(id).or_default();
+                if !v.contains(&raw) {
+                    v.push(raw);
+                }
             }
         }
         Ok(out)

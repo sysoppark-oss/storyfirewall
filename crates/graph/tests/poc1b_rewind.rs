@@ -559,3 +559,33 @@ fn signature_updates_file_node_and_service_judgement() {
     let attrs = store.node(f).unwrap().attrs_json.unwrap();
     assert!(attrs.contains("Evil Corp") && attrs.contains("\"sig_status\":\"valid\""));
 }
+
+/// diag-177: 문장 만들기가 선마다 묻던 근거·선 조회를 묶음으로 바꿈 — 묶음 결과가 선마다 물은 것과 같아야 한다
+#[test]
+fn batched_evidence_and_edges_match_single_lookups() {
+    let store = Store::open_in_memory().unwrap();
+    Ingester::new(&store).ingest_all(&load_fixture()).unwrap();
+    let ids: Vec<i64> = store
+        .conn()
+        .prepare("SELECT id FROM edges ORDER BY id")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert!(ids.len() > 25);
+    let mut with_missing = ids.clone();
+    with_missing.push(9_999_999);
+    let many = store.evidence_of_many(&with_missing).unwrap();
+    let edges = graph::query::edges_by_ids(&store, &with_missing).unwrap();
+    for id in &ids {
+        assert_eq!(
+            many.get(id).cloned().unwrap_or_default(),
+            store.evidence_of(*id).unwrap(),
+            "선 {id}"
+        );
+        assert_eq!(edges[id], graph::query::edge_by_id(&store, *id).unwrap());
+    }
+    assert!(!edges.contains_key(&9_999_999));
+    assert!(many.get(&9_999_999).is_none_or(|v| v.is_empty()));
+}

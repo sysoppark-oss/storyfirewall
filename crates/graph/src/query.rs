@@ -181,6 +181,23 @@ fn expand_side(
 }
 
 /// 선 하나를 id 로
+/// 여러 선을 한 번에(없는 id 는 빠진다)
+pub fn edges_by_ids(store: &Store, ids: &[i64]) -> Result<std::collections::HashMap<i64, Edge>> {
+    let mut out = std::collections::HashMap::with_capacity(ids.len());
+    for ch in ids.chunks(CHUNK) {
+        let sql = format!(
+            "SELECT id, src, dst, rel, ts, evidence_id, chapter, attrs_json FROM edges WHERE id IN ({})",
+            in_list(ch.len())
+        );
+        let mut st = store.conn.prepare(&sql)?;
+        for e in st.query_map(rusqlite::params_from_iter(ch.iter()), row_to_edge)? {
+            let e = e?;
+            out.insert(e.id, e);
+        }
+    }
+    Ok(out)
+}
+
 pub fn edge_by_id(store: &Store, id: i64) -> Result<Edge> {
     Ok(store.conn.query_row(
         "SELECT id, src, dst, rel, ts, evidence_id, chapter, attrs_json FROM edges WHERE id = ?1",
