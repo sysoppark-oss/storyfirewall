@@ -897,7 +897,12 @@ fn handle(
                     nar.push(n);
                     continue;
                 }
-                if t_narr.elapsed() < NARR_QUERY_BUDGET && s.edges.len() < BIG_STORY_EDGES {
+                // diag-186: 재시작 직후(디스크 캐시가 빔) 선 수백 개짜리 사건 하나의 문장도 원시 기록 임의 읽기로 26초 →
+                // 파일 DB 에서는 조회 안에서 문장을 만들지 않는다(미리 만들기가 별도 스레드에서 채움). 메모리 DB(시험)만 그 자리에서
+                if graph_is_memory(world)
+                    && t_narr.elapsed() < NARR_QUERY_BUDGET
+                    && s.edges.len() < BIG_STORY_EDGES
+                {
                     nar.push(narrative_cached(world, gen, v.since_ts, &v.voice, s)?);
                     continue;
                 }
@@ -2208,6 +2213,11 @@ fn narr_key(s: &judge::Story, voice: &str) -> (i64, String, u64) {
 const BIG_STORY_EDGES: usize = 1000;
 const BIG_STORY_STEP: usize = 500;
 
+/// 메모리 DB(시험)인가 — 별도 스레드가 같은 DB 를 열 수 없으므로 그 자리에서 만든다
+fn graph_is_memory(world: &World) -> bool {
+    world.graph.conn().path().is_none_or(|p| p.is_empty())
+}
+
 /// 캐시에 있으면 그 문장(만들지 않는다)
 fn narrative_peek(
     world: &World,
@@ -2232,8 +2242,8 @@ const NARR_CAP: usize = 4096;
 
 /// L052: 주기 판정 직후 대시보드·이야기 목록 첫 쪽(주의 이상, 기본 화법 plain, 21건)의 문장을 미리 만든다.
 /// 조회는 캐시만 읽어 2초 안에 끝난다(CLAUDE.md: 무거운 계산은 조회 때가 아니라 주기 작업으로)
-pub fn warm_story_narratives(world: &mut World) {
-    // 별도 스레드가 만든 큰 사건 문장을 받아 캐시에 넣는다
+/// 별도 스레드가 만든 문장을 받아 캐시에 넣는다(엔진 루프가 바퀴마다 부른다 — 끝났을 때만 일한다)
+pub fn collect_narr_job(world: &mut World) {
     if let Some(rx) = &world.narr_job {
         match rx.try_recv() {
             Ok(done) => {
@@ -2247,6 +2257,10 @@ pub fn warm_story_narratives(world: &mut World) {
             Err(std::sync::mpsc::TryRecvError::Disconnected) => world.narr_job = None,
         }
     }
+}
+
+pub fn warm_story_narratives(world: &mut World) {
+    collect_narr_job(world);
     let Some((_, stories)) = world.judged.clone() else {
         return;
     };
@@ -2255,20 +2269,12 @@ pub fn warm_story_narratives(world: &mut World) {
     // 점수 순 정렬이라 의심 이상(70) 첫 쪽은 이 안에 든다. 바뀌지 않은 사건은 캐시에 맞아 거의 시간이 들지 않고,
     // 처음(캐시가 빈 시작 직후)에는 엔진을 오래 잡지 않게 한 번에 WARM_BUDGET 까지만 — 남은 것은 다음 판정 때 이어서.
     // diag-184: 큰 사건(선 BIG_STORY_EDGES 이상)은 하나에 8초 — 엔진 스레드에서 만들지 않고 별도 스레드로
-    let t0 = std::time::Instant::now();
+    // diag-186: 엔진 스레드에서는 문장을 만들지 않는다 — 캐시에 없는 것을 모두 별도 스레드(읽기 전용 연결)로
     let mut big: Vec<judge::Story> = Vec::new();
     for s in stories.iter().filter(|s| s.score >= 40).take(WARM_N) {
-        if narrative_peek(world, "plain", s).is_some() {
-            continue;
-        }
-        if s.edges.len() >= BIG_STORY_EDGES {
+        if narrative_peek(world, "plain", s).is_none() {
             big.push(s.clone());
-            continue;
         }
-        if t0.elapsed() >= WARM_BUDGET {
-            continue;
-        }
-        let _ = narrative_cached(world, gen, 0, "plain", s);
     }
     if big.is_empty() || world.narr_job.is_some() {
         return;
@@ -2310,8 +2316,6 @@ pub fn warm_story_narratives(world: &mut World) {
 
 /// 미리 만드는 문장 수: 찾기(100) + 1
 const WARM_N: usize = 101;
-/// 판정 한 번 뒤 미리 만들기에 쓰는 최대 시간
-const WARM_BUDGET: std::time::Duration = std::time::Duration::from_millis(1500);
 
 /// 지금 목록의 ASN·국가 중 "오늘 처음"인 것. 기준 집합은 10분마다 다시 센다(연결 목록은 2초마다 불린다)
 /// 구조 개선 B: 조회가 보는 판정 결과. since 0(기본)은 주기 판정 결과를 그대로 읽고,

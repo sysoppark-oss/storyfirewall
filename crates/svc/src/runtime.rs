@@ -407,6 +407,8 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                 .timings
                 .record("엔진: 하루 1회 기준선 학습", t.elapsed());
         }
+        // 별도 스레드가 만든 문장이 끝났으면 받는다(조회가 바로 쓰게)
+        crate::dispatch::collect_narr_job(world);
         // 판정 뒤 정리: 대기 중인 명령이 없거나 너무 오래 미뤘으면 지금
         if let Some(since) = world.housekeeping_due {
             if pending.is_none() {
