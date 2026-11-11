@@ -757,3 +757,8 @@ table.grid.blocked .c-rule { min-width: 280px; }
 .rule-what { font-weight: 600; }
 .rule-what.k-ours { color: var(--brand-strong); }
 .rule-acts { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+
+/* 말씀 표시: 본문 + 장절·번역본. 진행 표시 아래에 조용히 */
+.word-slot { margin-top: 14px; max-width: 46em; }
+.word-verse-text { color: var(--muted); line-height: 1.6; word-break: keep-all; }
+.word-verse-ref { color: var(--muted); font-size: 12px; margin-top: 4px; opacity: .8; }

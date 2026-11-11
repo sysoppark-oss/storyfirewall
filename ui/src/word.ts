@@ -3,6 +3,7 @@
 // 줄바꿈·띄어쓰기를 그대로 두고, 글자로만 표시한다(마크다운을 해석하지 않는다).
 import DEDICATION from "../../docs/proposals/word/dedication.ko.md?raw";
 import CHURCH from "../../docs/proposals/word/church.ko.md?raw";
+import WORD from "../../docs/proposals/word/ko.json";
 import { el } from "./ui";
 
 export { DEDICATION, CHURCH };
@@ -59,4 +60,61 @@ export function churchBlock(): HTMLElement {
     box.append(a);
   }
   return box;
+}
+
+// ── 구절 고르기(README "고르는 규칙") — 모든 프로그램이 같은 날 같은 구절. 무작위를 쓰지 않는다 ──
+
+export interface Verse {
+  id: string;
+  ref: string;
+  group: string;
+  long: boolean;
+  text: string;
+}
+
+/** 번역본 이름(표시 형식: 본문 · 장절 · 번역본) */
+export const VERSION: string = WORD.version;
+export const VERSES: readonly Verse[] = WORD.verses as Verse[];
+/** G: 복음의 핵심 20곳, O: 나머지 80곳, W: 짧은 구절(기다리는·빈·시작 화면) — 모두 파일 순서 */
+const G = VERSES.filter((v) => v.group === "gospel");
+const O = VERSES.filter((v) => v.group !== "gospel");
+export const W: readonly Verse[] = VERSES.filter((v) => !v.long);
+
+/** 현지 날짜가 1970-01-01 부터 며칠째인가(1970-01-01 이 0) — 사용자 PC 의 현지 날짜 기준 */
+export function localDay(d: Date = new Date()): number {
+  return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000);
+}
+
+/** 오늘의 말씀: 사흘에 한 번은 복음의 핵심 구절 */
+export function todayVerse(day: number): Verse {
+  if (day % 3 === 0) return G[Math.floor(day / 3) % G.length]!;
+  return O[(day - Math.floor(day / 3) - 1) % O.length]!;
+}
+
+/** 기다리는·빈·시작 화면: 오늘 시작 위치(day % |W|)에서 step 번째 */
+export function waitVerse(day: number, step = 0): Verse {
+  return W[(day + step) % W.length]!;
+}
+
+/** 한 화면 안에서 구절을 바꾸는 간격(규칙: 10초보다 빨리 바꾸지 않는다) */
+export const ROTATE_MS = 15_000;
+
+/** 구절 한 덩어리: 본문, 그 아래 장·절과 번역본 이름 — 글자로만 */
+export function verseBlock(v: Verse): HTMLElement {
+  const box = el("div", "word-verse");
+  box.append(el("div", "word-verse-text", v.text), el("div", "word-verse-ref", `${v.ref} · ${VERSION}`));
+  return box;
+}
+
+/** 기다리는 화면용: 화면에 붙어 있는 동안 ROTATE_MS 마다 다음 짧은 구절로 바꾼다 */
+export function rotatingVerse(day = localDay()): HTMLElement {
+  const slot = el("div", "word-slot");
+  let step = 0;
+  slot.append(verseBlock(waitVerse(day, step)));
+  const t = window.setInterval(() => {
+    if (!slot.isConnected) { window.clearInterval(t); return; }
+    step += 1;
+    slot.replaceChildren(verseBlock(waitVerse(day, step)));
+  }, ROTATE_MS);
+  return slot;
 }
