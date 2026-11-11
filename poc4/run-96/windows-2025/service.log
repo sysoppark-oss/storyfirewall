@@ -1,0 +1,12 @@
+1794440139 service: running
+1794440139 squat: fixed pipe name held by pid=7772 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc.exe") session=Some(2)
+1794440139 pipe: published \\.\pipe\story-firewall-2246585f02da478dac7b324a0b8d9014
+pipe: connection 1 closed: closed
+pipe: connection 2 closed: closed
+1794440262 event: TimeChanged
+1794440262 event: TimeChanged
+1794440144 event: TimeChanged
+1794440144 event: TimeChanged
+1794440146 event: Stop
+1794440146 pipe: unpublished
+1794440146 service: stopped
