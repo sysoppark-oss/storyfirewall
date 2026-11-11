@@ -226,3 +226,11 @@ fn handler_answers_heavy_reads_while_engine_is_stuck() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn dec_saturating_stops_at_zero() {
+    let n = std::sync::atomic::AtomicUsize::new(1);
+    svc::runtime::dec_saturating(&n);
+    svc::runtime::dec_saturating(&n);
+    assert_eq!(n.load(std::sync::atomic::Ordering::SeqCst), 0);
+}

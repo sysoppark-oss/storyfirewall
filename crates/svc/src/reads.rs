@@ -136,9 +136,7 @@ impl Gate {
 
 /// 0 아래로 내려가지 않게
 fn dec(n: &std::sync::atomic::AtomicUsize) {
-    let _ = n.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
-        Some(v.saturating_sub(1))
-    });
+    crate::runtime::dec_saturating(n);
 }
 
 /// 작업자가 맡는 메서드

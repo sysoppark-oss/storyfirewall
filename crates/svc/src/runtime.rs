@@ -33,11 +33,19 @@ pub static QUEUED_RPCS: std::sync::atomic::AtomicUsize = std::sync::atomic::Atom
 
 /// 0 아래로 내려가지 않게(넘침으로 큰 수가 되면 모든 조회가 막힌다)
 pub fn queued_rpcs_dec() {
-    let _ = QUEUED_RPCS.fetch_update(
-        std::sync::atomic::Ordering::SeqCst,
-        std::sync::atomic::Ordering::SeqCst,
-        |n| Some(n.saturating_sub(1)),
-    );
+    dec_saturating(&QUEUED_RPCS);
+}
+
+/// 0 에서 멈추는 내리기. fetch_update 는 새 Rust 에서 이름이 바뀌어(try_update) 경고가 나므로 직접 돈다
+pub fn dec_saturating(n: &std::sync::atomic::AtomicUsize) {
+    use std::sync::atomic::Ordering::SeqCst;
+    let mut cur = n.load(SeqCst);
+    while cur > 0 {
+        match n.compare_exchange_weak(cur, cur - 1, SeqCst, SeqCst) {
+            Ok(_) => return,
+            Err(now) => cur = now,
+        }
+    }
 }
 
 pub fn engine_busy_ms() -> u64 {
