@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 // @ts-ignore — node 내장 모듈(@types/node 없이 시험에서만 씀). ?raw 가 빈 문자열이 되는 경우(tokens.test 참고)를 잡으려고 파일을 직접 읽어 비교
 import { readFileSync } from "node:fs";
-import { CHURCH, DEDICATION, VERSES, W, churchText, dedicationText, localDay, splitEmail, todayVerse, waitVerse } from "./word";
+import { CHURCH, DEDICATION, VERSES, W, churchText, dedicationText, localDay, splitEmail, todayVerse, waitStep, waitVerse, ROTATE_MS } from "./word";
 
 const file = (n: string): string => readFileSync(new URL(`../../docs/proposals/word/${n}`, import.meta.url), "utf8");
 
@@ -44,5 +44,23 @@ describe("말씀 표시 — 고르는 규칙(README 확인 값)", () => {
   it("기다리는 화면은 긴 구절을 쓰지 않고, 시작 위치는 day % |W|", () => {
     for (let s = 0; s < 200; s++) expect(waitVerse(20768, s).long).toBe(false);
     expect(waitVerse(20768).id).toBe(W[20768 % W.length]!.id);
+  });
+});
+
+describe("말씀 표시 — 넣지 않는 자리·바꾸는 간격", () => {
+  const src = (n: string): string => readFileSync(new URL(`./${n}`, import.meta.url), "utf8");
+  it("진단·처리 기록·차단 기록·변경 장부의 불러오기에는 구절이 없다(규칙 3)", () => {
+    for (const f of ["screens/diag.ts", "screens/blocked-log.ts"]) {
+      for (const m of src(f).matchAll(/loadingBox\(([^)]*)\)/g)) expect(m[1], f).toContain("word: false");
+    }
+    expect(src("screens/story.ts")).toMatch(/triage-log"\);\s*box\.append\(loadingBox\(\{ word: false \}\)\)/);
+    expect(src("screens/dashboard.ts")).toMatch(/loadingBox\(\{ word: false \}\)\); \/\/ 말씀 규칙 3: 변경 장부/);
+  });
+  it("10초보다 빨리 바꾸지 않고, 자정에 day % |W| 에서 시작", () => {
+    expect(ROTATE_MS).toBeGreaterThanOrEqual(10_000);
+    expect(waitStep(new Date(2026, 10, 11, 0, 0, 0))).toBe(0);
+    expect(waitStep(new Date(2026, 10, 11, 0, 0, 14))).toBe(0);
+    expect(waitStep(new Date(2026, 10, 11, 0, 0, 15))).toBe(1);
+    expect(waitVerse(20768, waitStep(new Date(2026, 10, 11, 0, 0, 1))).id).toBe(W[20768 % W.length]!.id);
   });
 });

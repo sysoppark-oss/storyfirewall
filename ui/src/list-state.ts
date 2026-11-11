@@ -26,11 +26,16 @@ export function listState<T>(r: RpcResult<{ items: T[] }>, health?: HealthLike |
 }
 
 /// 불러오는 중: 회색 뼈대 3줄, 2초 넘으면 "불러오는 중…" + 말씀 한 구절(진행 표시 아래)
-export function loadingBox(): HTMLElement {
+export function loadingBox(opts: { word?: boolean } = {}): HTMLElement {
   const b = el("div", "loading", el("div", "sk"), el("div", "sk"), el("div", "sk"));
   const p = el("p", "muted", "불러오는 중…");
   // 말씀 표시(규칙 2): 기다리는 화면은 진행 표시 아래에 짧은 구절. 빨리 끝나는 조회에서 깜빡이지 않게 문구와 함께 2초 뒤
-  setTimeout(() => { if (b.isConnected) b.append(p, rotatingVerse()); }, 2000);
+  // 진단·기록 화면은 word:false(규칙 3). 한 화면에 구절은 하나만(이미 떠 있으면 문구만)
+  setTimeout(() => {
+    if (!b.isConnected) return;
+    b.append(p);
+    if (opts.word !== false && !document.querySelector(".word-slot")) b.append(rotatingVerse());
+  }, 2000);
   // D021-2: 10초가 넘으면 이유를 덧붙인다
   setTimeout(() => { if (b.isConnected) p.textContent = "불러오는 중… (기록이 많으면 시간이 걸릴 수 있습니다)"; }, 10000);
   return b;

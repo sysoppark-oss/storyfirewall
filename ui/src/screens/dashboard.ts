@@ -600,7 +600,7 @@ export function dashboard(): HTMLElement {
           if (e.kind === "first_run_watch") {
             row.append(" ", button("변경 장부", () => {
               clear(slot);
-              slot.append(loadingBox());
+              slot.append(loadingBox({ word: false })); // 말씀 규칙 3: 변경 장부(기록)
               void rpc<{ run: InstallRun; inferred?: { path: string; bulk: boolean }[] }>("ledger.get", { node_id: node }).then((r) => {
                 clear(slot);
                 if (!r.ok) return void slot.append(failBox(r.error, () => {}, "변경 장부"));

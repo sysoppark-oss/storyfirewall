@@ -67,7 +67,7 @@ export function diagnostics(): HTMLElement {
   root.append(body);
   const load = async () => {
     clear(body);
-    body.append(loadingBox());
+    body.append(loadingBox({ word: false })); // 말씀 규칙 3: 진단 자리에는 넣지 않는다
     const [h, ev, c, ret, elevated] = await Promise.all([
       rpc<Health>("collector.health", {}),
       rpc<{ items: { root: number; title: string; started_in_gap?: [number, number] }[] }>("story.events", { level_min: "normal", triage: "all", cursor: { limit: 200 } }),

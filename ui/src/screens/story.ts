@@ -908,7 +908,7 @@ export function emptyText(filter: string, c?: TriageCounts): string {
 /// "처리 기록" 탭: 최신 먼저. 상태 · 조치 · 누가 · 언제 · 메모
 function triageLogPanel(root: number): HTMLElement {
   const box = el("div", "facts-panel triage-log");
-  box.append(loadingBox());
+  box.append(loadingBox({ word: false })); // 말씀 규칙 3: 처리 기록(감사 기록 성격)
   void (async () => {
     const r = await rpc<{ items: { ts: number; state: TriageState; action?: TriageAction; actor: string; note?: string }[] }>("story.triage_log", { root });
     clear(box);

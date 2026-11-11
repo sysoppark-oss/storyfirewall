@@ -106,15 +106,23 @@ export function verseBlock(v: Verse): HTMLElement {
   return box;
 }
 
-/** 기다리는 화면용: 화면에 붙어 있는 동안 ROTATE_MS 마다 다음 짧은 구절로 바꾼다 */
-export function rotatingVerse(day = localDay()): HTMLElement {
+/** 지금 보일 차례: 현지 자정부터 ROTATE_MS 칸 수. 자정에는 0 이라 시작 위치가 day % |W| 이고(README),
+ * 여러 상자·짧은 조회가 반복돼도 같은 시각엔 같은 구절이며 하루 동안 W 를 차례로 돈다 */
+export function waitStep(now: Date): number {
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Math.floor((now.getTime() - midnight) / ROTATE_MS);
+}
+
+/** 기다리는 화면용: 화면에 붙어 있는 동안 칸이 바뀔 때 다음 짧은 구절로(자정이 지나면 새 날짜 기준) */
+export function rotatingVerse(): HTMLElement {
   const slot = el("div", "word-slot");
-  let step = 0;
-  slot.append(verseBlock(waitVerse(day, step)));
+  const pick = () => { const now = new Date(); return waitVerse(localDay(now), waitStep(now)); };
+  let cur = pick();
+  slot.append(verseBlock(cur));
   const t = window.setInterval(() => {
     if (!slot.isConnected) { window.clearInterval(t); return; }
-    step += 1;
-    slot.replaceChildren(verseBlock(waitVerse(day, step)));
-  }, ROTATE_MS);
+    const next = pick();
+    if (next.id !== cur.id) { cur = next; slot.replaceChildren(verseBlock(cur)); }
+  }, 1_000);
   return slot;
 }

@@ -236,7 +236,7 @@ export function blockedLog(): { root: HTMLElement; stop: () => void } {
 
   const refresh = async () => {
     const my = ++gen;
-    if (!box.firstChild) box.append(loadingBox());
+    if (!box.firstChild) box.append(loadingBox({ word: false })); // 말씀 규칙 3: 기록 화면
     const r = await rpc<{ items: BlockedItem[]; kinds: Partial<Record<RuleKind, number>>; total: number; oldest?: number | null; rules?: RuleSum[]; rules_total?: number; evicted?: number; rules_overflow?: number }>("blocked.recent", { limit: 500, q: q.value.slice(0, 128) });
     if (my !== gen) return;
     if (!r.ok) {
