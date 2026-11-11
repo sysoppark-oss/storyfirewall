@@ -141,6 +141,14 @@ impl StoryVisibility {
         let mut missing_nodes: Vec<i64> = Vec::new();
         for id in need {
             match view.and_then(|v| v.nodes.get(&id)) {
+                // 세션을 아직 모르는 프로세스는 메모리 그래프를 믿지 않는다: 세션 기록은 시작 기록 뒤에 따로 오므로
+                // 그 사이에 판정이 돌았으면 다음 판정(1분)까지 "세션 모름 = 보임"으로 남는다 → DB 의 지금 값으로 다시 본다
+                Some(n)
+                    if n.kind == graph::NodeKind::Process.as_str()
+                        && n.attr("session").is_none() =>
+                {
+                    missing_nodes.push(id)
+                }
                 Some(n) => {
                     node_ok.insert(id, visible_node(n));
                 }
