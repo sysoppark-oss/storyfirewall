@@ -570,7 +570,7 @@ pub fn dispatch(
     if mutation {
         world.judge_cache = None;
         world.invalidate_reads();
-        world.judged = None;
+        world.drop_judged();
     }
     match out {
         Ok(v) => Response::ok(id, v),
@@ -816,6 +816,18 @@ fn handle(
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
             // L030: 판정은 무겁다(노트북 24h 10초) — 30초 캐시. 같은 since_ts 면 다시 계산하지 않는다
             // L052(노트북 이야기 목록 평균 3.4초): 어느 단계가 느린지 진단 처리 시간 표에 나누어 남긴다
+            // diag-188: 재시작 직후 첫 판정 전(결과도 직전 결과도 없음)이면 조회 안에서 판정 전체를 하지 않고 바로 바쁨 —
+            // 화면은 5초 뒤 다시 부르고, 첫 판정은 엔진이 쉴 때 판정 뒤 정리에서 한다
+            if v.since_ts == 0
+                && world.judged.is_none()
+                && world.judged_prev.is_none()
+                && !graph_is_memory(world)
+            {
+                world
+                    .housekeeping_due
+                    .get_or_insert_with(std::time::Instant::now);
+                return Err(RpcError::with(ErrorCode::Busy, "첫 판정을 하는 중"));
+            }
             let t_judge = std::time::Instant::now();
             let stories = judged_stories(world, v.since_ts)
                 .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?;
@@ -2327,6 +2339,12 @@ fn judged_stories(
     if since == 0 {
         if let Some((_, s)) = &world.judged {
             return Ok(s.clone());
+        }
+        // diag-188: 파일 DB 에서는 조회 안에서 판정 전체를 하지 않는다 — 직전 결과(최대 판정 한 주기 늦음)를 쓴다
+        if !graph_is_memory(world) {
+            if let Some((_, s)) = &world.judged_prev {
+                return Ok(s.clone());
+            }
         }
         let s = std::sync::Arc::new(judge::assess(&world.graph, 0, i64::MAX, &world.baseline)?);
         world.judged = Some((world.engine_wall(), s.clone()));

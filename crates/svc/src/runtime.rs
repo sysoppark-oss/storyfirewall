@@ -157,6 +157,9 @@ pub struct World<'a> {
     /// 구조 개선 B: 주기 판정(1분, 보관 기간 전체)의 결과. 조회(story.events 기본·process.detail)는 이것만 읽는다.
     /// None 이면(시작 직후·변경 요청 뒤) 조회가 쓰지 않는 판정(judge::assess)으로 한 번 채운다
     pub judged: Option<(i64, std::sync::Arc<Vec<judge::Story>>)>,
+    /// diag-188: 판정 결과를 버릴 때(보관 정리·관찰 기록·변경 뒤) 지우지 않고 여기 남긴다. 조회는 새 판정이 나올 때까지 이것을 쓴다 —
+    /// 전에는 다음 조회가 조회 안에서 판정 전체를 다시 계산해(재시작 직후 디스크 캐시가 빔) 16초 동안 엔진을 잡았다
+    pub judged_prev: Option<(i64, std::sync::Arc<Vec<judge::Story>>)>,
     /// 마지막 보관 정리 시각(엔진 wall). 0 = 아직(시작 뒤 첫 주기 판정 다음에 돈다)
     pub last_retention_wall: i64,
     /// 실시간 3: 판정은 15초마다, 설치 목록 미리 계산은 그대로 1분마다(마지막 계산 벽시각)
@@ -326,6 +329,7 @@ impl Runtime {
                     reader: crate::reads::spawn(&db_path, read_gen),
                     judge_cache: None,
                     judged: None,
+                    judged_prev: None,
                     dev_health: None,
                     dev_force: None,
                     first_run_pending: Vec::new(),
@@ -538,7 +542,7 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
             Command::Ingest(events) => {
                 let mut ing = Ingester::new(&world.graph);
                 let _ = ing.ingest_all(&events);
-                world.judged = None;
+                world.drop_judged();
                 world.judge_cache = None;
                 world.invalidate_reads();
             }
@@ -650,6 +654,14 @@ const HK_MAX_DEFER: Duration = Duration::from_secs(10);
 /// 판정 뒤 정리: 문장 미리 만들기 → 설치 목록 → AI 도구 → 인터페이스 → 보관 정리 → 처리 시간 표
 fn run_housekeeping(world: &mut World) {
     world.housekeeping_due = None;
+    // 판정 결과를 버렸으면 다시(조회 안에서 하지 않는다)
+    if world.judged.is_none() {
+        let tj = std::time::Instant::now();
+        judge_and_notify(world);
+        world
+            .timings
+            .record("엔진: 판정 다시(버린 뒤)", tj.elapsed());
+    }
     if world.warm_due {
         world.warm_due = false;
         // L052: 무거운 문장 만들기는 조회 때가 아니라 주기 작업에서 — 대시보드 첫 쪽(기본 화법)을 미리 만들어 둔다
@@ -749,6 +761,15 @@ fn cmd_label(c: &Command) -> &'static str {
 }
 
 impl<'a> World<'a> {
+    /// 판정 결과를 버린다(직전 결과로 남김). 다시 판정은 엔진이 쉴 때(판정 뒤 정리)
+    pub fn drop_judged(&mut self) {
+        if let Some(j) = self.judged.take() {
+            self.judged_prev = Some(j);
+        }
+        self.housekeeping_due
+            .get_or_insert_with(std::time::Instant::now);
+    }
+
     /// 엔진 시계의 벽시각(unix 초). 기준선 now_ts(FILETIME)에서 되돌린다
     /// 읽기 캐시(오늘 한 일)를 버린다 — 엔진 쪽 캐시와 작업자 캐시 모두
     pub fn invalidate_reads(&mut self) {
@@ -912,7 +933,7 @@ pub fn run_retention(world: &mut World) {
             // 지운 선을 가리키는 판정 결과·캐시는 버린다(다음 조회가 쓰지 않는 판정으로 다시 채운다)
             // 증분 판정기도 다음 번에 전체를 다시 읽는다(보관 정리가 남긴 "전체 다시" 표시와 같은 뜻 — 이중 안전)
             world.judge_inc.invalidate();
-            world.judged = None;
+            world.drop_judged();
             world.judge_cache = None;
             world.invalidate_reads();
         }

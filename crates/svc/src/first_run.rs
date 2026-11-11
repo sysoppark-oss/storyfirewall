@@ -737,7 +737,7 @@ fn start_watch(world: &mut crate::runtime::World, t: &Target, s: Settings) {
         .engine
         .record_event_ref(KIND, 1, detail, Some(target.to_string()));
     // 이야기 카드에 관찰 줄이 바로 보이게
-    world.judged = None;
+    world.drop_judged();
     world.judge_cache = None;
 }
 
