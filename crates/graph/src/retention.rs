@@ -306,7 +306,10 @@ fn apply_inner(
                 v
             };
             let mut st = tx.prepare(
-                "SELECT id, LENGTH(payload_json) FROM raw_events INDEXED BY ix_raw_ts ORDER BY ts, id",
+                // diag-157: 이 단계가 10.5초. LENGTH(text) 는 글자 수를 세려고 내용을 다 읽는다 → octet_length 는
+                // 기록 머리의 바이트 길이만 본다(SQLite 3.43+). 합(raw_size, 글자 수)과 조금 다르지만(한글은 바이트가 더 큼)
+                // 고르는 양이 약간 적어질 뿐이고 실제 합은 트리거가 맞춘다 — 다음 정리에서 나머지를 지운다
+                "SELECT id, octet_length(payload_json) FROM raw_events INDEXED BY ix_raw_ts ORDER BY ts, id",
             )?;
             let mut victims: Vec<i64> = Vec::new();
             let mut rows = st.query([])?;
@@ -325,8 +328,12 @@ fn apply_inner(
             drop(st);
             if !victims.is_empty() {
                 tx.execute("DELETE FROM raw_del", [])?;
-                for id in &victims {
-                    tx.execute("INSERT INTO raw_del(id) VALUES (?1)", params![id])?;
+                {
+                    // 문장 준비를 한 번만(지울 행이 수만 개)
+                    let mut ins = tx.prepare_cached("INSERT INTO raw_del(id) VALUES (?1)")?;
+                    for id in &victims {
+                        ins.execute(params![id])?;
+                    }
                 }
                 rep.raw_deleted_by_size = victims.len();
                 delete_raw_del(&tx)?;
