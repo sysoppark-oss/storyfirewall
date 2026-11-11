@@ -1123,7 +1123,8 @@ mod real {
                     .map(PathBuf::from)
                     .unwrap_or_else(data_dir::base);
                 let trusted = dir.exists() && data_dir::owner_trusted(&dir);
-                println!("status: state={st} published={published} wfp_filters={filters} data_dir={} owner_trusted={trusted}{note}", dir.display());
+                // exe_version: 이 실행 파일의 판 — 설치 뒤 서비스 파일이 정말 바뀌었는지 설치 기록에서 확인한다(install-199: 화면만 새 판)
+                println!("status: state={st} published={published} wfp_filters={filters} data_dir={} owner_trusted={trusted} exe_version={SVC_VERSION}{note}", dir.display());
             }
             "diag" => diag(),
             "run" => {

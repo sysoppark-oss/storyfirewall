@@ -2,7 +2,7 @@
 name = "story-firewall-ui"
 version = "0.1.6"
 edition = "2021"
-license = "UNLICENSED"
+license = "AGPL-3.0-only"
 description = "이야기형 AI 방화벽 UI (Tauri 2). 서비스와 네임드 파이프(개발: TCP 루프백)로 JSON-RPC 통신"
 
 # 루트 워크스페이스와 분리: Linux CI 는 webkit2gtk 가 없어 이 크레이트를 빌드하지 않는다 (Windows 러너 poc5).
