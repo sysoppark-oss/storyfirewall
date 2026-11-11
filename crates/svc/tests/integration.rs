@@ -2617,3 +2617,25 @@ fn a30_session_arriving_after_judge_hides_story_without_rejudge() {
         "세션이 DB 에 들어온 뒤에는 다음 판정 전이라도 숨김"
     );
 }
+
+/// A27(실제 화면을 일반 사용자로): 시연 프로세스를 서버 세션에 두면 그 세션의 일반 사용자가 payload 이야기를 본다.
+/// 세션 없는 부모(해결 안 된 PID)가 이야기를 통째로 숨기지 않는지까지 본다
+#[test]
+fn demo_with_session_shows_payload_story_to_standard_user() {
+    let (rt, wall, _mono) = boot();
+    let now_ft = svc::runtime::unix_to_filetime(wall.load(Ordering::SeqCst));
+    rt.tx
+        .send(Command::Ingest(svc::demo::with_session(
+            svc::demo::demo_events(now_ft),
+            2,
+        )))
+        .unwrap();
+    rt.tx.send(Command::Judge).unwrap();
+    let mut u = Client::connect_session(&rt, 200, 1, Some(2));
+    u.hello();
+    let v = u.call("story.events", serde_json::json!({"level_min": "normal"}));
+    assert!(
+        v["result"]["items"].to_string().contains("payload.exe"),
+        "일반 사용자(세션 2)가 payload 이야기를 봐야 한다: {v}"
+    );
+}
