@@ -234,15 +234,19 @@ export function settings(args: Record<string, unknown> = {}): HTMLElement {
     el("p", "muted", "국기 그림: flag-icons (MIT, Panayiotis Lipiridis). 국가 이름: i18n-iso-countries (MIT)."),
     adv);
   // 말씀 표시(기획자 확정 2026-11-11, README docs/proposals/word): "정보" 화면의 헌정 문구 + [교회 안내]. 항상 표시, 끄는 설정 없음
-  const church = el("section", "card word-church-card");
+  // 검수(2026-11-11): 단추를 본문 바로 아래 왼쪽에, 펼침 표시(▾/▴), aria-controls. 교회 안내는 카드 안 카드 대신 위 구분선만
+  const church = el("div", "word-church-box");
+  church.id = "word-church";
   church.hidden = true;
-  const churchBtn = button("교회 안내", () => {
+  const churchBtn = button("교회 안내 ▾", () => {
     if (!church.childElementCount) church.append(churchBlock());
     church.hidden = !church.hidden;
+    churchBtn.textContent = church.hidden ? "교회 안내 ▾" : "교회 안내 ▴";
     churchBtn.setAttribute("aria-expanded", String(!church.hidden));
   }, "btn small");
   churchBtn.setAttribute("aria-expanded", "false");
-  const about = el("section", "card word-about", el("h3", undefined, "정보"), dedicationBlock(), el("div", "q-more", churchBtn), church);
+  churchBtn.setAttribute("aria-controls", "word-church");
+  const about = el("section", "card word-about", el("h3", undefined, "정보"), dedicationBlock(), el("div", "word-actions", churchBtn), church);
   const updateTab = el("div", "form",
     el("p", undefined, `보호 서비스 ${state.serverVersion || "—"}판`),
     upLine,

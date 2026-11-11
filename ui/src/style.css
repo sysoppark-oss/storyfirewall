@@ -502,6 +502,10 @@ details.where-panel { border-radius: 16px; }
 .q-list li { overflow-wrap: anywhere; }
 .q-bars { display: flex; flex-direction: column; gap: 4px; }
 .q-more { display: flex; justify-content: flex-end; }
+/* 말씀 표시(정보 화면): 한국어 단어 중간에서 끊지 않는다 — 글자는 그대로, 표시만(검수 2026-11-11) */
+.word-dedication, .word-church { word-break: keep-all; overflow-wrap: anywhere; line-height: 1.7; }
+.word-actions { margin-top: 12px; }
+.word-church-box { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .dash-row2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 @media (max-width: 1100px) { .dash-row2 { grid-template-columns: minmax(0, 1fr); } }
 .hour-card, .dash-row2 .where-dash { border-radius: 16px; padding: 16px 18px; margin: 0; min-width: 0; }
