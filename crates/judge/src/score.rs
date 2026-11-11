@@ -234,6 +234,51 @@ pub fn level_of(score: u8, chapter: Chapter, reasons: &[Reason]) -> Level {
     }
 }
 
+/// 한 번의 판정(assemble) 안에서 기준선 조회 결과를 기억한다 — diag-154: "주기 판정: 점수"가 매번 평균 2.2초.
+/// 접속 선마다 learned·has·pc_learned 를 SQL 로 다시 물었다(같은 프로그램·도메인을 수백~수천 번).
+/// 판정 한 번 동안 기준선은 바뀌지 않으므로(학습 기록은 같은 엔진 스레드의 다른 단계) 결과가 같다
+#[derive(Default)]
+pub struct BlMemo {
+    learned: std::collections::HashMap<String, bool>,
+    has: std::collections::HashMap<(String, &'static str, String), bool>,
+    pc_learned: Option<bool>,
+}
+
+impl BlMemo {
+    fn learned(&mut self, bl: &Baseline, store: &Store, k: &str) -> bool {
+        if let Some(v) = self.learned.get(k) {
+            return *v;
+        }
+        let v = bl.learned(store, k).unwrap_or(false);
+        self.learned.insert(k.to_string(), v);
+        v
+    }
+    fn has(
+        &mut self,
+        bl: &Baseline,
+        store: &Store,
+        k: &str,
+        kind: &'static str,
+        value: &str,
+    ) -> Result<bool> {
+        let key = (k.to_string(), kind, value.to_string());
+        if let Some(v) = self.has.get(&key) {
+            return Ok(*v);
+        }
+        let v = bl.has(store, k, kind, value)?;
+        self.has.insert(key, v);
+        Ok(v)
+    }
+    fn pc_learned(&mut self, bl: &Baseline, store: &Store) -> Result<bool> {
+        if let Some(v) = self.pc_learned {
+            return Ok(v);
+        }
+        let v = bl.pc_learned(store)?;
+        self.pc_learned = Some(v);
+        Ok(v)
+    }
+}
+
 pub fn score(
     v: &View,
     chain: &Chain,
@@ -242,6 +287,7 @@ pub fn score(
     store: &Store,
     pc_domains: &HashSet<String>,
     feedback: &HashSet<String>,
+    memo: &mut BlMemo,
 ) -> Result<Scored> {
     let mut reasons: Vec<Reason> = Vec::new();
     let mut add = |points: i32, what: &'static str, edge_id: Option<i64>, node_id: Option<i64>| {
@@ -479,32 +525,36 @@ pub fn score(
                         if baseline::learnable(af)
                             && pkey
                                 .as_deref()
-                                .map_or(false, |k| bl.learned(store, k).unwrap_or(false)) =>
+                                .map_or(false, |k| memo.learned(bl, store, k)) =>
                     {
                         let k = pkey.as_deref().unwrap();
-                        let known = bl.has(store, k, "domain", &baseline::etld1(d))?;
-                        if known && !known_added {
-                            known_added = true;
-                            add(w("평소 접속하던 곳"), "평소 접속하던 곳", Some(e.id), None);
-                        } else if !known && !first_seen_added {
-                            first_seen_added = true;
-                            add(
-                                w("이 프로그램이 처음 접속한 곳"),
-                                "이 프로그램이 처음 접속한 곳",
-                                Some(e.id),
-                                None,
-                            );
+                        // 두 근거가 이미 붙었으면 도메인은 다시 묻지 않는다(결과가 바뀌지 않음)
+                        if !(known_added && first_seen_added) {
+                            let known = memo.has(bl, store, k, "domain", &baseline::etld1(d))?;
+                            if known && !known_added {
+                                known_added = true;
+                                add(w("평소 접속하던 곳"), "평소 접속하던 곳", Some(e.id), None);
+                            } else if !known && !first_seen_added {
+                                first_seen_added = true;
+                                add(
+                                    w("이 프로그램이 처음 접속한 곳"),
+                                    "이 프로그램이 처음 접속한 곳",
+                                    Some(e.id),
+                                    None,
+                                );
+                            }
                         }
-                        if !bl.has(store, k, "port", &port.to_string())? && !new_port_added {
+                        if !new_port_added && !memo.has(bl, store, k, "port", &port.to_string())? {
                             new_port_added = true;
                             add(w("평소 없던 포트"), "평소 없던 포트", Some(e.id), None);
                         }
                     }
                     (Some(d), _) => {
                         // 학습 제외 프로그램(서명 없음·Zone 3·4) 또는 미학습: PC 전체 기준
-                        if bl.pc_learned(store)?
+                        // (이미 붙었으면 묻지 않는다 — 순서만 바꿈, 결과 같음)
+                        if !first_seen_added
+                            && memo.pc_learned(bl, store)?
                             && !pc_domains.contains(&baseline::etld1(d))
-                            && !first_seen_added
                         {
                             first_seen_added = true;
                             add(

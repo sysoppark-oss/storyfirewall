@@ -374,6 +374,8 @@ pub(crate) fn assemble(
     let mut claimed: HashSet<i64> = HashSet::new();
     // L055: 사건마다 트랜잭션을 열고 커밋하면 사건 수만큼 디스크 커밋이 생긴다 → 모았다가 한 번에
     let mut chapter_updates: Vec<(i64, Option<i64>)> = Vec::new();
+    // 이번 판정 동안 기준선 조회 결과를 기억(diag-154 점수 구간 2.2초)
+    let mut memo = score::BlMemo::default();
     for &(root, kind) in roots {
         if claimed.contains(&root) {
             continue;
@@ -396,7 +398,16 @@ pub(crate) fn assemble(
         claimed.extend(chain.files.iter().copied());
         // 뿌리가 여러 후보에 걸리면(예: Zone 3 이면서 서명 없음) 첫 번째 규칙이 이긴다.
         let ts = std::time::Instant::now();
-        let scored = score::score(view, chain, kind, baseline, store, &pc_domains, &feedback)?;
+        let scored = score::score(
+            view,
+            chain,
+            kind,
+            baseline,
+            store,
+            &pc_domains,
+            &feedback,
+            &mut memo,
+        )?;
         prof.score += ts.elapsed();
         // 사건에 속한 선에 장을 기록 (평범은 NULL 로 두지 않고 장을 남긴다: 보관 정책의 "의심" 기준은 level)
         chapter_updates.extend(

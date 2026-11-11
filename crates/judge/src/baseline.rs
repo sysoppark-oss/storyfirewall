@@ -237,7 +237,11 @@ impl Baseline {
     }
 
     pub fn has(&self, store: &Store, key: &str, kind: &str, value: &str) -> Result<bool> {
-        let c: i64 = store.conn().query_row("SELECT COUNT(*) FROM baseline_item WHERE program_key = ?1 AND kind = ?2 AND value = ?3", [key, kind, value], |r| r.get(0))?;
+        // 문장 준비를 재사용(prepare_cached), 있는지만 보면 되므로 COUNT 대신 EXISTS
+        let c: i64 = store
+            .conn()
+            .prepare_cached("SELECT EXISTS(SELECT 1 FROM baseline_item WHERE program_key = ?1 AND kind = ?2 AND value = ?3)")?
+            .query_row([key, kind, value], |r| r.get(0))?;
         Ok(c > 0)
     }
 
