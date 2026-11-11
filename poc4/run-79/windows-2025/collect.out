@@ -1,3 +1,0 @@
-collect: ingested=433 edges=292 dropped=0 lost=Some(0)
-collect: sink batches=10 events=296 process_starts=4
-collect: process_nodes=141
