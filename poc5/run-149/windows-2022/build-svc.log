@@ -1,0 +1,27 @@
+   Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
+   Compiling policy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\policy)
+   Compiling ferrisetw v1.2.0 (D:\a\storyfirewall\storyfirewall\third_party\ferrisetw)
+   Compiling geo v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\geo)
+   Compiling graph v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\graph)
+   Compiling dsl v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\dsl)
+   Compiling api v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\api)
+   Compiling judge v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\judge)
+   Compiling story v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\story)
+   Compiling collector v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\collector)
+   Compiling engine v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\engine)
+   Compiling svc v0.1.6 (D:\a\storyfirewall\storyfirewall\crates\svc)
+warning: use of deprecated method `std::sync::atomic::Atomic::<usize>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\svc\src\runtime.rs:36:25
+   |
+36 |     let _ = QUEUED_RPCS.fetch_update(
+   |                         ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+36 -     let _ = QUEUED_RPCS.fetch_update(
+36 +     let _ = QUEUED_RPCS.try_update(
+   |
+
+warning: `svc` (lib) generated 1 warning (run `cargo fix --lib -p svc` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 1m 01s
