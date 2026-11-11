@@ -73,7 +73,7 @@ export function distPanel(opts: { scope: string; unit?: string; defaultView?: Di
       return;
     }
     for (const [by, title] of [["country", `국가별 (${unit})`], ["org", `ASN(망 사업자)별 (${unit})`]] as const) {
-      const { bars: bs, rest } = bars(items, by, opts.compact ? 6 : 8);
+      const { bars: bs, rest } = bars(items, by, 8); // UI 명세 5판 3장: 대시보드(compact)도 상위 8
       const col = el("div", "bar-col", el("h4", undefined, title));
       const max = Math.max(1, ...bs.map((b) => b.value));
       for (const b of bs) {
@@ -91,7 +91,8 @@ export function distPanel(opts: { scope: string; unit?: string; defaultView?: Di
         if (b.isNew) row.append(el("span", "badge-new", "최초 관측"));
         col.append(row);
       }
-      if (rest) col.append(el("div", "muted small", `그 밖에 ${rest}곳`));
+      // 검수 8번: "곳"이 상대 주소 수와 섞였다 → 나라·망 개수로
+      if (rest) col.append(el("div", "muted small", `그 밖에 ${rest}개 ${by === "country" ? "나라" : "망"}`));
       if (by === "country") {
         const off = offMapLine(items, "막대");
         if (off) col.append(el("div", "muted small", off));

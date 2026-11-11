@@ -227,6 +227,8 @@ export function dashboard(): HTMLElement {
   // 수준별 수(의심·주의)와 4장 도달 수 — refresh 가 채운다(평범은 story.events 기본 수준에 안 들어와 세지 않는다)
   let levelN = { critical: 0, suspicious: 0, watch: 0 };
   let reach = [0, 0, 0, 0];
+  // 검수 5번·원칙 6: 인시던트 목록을 아직 받지 못했으면 도넛·킬체인 숫자를 0 이 아니라 "—"로(0 은 "없다"로 읽힌다)
+  let levelKnown = false;
   const drawOverview = async () => {
     const gen = ++ovGen;
     const [cr0, lr0, ir0, tr0] = await Promise.all([
@@ -379,17 +381,18 @@ export function dashboard(): HTMLElement {
     void paintDist();
     // 수준별 도넛(처리 안 한 사건) + 4장 흐름 띠(유입 → 실행 → 자리잡기 → 외부 접속, 오늘 도달한 사건 수)
     const open = levelN.critical + levelN.suspicious + levelN.watch;
+    const num = (n: number) => (levelKnown ? String(n) : "—");
     const dn = el("section", "card donut-card", el("h3", undefined, "심각도별 미조치 인시던트"));
     const dnRow = el("div", "donut-row", donut([
       { label: LEVEL.critical, value: levelN.critical, cls: "d-crit" },
       { label: LEVEL.suspicious, value: levelN.suspicious, cls: "d-sus" },
       { label: LEVEL.watch, value: levelN.watch, cls: "d-watch" },
-    ], String(open), "사건"));
+    ], num(open), "사건"));
     const dl = el("ul", "donut-legend");
     // 4판 3-2: 도넛 범례를 누르면 그 심각도만(미조치)
-    dl.append(clickable(el("li", "d-crit", el("span", "sw"), `${LEVEL.critical} `, el("b", undefined, String(levelN.critical))), () => state.go("story", { levelEq: "critical", triage: "open" }), `미조치 ${LEVEL.critical} 인시던트 보기`));
-    dl.append(clickable(el("li", "d-sus", el("span", "sw"), `${LEVEL.suspicious} `, el("b", undefined, String(levelN.suspicious))), () => state.go("story", { levelEq: "suspicious", triage: "open" }), `미조치 ${LEVEL.suspicious} 인시던트 보기`));
-    dl.append(clickable(el("li", "d-watch", el("span", "sw"), `${LEVEL.watch} `, el("b", undefined, String(levelN.watch))), () => state.go("story", { levelEq: "watch", triage: "open" }), `미조치 ${LEVEL.watch} 인시던트 보기`));
+    dl.append(clickable(el("li", "d-crit", el("span", "sw"), `${LEVEL.critical} `, el("b", undefined, num(levelN.critical))), () => state.go("story", { levelEq: "critical", triage: "open" }), `미조치 ${LEVEL.critical} 인시던트 보기`));
+    dl.append(clickable(el("li", "d-sus", el("span", "sw"), `${LEVEL.suspicious} `, el("b", undefined, num(levelN.suspicious))), () => state.go("story", { levelEq: "suspicious", triage: "open" }), `미조치 ${LEVEL.suspicious} 인시던트 보기`));
+    dl.append(clickable(el("li", "d-watch", el("span", "sw"), `${LEVEL.watch} `, el("b", undefined, num(levelN.watch))), () => state.go("story", { levelEq: "watch", triage: "open" }), `미조치 ${LEVEL.watch} 인시던트 보기`));
     dnRow.append(dl);
     // 사용자 2026-11-07: 도넛 아래 빈 공간 → 처리 상태 막대(신규/분석 완료/조치 완료/예외 처리). 도넛은 틀 안 세로 중앙
     const tc = triageCounts;
@@ -406,14 +409,16 @@ export function dashboard(): HTMLElement {
     } else {
       dn.append(el("div", "donut-body", dnRow));
     }
-    dn.append(el("p", "muted small", open ? `도넛은 미조치(${TRIAGE_STATE.new}·${TRIAGE_STATE.investigated})만 셉니다.` : "미조치 인시던트가 없습니다."));
+    dn.append(levelKnown
+      ? el("p", "muted small", open ? `도넛은 미조치(${TRIAGE_STATE.new}·${TRIAGE_STATE.investigated})만 셉니다.` : "미조치 인시던트가 없습니다.")
+      : el("p", "warn small", "인시던트 목록을 아직 받지 못했습니다. 잠시 뒤 다시 불러옵니다."));
     const flow = el("section", "card flow-card", el("h3", undefined, "공격 단계 도달 현황 (오늘)"));
     const strip = el("div", "flow-strip");
     const names = STAGES.slice(0, 4).map((s) => s.name);
     const subs = STAGES.slice(0, 4).map((s) => s.plain);
     names.forEach((nm, i) => {
       const n = reach[i] ?? 0;
-      const step = el("div", `flow-step${n ? " on" : ""}`, el("div", "flow-n", String(n)), el("div", "flow-name", nm), el("div", "muted small", subs[i] ?? ""));
+      const step = el("div", `flow-step${n ? " on" : ""}`, el("div", "flow-n", num(n)), el("div", "flow-name", nm), el("div", "muted small", subs[i] ?? ""));
       strip.append(clickable(step, () => state.go("story", { stage: i + 1, level: "watch", triage: "open" }), `${nm}까지 간 미조치 인시던트 ${n}건 보기`));
       // 4판 1-3a: 앞뒤 칸이 모두 도달했으면 연결선을 굵은 브랜드 색으로(색만이 아니라 칸 숫자가 근거)
       if (i < 3) strip.append(el("div", `flow-arrow${n && (reach[i + 1] ?? 0) ? " on" : ""}`, "→"));
@@ -524,6 +529,7 @@ export function dashboard(): HTMLElement {
       .filter((x) => x.ts > 0)
       .sort((a, b) => b.ts - a.ts);
     reach = chapterReach([...sus, ...watchFresh].map((x) => x.reached ?? []));
+    levelKnown = ev.ok;
     const susSpark = hourlyCounts(susTs, Date.now() / 1000);
     const card = (title: string, body: Node, cls = "card", ic?: string, tone: Tone = "neutral", spark?: number[]) => {
       const c = el("div", `${cls} kpi tone-${tone}`, ic ? el("div", "kpi-head", icon(ic), el("h3", undefined, title)) : el("h3", undefined, title), body);
