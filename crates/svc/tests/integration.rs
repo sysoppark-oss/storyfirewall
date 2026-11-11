@@ -1835,7 +1835,15 @@ fn retention_runs_after_judge_and_uses_settings() {
     );
     assert!(v["result"].is_object(), "{v}");
     rt.tx.send(Command::Judge).unwrap();
-    let v = c.call("retention.get", serde_json::json!({}));
+    // 보관 정리는 판정 뒤 정리에서(대기 중인 화면 요청 먼저) → 끝날 때까지 다시 묻는다
+    let mut v = c.call("retention.get", serde_json::json!({}));
+    for _ in 0..50 {
+        if !v["result"]["last"].is_null() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        v = c.call("retention.get", serde_json::json!({}));
+    }
     assert_eq!(v["result"]["raw_days"], serde_json::json!(3), "{v}");
     assert_eq!(v["result"]["last"]["ok"], serde_json::json!(true), "{v}");
     // 이상한 값은 안전 범위로(0 이하 → 기본)
@@ -2262,7 +2270,15 @@ fn agents_list_reads_precomputed_cache() {
     ];
     rt.tx.send(Command::Ingest(evs)).unwrap();
     rt.tx.send(Command::Judge).unwrap();
-    let v = a.call("agents.list", serde_json::json!({"days": 1}));
+    // 판정 뒤 정리(AI 도구 미리 계산)는 대기 중인 화면 요청을 먼저 처리한 뒤에 한다 → 준비될 때까지 다시 묻는다
+    let mut v = a.call("agents.list", serde_json::json!({"days": 1}));
+    for _ in 0..50 {
+        if v["result"]["ready"] == true {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        v = a.call("agents.list", serde_json::json!({"days": 1}));
+    }
     assert_eq!(v["result"]["ready"], true, "{v}");
     let items = v["result"]["items"].as_array().unwrap();
     assert_eq!(items.len(), 1, "{v}");

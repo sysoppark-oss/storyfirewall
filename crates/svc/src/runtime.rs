@@ -177,6 +177,12 @@ pub struct World<'a> {
     /// 읽기 전용 연결을 연 별도 스레드에서 계산하고 결과만 받는다. Some = 계산 중
     pub agent_job:
         Option<std::sync::mpsc::Receiver<(i64, Result<Vec<graph::agent::AgentRun>, String>)>>,
+    /// 판정 뒤 덜 급한 정리(문장 미리 만들기·설치 목록·AI 도구·인터페이스·보관 정리)를 미뤄 둔 시각.
+    /// diag-164·화면 검수(2026-11-11): 판정 명령 하나 안에서 모두 하느라 화면 요청이 대기열에서 최대 17초 기다렸다 →
+    /// 대기 중인 명령(화면 요청 포함)을 먼저 처리하고 비었을 때 한다(최대 HK_MAX_DEFER 까지만 미룸)
+    pub housekeeping_due: Option<std::time::Instant>,
+    /// 판정 결과가 바뀌어 문장을 미리 만들어야 함
+    pub warm_due: bool,
     /// 37차 Q2: 지난번 본 (별칭, LUID) 짝. 바뀌면 인터페이스 조건 규칙을 지금 LUID 로 다시 건다. None = 아직 못 봄
     pub if_seen: Option<Vec<(String, u64)>>,
     /// 개편안 2판 1-2②: 우리 WFP 필터 id 집합 — 차단 집계 스레드와 공유, 주기 판정마다 갱신
@@ -313,6 +319,8 @@ impl Runtime {
                     remote: Default::default(),
                     agent_cache: None,
                     agent_job: None,
+                    housekeeping_due: None,
+                    warm_due: false,
                     if_seen: None,
                     our_filters: our_filters_thread.clone(),
                     blocked_recent: blocked_recent_thread.clone(),
@@ -382,6 +390,23 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
             world
                 .timings
                 .record("엔진: 하루 1회 기준선 학습", t.elapsed());
+        }
+        // 판정 뒤 정리: 대기 중인 명령이 없거나 너무 오래 미뤘으면 지금
+        if let Some(since) = world.housekeeping_due {
+            if pending.is_none() {
+                match rx.try_recv() {
+                    Ok(c) => pending = Some(c),
+                    Err(mpsc::TryRecvError::Empty) => {}
+                    Err(mpsc::TryRecvError::Disconnected) => return,
+                }
+            }
+            if pending.is_none() || since.elapsed() >= HK_MAX_DEFER {
+                let t = std::time::Instant::now();
+                ENGINE_BUSY_SINCE.store(mono_ms(), std::sync::atomic::Ordering::SeqCst);
+                let _idle = BusyGuard;
+                run_housekeeping(world);
+                world.timings.record("엔진: 판정 뒤 정리", t.elapsed());
+            }
         }
         let wait = world.engine.next_wakeup().unwrap_or(60).max(1) as u64;
         let cmd = match pending.take() {
@@ -508,41 +533,10 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                 judge_and_notify(world);
                 world.timings.record("엔진: 주기 판정", tj.elapsed());
                 refresh_our_filters(world);
-                // L069(32차 검수 4): 설치 목록 미리 계산 — 조회 때 계산하지 않는다(2초 원칙)
-                if world.engine_wall() - world.last_install_wall >= 60 {
-                    world.last_install_wall = world.engine_wall();
-                    let ti = std::time::Instant::now();
-                    let now_ft = unix_to_filetime(world.engine_wall());
-                    if let Err(e) = world.install_cache.refresh(&world.graph, now_ft, 300) {
-                        eprintln!("installs: refresh failed: {e}");
-                    }
-                    world
-                        .timings
-                        .record("엔진: 설치 목록 미리 계산", ti.elapsed());
-                }
-                // 14판 20-5: AI 도구 목록 미리 계산(5분마다, 최근 7일). 조회 때 계산하지 않는다(2초 원칙)
-                refresh_agents(world);
-                // 37차 Q2: 어댑터 재설치·이름 바꾸기로 별칭↔LUID 짝이 바뀌면 인터페이스 규칙을 다시 건다(시작 때는 reconcile 이 함)
-                if let Ok(ifs) = world.host.interfaces() {
-                    let mut now: Vec<(String, u64)> =
-                        ifs.into_iter().map(|i| (i.alias, i.luid)).collect();
-                    now.sort();
-                    if world.if_seen.as_ref().is_some_and(|prev| *prev != now) {
-                        match world.engine.rebind_interfaces() {
-                            Ok(n) => eprintln!("netif: changed, rebound {n} filters"),
-                            Err(e) => eprintln!("netif: rebind failed: {e}"),
-                        }
-                    }
-                    world.if_seen = Some(now);
-                }
-                // 27차: 보관 정리 — 판정이 먼저 장(chapter)을 남긴 뒤(의심 사건 선은 30일 보존), 1시간마다
-                if world.engine_wall() - world.last_retention_wall >= RETENTION_EVERY_SECS {
-                    let tr = std::time::Instant::now();
-                    run_retention(world);
-                    world.timings.record("엔진: 보관 정리", tr.elapsed());
-                }
-                // L056: 처리 시간 표를 데이터 폴더에 남긴다 — 노트북 확인을 화면 제어 없이(작업 실행기 diag 가 읽는다)
-                write_timings_file(world);
+                // 나머지 정리는 미뤄 두고 대기 중인 명령(화면 요청)을 먼저 — 루프 머리의 run_housekeeping
+                world
+                    .housekeeping_due
+                    .get_or_insert_with(std::time::Instant::now);
             }
             Command::DevHealth(v) => {
                 world.dev_health = Some(v);
@@ -615,6 +609,57 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
         }
         world.timings.record(label, t0.elapsed());
     }
+}
+
+/// 판정 뒤 덜 급한 정리를 미루는 최대 시간(이만큼 지나면 대기 명령이 있어도 한다)
+const HK_MAX_DEFER: Duration = Duration::from_secs(10);
+
+/// 판정 뒤 정리: 문장 미리 만들기 → 설치 목록 → AI 도구 → 인터페이스 → 보관 정리 → 처리 시간 표
+fn run_housekeeping(world: &mut World) {
+    world.housekeeping_due = None;
+    if world.warm_due {
+        world.warm_due = false;
+        // L052: 무거운 문장 만들기는 조회 때가 아니라 주기 작업에서 — 대시보드 첫 쪽(기본 화법)을 미리 만들어 둔다
+        let t = std::time::Instant::now();
+        crate::dispatch::warm_story_narratives(world);
+        world
+            .timings
+            .record("엔진: 이야기 문장 미리 만들기", t.elapsed());
+    }
+    // L069(32차 검수 4): 설치 목록 미리 계산 — 조회 때 계산하지 않는다(2초 원칙)
+    if world.engine_wall() - world.last_install_wall >= 60 {
+        world.last_install_wall = world.engine_wall();
+        let ti = std::time::Instant::now();
+        let now_ft = unix_to_filetime(world.engine_wall());
+        if let Err(e) = world.install_cache.refresh(&world.graph, now_ft, 300) {
+            eprintln!("installs: refresh failed: {e}");
+        }
+        world
+            .timings
+            .record("엔진: 설치 목록 미리 계산", ti.elapsed());
+    }
+    // 14판 20-5: AI 도구 목록 미리 계산(5분마다, 최근 7일). 조회 때 계산하지 않는다(2초 원칙)
+    refresh_agents(world);
+    // 37차 Q2: 어댑터 재설치·이름 바꾸기로 별칭↔LUID 짝이 바뀌면 인터페이스 규칙을 다시 건다(시작 때는 reconcile 이 함)
+    if let Ok(ifs) = world.host.interfaces() {
+        let mut now: Vec<(String, u64)> = ifs.into_iter().map(|i| (i.alias, i.luid)).collect();
+        now.sort();
+        if world.if_seen.as_ref().is_some_and(|prev| *prev != now) {
+            match world.engine.rebind_interfaces() {
+                Ok(n) => eprintln!("netif: changed, rebound {n} filters"),
+                Err(e) => eprintln!("netif: rebind failed: {e}"),
+            }
+        }
+        world.if_seen = Some(now);
+    }
+    // 27차: 보관 정리 — 판정이 먼저 장(chapter)을 남긴 뒤(의심 사건 선은 30일 보존), 1시간마다
+    if world.engine_wall() - world.last_retention_wall >= RETENTION_EVERY_SECS {
+        let tr = std::time::Instant::now();
+        run_retention(world);
+        world.timings.record("엔진: 보관 정리", tr.elapsed());
+    }
+    // L056: 처리 시간 표를 데이터 폴더에 남긴다 — 노트북 확인을 화면 제어 없이(작업 실행기 diag 가 읽는다)
+    write_timings_file(world);
 }
 
 /// 명령 하나가 끝나면(continue·return 포함) 쉬는 중으로
@@ -954,12 +999,8 @@ pub fn judge_and_notify(world: &mut World) {
         world.judged = Some((world.engine_wall(), stories.clone()));
         world.judge_gen += 1;
         world.judged_gen = world.judge_gen;
-        // L052: 무거운 문장 만들기는 조회 때가 아니라 주기 작업에서 — 대시보드 첫 쪽(기본 화법)을 미리 만들어 둔다
-        let t = std::time::Instant::now();
-        crate::dispatch::warm_story_narratives(world);
-        world
-            .timings
-            .record("엔진: 이야기 문장 미리 만들기", t.elapsed());
+        // 문장 미리 만들기는 판정 뒤 정리(run_housekeeping)에서 — 대기 중인 화면 요청을 먼저 처리한다
+        world.warm_due = true;
     }
     // 사건 추적: 조치함·닫힘인 사건은 알리지 않는다. 다만 조치 때보다 높은 장까지 이어졌으면(재발) 새 사건으로 되돌리고 알린다
     let triage = crate::triage::all(&world.graph);
