@@ -44,6 +44,8 @@ pub trait Authn {
 
 /// 엔진 큐 대기 상한 (12차 Q4: 5초 뒤 busy)
 pub const QUEUE_WAIT: Duration = Duration::from_secs(5);
+/// 48차 Q1: 엔진이 아직 꺼내지 않은 화면 요청의 최대 수(화면 하나가 한 번에 여는 조회는 10개 안팎)
+pub const MAX_QUEUED_RPCS: usize = 32;
 
 /// 연결 하나를 끝까지 처리한다. 반환: 끊은 이유
 pub fn serve(
@@ -227,6 +229,18 @@ fn ask(
     params: serde_json::Value,
     caller: &Caller,
 ) -> Response {
+    // 48차 Q1: 화면 조회 홍수(여러 연결)가 엔진 대기열을 채워 판정·정리를 밀어내지 않게 — 줄이 MAX_QUEUED_RPCS 넘게 차 있으면
+    // 조회(User)는 줄에 세우지 않고 바로 busy. 관리자 변경은 늘 줄에 선다
+    use std::sync::atomic::Ordering;
+    if method.role() == api::methods::Role::User
+        && crate::runtime::QUEUED_RPCS.load(Ordering::SeqCst) >= MAX_QUEUED_RPCS
+    {
+        return Response::err(
+            Some(id),
+            RpcError::with(ErrorCode::Busy, "엔진 대기열이 가득 참"),
+        );
+    }
+    crate::runtime::QUEUED_RPCS.fetch_add(1, Ordering::SeqCst);
     let (reply_tx, reply_rx) = mpsc::channel();
     if engine
         .send(Command::Rpc {
@@ -239,6 +253,7 @@ fn ask(
         })
         .is_err()
     {
+        crate::runtime::queued_rpcs_dec();
         return Response::err(Some(id), RpcError::with(ErrorCode::Internal, "엔진 종료"));
     }
     match reply_rx.recv_timeout(QUEUE_WAIT) {

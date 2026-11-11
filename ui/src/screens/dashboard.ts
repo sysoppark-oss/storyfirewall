@@ -493,8 +493,12 @@ export function dashboard(): HTMLElement {
     clear(body);
     // 검수 1번: 엔진이 바빠 지난 값으로 그렸으면 그렇다고 밝힌다(숫자를 지금 값처럼 보이지 않게)
     const staleAt = LastGood.oldest(ev, hr, se);
-    if (staleAt != null) body.append(el("p", "warn small stale-note", `엔진이 바빠 ${fmtShort(staleAt)}에 받은 값을 보여 줍니다. 잠시 뒤 다시 불러옵니다.`));
-    else if (evPending > 0) body.append(el("p", "warn small stale-note", `인시던트 ${evPending}건의 설명을 아직 만드는 중이라 일부만 보입니다. 잠시 뒤 다시 불러옵니다.`));
+    if (staleAt != null) {
+      body.append(el("p", "warn small stale-note", `엔진이 바빠 ${fmtShort(staleAt)}에 받은 값을 보여 줍니다. 잠시 뒤 다시 불러옵니다.`));
+      // 지난 값은 유효 기간(2분)이 있으므로 60초 주기를 기다리지 않고 10초 뒤 다시
+      window.setTimeout(() => { if (body.isConnected && my === rfGen) void refresh(); }, 10_000);
+    }
+    else if (evPending > 0) body.append(el("p", "warn small stale-note", `인시던트 ${evPending}건의 설명을 아직 만드는 중이라 일부만 표시했습니다. 잠시 뒤 다시 불러옵니다.`));
     const stalledNow = hr.ok && collectionStalled(hr.result);
     // D004-2: 숫자는 오늘 새로 일어난 일 기준. 수집 전부터 실행 중·오늘 새 활동 없는 것은 보조 줄로
     const allLv = ev.ok ? ev.result.items : [];

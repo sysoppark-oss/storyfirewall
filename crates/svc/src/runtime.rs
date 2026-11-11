@@ -28,6 +28,18 @@ fn mono_ms() -> u64 {
         + 1
 }
 /// 엔진이 한 명령을 지금 몇 ms 째 처리 중인가(쉬는 중이면 0)
+/// 48차 Q1: 엔진 대기열에 들어가 아직 엔진이 꺼내지 않은 화면 요청 수. 넘치면 조회는 줄에 세우지 않고 바로 busy
+pub static QUEUED_RPCS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// 0 아래로 내려가지 않게(넘침으로 큰 수가 되면 모든 조회가 막힌다)
+pub fn queued_rpcs_dec() {
+    let _ = QUEUED_RPCS.fetch_update(
+        std::sync::atomic::Ordering::SeqCst,
+        std::sync::atomic::Ordering::SeqCst,
+        |n| Some(n.saturating_sub(1)),
+    );
+}
+
 pub fn engine_busy_ms() -> u64 {
     let s = ENGINE_BUSY_SINCE.load(std::sync::atomic::Ordering::SeqCst);
     if s == 0 {
@@ -577,7 +589,22 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                 reply,
                 queued,
             } => {
+                queued_rpcs_dec();
                 world.timings.record("(대기열)", queued.elapsed());
+                // 48차 반영: 화면이 이미 포기한(QUEUE_WAIT 넘게 기다린) 조회는 처리하지 않는다 — diag-170 에서 포기된 요청이
+                // 대기열에 남아 엔진이 뒤늦게 처리하느라 다음 요청이 또 밀렸다(평균 40초). 관리자 변경(승인 거친 것)은 그대로 처리
+                if method.role() == api::methods::Role::User
+                    && queued.elapsed() >= crate::handler::QUEUE_WAIT
+                {
+                    world
+                        .timings
+                        .record("(대기열: 포기된 조회 건너뜀)", queued.elapsed());
+                    let _ = reply.send(api::Response::err(
+                        Some(id),
+                        api::RpcError::with(api::ErrorCode::Busy, "대기 중 화면이 포기한 조회"),
+                    ));
+                    continue;
+                }
                 // 구조 개선 C: 무거운 읽기는 작업자로 넘기고 기다리지 않는다(응답은 작업자가 reply 로).
                 // 개발 서버 강제 모드(dev_force)는 엔진의 dispatch 가 처리하므로 넘기지 않는다
                 if crate::reads::is_heavy_read(method) && world.dev_force.is_none() {
