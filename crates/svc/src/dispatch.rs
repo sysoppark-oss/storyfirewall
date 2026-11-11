@@ -5,6 +5,8 @@ use api::{ErrorCode, Method, Page, Response, RpcError};
 use engine::EngineError;
 use story::Voice;
 
+use std::collections::{HashMap, HashSet};
+
 use crate::runtime::World;
 
 /// 연결 핸들러가 확인한 호출자 정보
@@ -64,6 +66,108 @@ impl Scope {
             Ok(ed) => self.process_visible(g, ed.src) && self.process_visible(g, ed.dst),
             Err(_) => true,
         })
+    }
+}
+
+/// 이야기 목록의 세션 범위 가리기 결과(A30). 전체 범위면 비어 있고 모두 보인다
+pub(crate) struct StoryVisibility {
+    all: bool,
+    /// stories 와 같은 순서: (뿌리 프로세스가 보임, 뿌리·모든 선의 양 끝이 보임)
+    each: Vec<(bool, bool)>,
+}
+
+impl StoryVisibility {
+    /// i = stories 안의 위치
+    pub(crate) fn root_ok(&self, i: usize) -> bool {
+        self.all || self.each.get(i).is_some_and(|x| x.0)
+    }
+    pub(crate) fn all_ok(&self, i: usize) -> bool {
+        self.all || self.each.get(i).is_some_and(|x| x.1)
+    }
+
+    /// `Scope::process_visible`·`edges_visible` 과 같은 결과를 사건 하나씩 DB 를 묻지 않고 낸다.
+    /// 선·노드는 판정이 들고 있는 그래프(메모리)에서 먼저 찾고, 없는 것만 묶음으로 읽는다.
+    /// 선을 못 찾으면 보임(edges_visible 과 같음), 노드를 못 찾으면 안 보임(process_visible 과 같음).
+    /// 선 전부를 보는 것은 등급 `min` 이상 사건만(목록에 실릴 수 있는 것) — 낮은 사건은 뿌리만 본다(hidden_low 셈)
+    pub(crate) fn compute(world: &World, scope: Scope, stories: &[judge::Story], min: u8) -> Self {
+        let Scope::Session(me) = scope else {
+            return Self {
+                all: true,
+                each: Vec::new(),
+            };
+        };
+        let view = world.judge_inc.view();
+        // 1) 선 → 양 끝
+        let mut ends: HashMap<i64, (i64, i64)> = HashMap::new();
+        let mut missing_edges: Vec<i64> = Vec::new();
+        for s in stories.iter().filter(|s| s.level.rank() >= min) {
+            for e in &s.edges {
+                if ends.contains_key(e) {
+                    continue;
+                }
+                match view.and_then(|v| v.by_id.get(e).map(|&i| &v.edges[i])) {
+                    Some(ed) => {
+                        ends.insert(*e, (ed.src, ed.dst));
+                    }
+                    None => missing_edges.push(*e),
+                }
+            }
+        }
+        if !missing_edges.is_empty() {
+            missing_edges.sort_unstable();
+            missing_edges.dedup();
+            if let Ok(m) = graph::query::edges_by_ids(&world.graph, &missing_edges) {
+                for (id, ed) in m {
+                    ends.insert(id, (ed.src, ed.dst));
+                }
+            }
+        }
+        // 2) 노드 → 보임
+        let mut need: HashSet<i64> = stories.iter().map(|s| s.root).collect();
+        for (a, b) in ends.values() {
+            need.insert(*a);
+            need.insert(*b);
+        }
+        let visible_node = |n: &graph::Node| -> bool {
+            if n.kind != graph::NodeKind::Process.as_str() {
+                return true;
+            }
+            match n.attr("session").and_then(|v| v.as_u64()) {
+                None => true,
+                Some(s) => s == 0 || s == me as u64,
+            }
+        };
+        let mut node_ok: HashMap<i64, bool> = HashMap::with_capacity(need.len());
+        let mut missing_nodes: Vec<i64> = Vec::new();
+        for id in need {
+            match view.and_then(|v| v.nodes.get(&id)) {
+                Some(n) => {
+                    node_ok.insert(id, visible_node(n));
+                }
+                None => missing_nodes.push(id),
+            }
+        }
+        if !missing_nodes.is_empty() {
+            if let Ok(m) = graph::query::nodes_by_ids(&world.graph, &missing_nodes) {
+                for (id, n) in m {
+                    node_ok.insert(id, visible_node(&n));
+                }
+            }
+        }
+        let ok = |id: i64| node_ok.get(&id).copied().unwrap_or(false);
+        // 3) 사건마다
+        let mut each = Vec::with_capacity(stories.len());
+        for s in stories {
+            let r = ok(s.root);
+            let full = r
+                && (s.level.rank() < min
+                    || s.edges.iter().all(|e| match ends.get(e) {
+                        Some((a, b)) => ok(*a) && ok(*b),
+                        None => true,
+                    }));
+            each.push((r, full));
+        }
+        Self { all: false, each }
     }
 }
 
@@ -834,7 +938,7 @@ fn handle(
             world
                 .timings
                 .record("이야기 목록: 판정 결과", t_judge.elapsed());
-            let t_narr = std::time::Instant::now();
+            let t_filter = std::time::Instant::now();
             // 등급으로 거른다(점수가 아니라): 5장 심각은 점수 70~89 라도 심각이다
             let min = judge::Level::parse(&v.level_min)
                 .unwrap_or(judge::Level::Suspicious)
@@ -845,12 +949,20 @@ fn handle(
             let triage_filter =
                 crate::triage::Filter::parse(&v.triage).unwrap_or(crate::triage::Filter::Open);
             let mut counts = crate::triage::Counts::default();
+            // diag-191: 일반 사용자 세션이면 사건마다 선 전부(큰 사건은 3만 개)·양 끝 노드를 하나씩 DB 에서 읽어
+            // 재시작 직후 "문장" 단계가 15~22초였다 — 판정이 메모리에 든 그래프에서 한 번에 가린다(없는 것만 묶음 조회)
+            let t_vis = std::time::Instant::now();
+            let vis = StoryVisibility::compute(world, scope, &stories[..], min);
+            world
+                .timings
+                .record("이야기 목록: 보임 가리기", t_vis.elapsed());
             // 개편안 2판 2-2(낮음 요약 칩): 등급 필터에 걸려 숨긴 미조치 사건 수 — 숨겨도 존재는 알린다
             let hidden_low = stories
                 .iter()
-                .filter(|s| {
+                .enumerate()
+                .filter(|(i, s)| {
                     s.level.rank() < min
-                        && scope.process_visible(&world.graph, s.root)
+                        && vis.root_ok(*i)
                         && triage_filter.keeps(
                             triage_all
                                 .get(&s.root)
@@ -861,11 +973,9 @@ fn handle(
             // A30: 다른 사용자 세션의 프로세스가 든 이야기는 통째로 숨긴다
             let kept: Vec<judge::Story> = stories
                 .iter()
-                .filter(|s| {
-                    s.level.rank() >= min
-                        && scope.process_visible(&world.graph, s.root)
-                        && scope.edges_visible(&world.graph, &s.edges)
-                })
+                .enumerate()
+                .filter(|(i, s)| s.level.rank() >= min && vis.all_ok(*i))
+                .map(|(_, s)| s)
                 .filter(|s| {
                     let st = triage_all
                         .get(&s.root)
@@ -894,6 +1004,11 @@ fn handle(
             } else {
                 world.judge_cache_gen
             };
+            world
+                .timings
+                .record("이야기 목록: 거르기", t_filter.elapsed());
+            // 문장 단계 시간은 여기부터(거르기·보임 가리기는 따로 잰다)
+            let t_narr = std::time::Instant::now();
             let mut nar: Vec<story::events::Narrative> = Vec::with_capacity(page_stories.len());
             // diag-170: 서비스 재시작 직후(문장 캐시가 빔) 61건을 이 조회 안에서 만들며 엔진을 31초 잡았다 →
             // 화면은 5초에 포기하고 다시 불러 대기열 평균 40초. 조회 안에서 새로 만드는 문장은 NARR_QUERY_BUDGET 까지만,
