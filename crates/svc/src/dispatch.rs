@@ -883,8 +883,26 @@ fn handle(
                 world.judge_cache_gen
             };
             let mut nar: Vec<story::events::Narrative> = Vec::with_capacity(page_stories.len());
+            // diag-170: 서비스 재시작 직후(문장 캐시가 빔) 61건을 이 조회 안에서 만들며 엔진을 31초 잡았다 →
+            // 화면은 5초에 포기하고 다시 불러 대기열 평균 40초. 조회 안에서 새로 만드는 문장은 NARR_QUERY_BUDGET 까지만,
+            // 그 뒤로는 캐시에 있는 것만 담고 나머지는 "pending"(아직 문장을 만드는 중)으로 알린다 — 판정 뒤 정리가 이어서 만든다
+            let mut pending = 0usize;
             for s in &page_stories {
+                if t_narr.elapsed() >= NARR_QUERY_BUDGET {
+                    match narrative_peek(world, &v.voice, s) {
+                        Some(n) => nar.push(n),
+                        None => pending += 1,
+                    }
+                    continue;
+                }
                 nar.push(narrative_cached(world, gen, v.since_ts, &v.voice, s)?);
+            }
+            if pending > 0 {
+                // 미리 만들기가 기본 화법이 아니어도 다음 정리에서 이어 만들도록
+                world.warm_due = true;
+                world
+                    .housekeeping_due
+                    .get_or_insert_with(std::time::Instant::now);
             }
             world.timings.record("이야기 목록: 문장", t_narr.elapsed());
             let t_extra = std::time::Instant::now();
@@ -979,7 +997,7 @@ fn handle(
                 .timings
                 .record("이야기 목록: 기록 없는 구간", t_gaps.elapsed());
             j(
-                serde_json::json!({ "items": page.items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(), "next": page.next, "gaps": gaps, "counts": counts, "hidden_low": hidden_low }),
+                serde_json::json!({ "items": page.items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(), "next": if pending > 0 { None } else { page.next }, "gaps": gaps, "counts": counts, "hidden_low": hidden_low, "pending": pending }),
             )
         }
         Method::StoryTriage => {
@@ -2150,6 +2168,27 @@ fn narrative_cached(
     world.narr_cache.insert(key, (now, n.clone()));
     Ok(n)
 }
+
+/// 캐시에 있으면 그 문장(만들지 않는다)
+fn narrative_peek(
+    world: &World,
+    voice: &str,
+    s: &judge::Story,
+) -> Option<story::events::Narrative> {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    format!("{s:?}").hash(&mut h);
+    let key = (s.root, voice.to_string(), h.finish());
+    let now = world.engine_wall();
+    world
+        .narr_cache
+        .get(&key)
+        .filter(|(t, _)| now - *t < NARR_TTL_SECS && now >= *t)
+        .map(|(_, n)| n.clone())
+}
+
+/// 조회 한 번 안에서 새 문장을 만드는 데 쓰는 최대 시간(엔진을 오래 잡지 않게)
+const NARR_QUERY_BUDGET: std::time::Duration = std::time::Duration::from_millis(1000);
 
 /// 문장 캐시: 10분 지나면 다시 만든다(실행 횟수 등 사건 밖 숫자), 최대 칸 수
 const NARR_TTL_SECS: i64 = 600;
