@@ -757,8 +757,8 @@ table.grid.blocked .c-rule { min-width: 280px; }
 .rule-what { font-weight: 600; }
 .rule-what.k-ours { color: var(--brand-strong); }
 .rule-acts { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
-
-/* 말씀 표시: 본문 + 장절·번역본. 진행 표시 아래에 조용히 */
-.word-slot { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); max-width: 46em; }
-.word-verse-text { color: var(--muted); line-height: 1.6; word-break: keep-all; }
-.word-verse-ref { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+/* 말씀 표시(기획자 결정 2026-11-11 "가"안): 본문은 가장 밝은 글자색 + 왼쪽 대표색 세로줄(인용문처럼). 글자에 상태 색을 쓰지 않는다 */
+.word-slot { margin-top: 18px; max-width: 46em; }
+.word-verse { border-left: 3px solid var(--brand); padding-left: 12px; }
+.word-verse-text { color: var(--fg); font-size: 15px; line-height: 1.7; word-break: keep-all; }
+.word-verse-ref { color: var(--brand-strong); font-size: 12.5px; margin-top: 4px; }
