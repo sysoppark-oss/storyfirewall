@@ -36,14 +36,16 @@ pub enum Scope {
 }
 
 impl Scope {
-    /// 프로세스 노드를 볼 수 있는가: 세션이 없거나(모름) 0(시스템) 이거나 내 세션
+    /// 프로세스 노드를 볼 수 있는가: 세션이 0(시스템) 이거나 내 세션.
+    /// 세션을 모르는 프로세스는 일반 사용자에게 보이지 않는다(49차 답변 1: 기본 차단 — 관리자만 본다).
+    /// 실측(diag-198): 세션 없는 프로세스 노드는 140,005개 중 61개, 모두 수집 전부터 실행되다 끝난 것
     pub fn process_visible(self, g: &graph::Store, node: i64) -> bool {
         match self {
             Scope::All => true,
             Scope::Session(me) => match g.node(node) {
                 Ok(n) if n.kind == graph::NodeKind::Process.as_str() => {
                     match n.attr("session").and_then(|v| v.as_u64()) {
-                        None => true,
+                        None => false,
                         Some(s) => s == 0 || s == me as u64,
                     }
                 }
@@ -133,7 +135,7 @@ impl StoryVisibility {
                 return true;
             }
             match n.attr("session").and_then(|v| v.as_u64()) {
-                None => true,
+                None => false,
                 Some(s) => s == 0 || s == me as u64,
             }
         };
