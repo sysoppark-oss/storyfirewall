@@ -1,4 +1,5 @@
 import { mutation, rpc } from "../rpc";
+import { churchBlock, dedicationBlock } from "../word";
 import { el, ext, button, errorBox, clear, term } from "../ui";
 import { state } from "../state";
 import { loadTheme, setTheme, type Theme } from "../theme";
@@ -232,11 +233,22 @@ export function settings(args: Record<string, unknown> = {}): HTMLElement {
     geoSrc,
     el("p", "muted", "국기 그림: flag-icons (MIT, Panayiotis Lipiridis). 국가 이름: i18n-iso-countries (MIT)."),
     adv);
+  // 말씀 표시(기획자 확정 2026-11-11, README docs/proposals/word): "정보" 화면의 헌정 문구 + [교회 안내]. 항상 표시, 끄는 설정 없음
+  const church = el("section", "card word-church-card");
+  church.hidden = true;
+  const churchBtn = button("교회 안내", () => {
+    if (!church.childElementCount) church.append(churchBlock());
+    church.hidden = !church.hidden;
+    churchBtn.setAttribute("aria-expanded", String(!church.hidden));
+  }, "btn small");
+  churchBtn.setAttribute("aria-expanded", "false");
+  const about = el("section", "card word-about", el("h3", undefined, "정보"), dedicationBlock(), el("div", "q-more", churchBtn), church);
   const updateTab = el("div", "form",
     el("p", undefined, `보호 서비스 ${state.serverVersion || "—"}판`),
     upLine,
     el("p", "muted small", "GitHub 공개 릴리스에서 새 판 정보(latest.json)만 받아 봅니다. 이 PC 의 기록은 보내지 않습니다. 설치 파일은 서명을 확인한 뒤에만 실행하고, 설치할 때 승인 창(UAC)이 한 번 뜹니다."),
-    upBox);
+    upBox,
+    about);
   const TABS = [["engine", "보호 엔진", engineTab], ["notify", "알림·표시", notifyTab], ["diag", "데이터·진단", diagTab], ["update", "업데이트·정보", updateTab]] as const;
   const tabRow = el("div", "u-tabs");
   tabRow.setAttribute("role", "tablist");
