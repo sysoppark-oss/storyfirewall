@@ -16,6 +16,7 @@ import { distPanel, openAsConnLike } from "./dist-panel";
 import { overview, type DashConn, type DashListener } from "./dash-overview";
 import { bytes } from "./connections";
 import { fileName } from "../sanitize";
+import { LastGood } from "../last-good";
 
 /// 서비스가 남긴 보호 사건 (A29): 파이프 이름 가로채기, 데이터 폴더 점유 등. 대상이 그래프의 프로세스면 상세로 잇는다
 interface ServiceEvent {
@@ -175,6 +176,8 @@ export function clickable<T extends Element>(x: T, go: () => void, label: string
   return x;
 }
 
+// 검수(2026-11-11) 1·7번: 조회마다 마지막 성공 값. 엔진이 바쁘면 이것으로 그리고 "지난 값"이라고 밝힌다
+const lastGood = new LastGood();
 const DIST_SRC_KEY = "sf.dash.distSrc";
 function loadDistSrc(): "today" | "now" {
   try {
@@ -226,13 +229,17 @@ export function dashboard(): HTMLElement {
   let reach = [0, 0, 0, 0];
   const drawOverview = async () => {
     const gen = ++ovGen;
-    const [cr, lr, ir, tr] = await Promise.all([
+    const [cr0, lr0, ir0, tr0] = await Promise.all([
       rpc<{ items: (DashConn & ConnLike)[] }>("connections.list", { since_secs: 86400, cursor: { limit: 500 } }),
       rpc<{ items: DashListener[] }>("listeners.list", {}),
       rpc<{ items: InstallRun[] }>("installs.list", { days: 1, limit: 30 }),
       // 개편안 2판 1-4: 시간대별 트래픽은 서비스가 쓰기 경로에서 쌓아 둔 요약 표에서(연결 기록을 세지 않는다)
       rpc<{ items: { hour: number; sent: number; recv: number; conns: number; blocked?: number; blocked_lost?: number }[] }>("traffic.hourly", { since_secs: 86400 }),
     ]);
+    const cr = lastGood.keep("connections.list", cr0);
+    const lr = lastGood.keep("listeners.list", lr0);
+    const ir = lastGood.keep("installs.list", ir0);
+    const tr = lastGood.keep("traffic.hourly", tr0);
     if (gen !== ovGen) return;
     clear(where);
     clear(viz);
@@ -352,10 +359,11 @@ export function dashboard(): HTMLElement {
       el("div", "q-more", button("연결 화면에서 자세히", () => state.go("connections", { tab: distSrc === "now" ? "live" : "history" }), "btn small")));
     const paintDist = async () => {
       window.clearTimeout(distTimer);
-      if (!whereCard.isConnected && distPainted) return;
-      distPainted = true;
+      // 검수 7번: 전에는 "한 번 칠했음" 표시가 다시 그린 새 카드에도 남아, 아직 화면에 붙기 전인 새 카드를 칠하지 않고 돌아갔다
+      // (엔진 바쁨 → 다시 그리기 뒤 분포 카드가 제목만 남음). 화면을 떠났는지는 타이머 쪽에서만 본다
       if (distSrc === "today") {
-        distSub.textContent = `오늘 연결 기록 ${conns.length}곳${conns.length >= 500 ? "(많은 순 500곳까지)" : ""}`;
+        // 검수 8번: 막대 숫자는 연결 건수, 500 은 상대 주소 수의 상한 — 둘을 섞어 "500곳인데 왜 수만" 으로 읽혔다
+        distSub.textContent = `${connsToday != null ? `오늘 연결 ${connsToday.toLocaleString("ko-KR")}건 · ` : ""}상대 주소 ${conns.length >= 500 ? "많은 순 500곳" : `${conns.length}곳`} 기준`;
         dist.paint(conns, null);
         return;
       }
@@ -451,23 +459,30 @@ export function dashboard(): HTMLElement {
   // 통신 대상 분포 카드: 오늘 / 지금(열린 연결) 고른 것 기억, 지금이면 10초 갱신 타이머
   let distSrc: "today" | "now" = loadDistSrc();
   let distTimer = 0;
-  let distPainted = false;
   const refresh = async () => {
     const my = ++rfGen;
-    clear(status);
-    clear(body);
-    body.append(loadingBox());
+    // 검수 1번: 이미 그린 화면이 있으면 지우지 않고 새 값이 오면 바꾼다(불러오는 동안 빈 화면으로 깜빡이지 않게)
+    if (!body.childElementCount) {
+      clear(status);
+      body.append(loadingBox());
+    }
     // D035-2: 네 조회를 동시에 보내고 칸마다 따로 그린다(rpc 는 던지지 않고 결과로 돌려준다) — 한 조회가 늦거나 실패해도 나머지 칸은 그린다.
     // 전에는 의심 사건 → 정책 → 서비스 사건을 차례로 기다려, 엔진이 바쁘면 카드 하나만 그려진 반쪽 화면이 됐다(L044)
-    const [ev, hr, se] = await Promise.all([
+    const [ev0, hr0, se0] = await Promise.all([
       // 2026-11-07: 주의까지 받아 도넛·흐름 띠에 쓰고, "의심 사건" 카드·목록은 의심만 센다(전과 같음)
       rpc<{ items: StoryEvent[]; counts?: TriageCounts }>("story.events", { level_min: "watch", cursor: { limit: 60 } }),
       rpc<Health>("collector.health", {}),
       rpc<{ items: ServiceEvent[] }>("service.events", { since_secs: 7 * 86400, limit: 50 }),
     ]);
     if (my !== rfGen) return;
+    const ev = lastGood.keep("story.events", ev0);
+    const hr = lastGood.keep("collector.health", hr0);
+    const se = lastGood.keep("service.events", se0);
     clear(status);
     clear(body);
+    // 검수 1번: 엔진이 바빠 지난 값으로 그렸으면 그렇다고 밝힌다(숫자를 지금 값처럼 보이지 않게)
+    const staleAt = LastGood.oldest(ev, hr, se);
+    if (staleAt != null) body.append(el("p", "warn small stale-note", `엔진이 바빠 ${fmtShort(staleAt)}에 받은 값을 보여 줍니다. 잠시 뒤 다시 불러옵니다.`));
     const stalledNow = hr.ok && collectionStalled(hr.result);
     // D004-2: 숫자는 오늘 새로 일어난 일 기준. 수집 전부터 실행 중·오늘 새 활동 없는 것은 보조 줄로
     const allLv = ev.ok ? ev.result.items : [];
