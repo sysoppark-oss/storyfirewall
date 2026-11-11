@@ -20,9 +20,10 @@ export interface StoryGroup<T> {
 }
 
 export function groupKey(s: Groupable): string {
-  const prog = (s.root_image || s.title).toLowerCase(); // 빈 문자열(경로 모름)도 제목으로
+  const str = (x: unknown) => (typeof x === "string" ? x : "");
+  const prog = (str(s.root_image) || str(s.title)).toLowerCase(); // 빈 문자열(경로 모름)도 제목으로
   const items = (s.items ?? []).filter((i) => i.label !== "시작 경위").map((i) => `${i.label}=${i.value}`).sort().join("|");
-  return `${prog}#${s.level.toLowerCase()}#${items}`;
+  return `${prog}#${str(s.level).toLowerCase()}#${items}`;
 }
 
 /// 묶기. 결과는 최신 사건이 위(대표 시각 내림차순)
@@ -79,6 +80,7 @@ export function distinguishGroups<T extends Groupable>(groups: StoryGroup<T>[], 
 
 /// 40자 넘으면 말줄임(전체는 툴팁으로)
 export function diffShort(s: string): string {
+  if (typeof s !== "string") return "";
   return s.length > 40 ? `${s.slice(0, 39)}…` : s;
 }
 

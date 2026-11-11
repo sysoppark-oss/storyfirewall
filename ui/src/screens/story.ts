@@ -134,6 +134,8 @@ export function triageChip(t: Triage | null | undefined): HTMLElement {
 /// "처리 안 한 묶음 8개 (사건 81건: 새 사건 41 · 조사됨 40) · 조치함 4 · 닫힘 1". 카드 수를 모르면 사건 수만
 export function triageCountsText(c: TriageCounts | undefined, cards?: number): string {
   if (!c) return "";
+  // 필드가 빠졌거나 수가 아니면 0 으로 세지 않고 문장을 내지 않는다(받지 못한 값을 0 으로 그리지 않는다 — 원칙 6)
+  if (![c.new, c.investigated, c.acted, c.closed].every((n) => typeof n === "number" && Number.isFinite(n))) return "";
   const open = c.new + c.investigated;
   const head = cards === undefined ? `미조치 인시던트 ${open}` : `미조치 ${cards}건 (이벤트 ${open}건`;
   const tail = cards === undefined ? ` (${TRIAGE_STATE.new} ${c.new} · ${TRIAGE_STATE.investigated} ${c.investigated})` : `: ${TRIAGE_STATE.new} ${c.new} · ${TRIAGE_STATE.investigated} ${c.investigated})`;
@@ -152,6 +154,8 @@ export function levelChip(level: string): HTMLElement {
 /// 카드 제목 = 프로그램 이름만(D003-3): "[의심] " 머리와 " — 4장 외부 접속까지 진행 (점수…)" 꼬리를 뗀다.
 /// 수준은 칩이, 진행은 4칸 막대가 맡는다
 export function bareTitle(t: string): string {
+  // 판이 다른 서비스가 제목을 안 보내도(없음·null) 화면이 죽지 않게 — 빈 제목으로
+  if (typeof t !== "string") return "";
   return t.replace(/^\[[^\]]*\]\s*/, "").replace(/\s+—\s+\S+\s.*까지 진행.*$/, "");
 }
 /// 4칸 진행 막대 (D003-1): 6px 막대 + 아래 12px 글자. 해당함=수준 색 채움 / 해당 없음=연회색 / 기록 없음=빗금(D004).
@@ -187,7 +191,7 @@ export function mergeItems<T extends { label: string; value: string; edge_ids: n
   return out;
 }
 export function isWindowsSigned(ev: { root_image?: string; root_signature?: { sig_status?: string | null } | null }): boolean {
-  const p = (ev.root_image ?? "").toLowerCase().replace(/\//g, "\\");
+  const p = (typeof ev.root_image === "string" ? ev.root_image : "").toLowerCase().replace(/\//g, "\\");
   return /^[a-z]:\\windows\\/.test(p) && (ev.root_signature?.sig_status ?? "") === "valid";
 }
 /// D014-1·33차 검수 1: "기록 없는 구간(오후 12:36 ~ 오후 1:21)에 시작(오후 1:01) — …". 구간은 다른 화면과 같은 fmtRange 형식(명세 2-3, D042)
@@ -941,6 +945,7 @@ export function cardNote(core: boolean, noFeedback: boolean, why?: string): stri
 }
 /// 프로세스에서 시작한 사건의 "이건 정상입니다" 확인 문구: 무엇이 정상이 되는지(조합)와 언제 다시 의심하는지를 밝힌다
 export function feedbackUnitText(unit: string): string {
+  if (typeof unit !== "string" || !unit.trim()) return "";
   return `이 실행 조합만 정상으로 봅니다:\n\n${unit}\n\n실행한 프로그램이나 띄우는 프로그램이 달라지면 다시 의심합니다. 도구(두 번째 프로그램) 자체를 정상으로 만들지는 않습니다.`;
 }
 export const FEEDBACK_NOT_YET = "이 종류의 사건(프로그램이 실행 중에 시작한 사건)은 아직 '정상'으로 표시하는 기능이 없습니다.";
@@ -950,6 +955,7 @@ export function destroyLine(d: { sentence: string; ts: number }): HTMLElement {
 }
 /// 명령줄 원문 한 줄(외부 문자열 — 텍스트 노드). 80자 넘으면 말줄임, 툴팁에 전체, "복사"
 export function cmdlineText(cmd: string, max = 80): string {
+  if (typeof cmd !== "string") return "";
   const a = [...cmd];
   return a.length > max ? a.slice(0, max - 1).join("") + "…" : cmd;
 }
@@ -963,9 +969,11 @@ function cmdlineLine(cmd: string): HTMLElement {
 /// 카드의 "지금 상태" 한 줄(시각 없음 — 카드 오른쪽 위가 마지막 활동). "수집 시작 전부터 실행 중" 줄과 엇갈려 보이지 않게
 /// 모르는 경우를 "실행 중 아님"으로 쓰지 않는다
 export function liveText(l: { running: boolean; pid: number; ended: boolean }): string {
-  if (l.running) return `지금도 실행 중 (PID ${l.pid})`;
-  if (l.ended) return `지금은 끝남 (PID ${l.pid})`;
-  return `지금 상태 확인 못 함 (PID ${l.pid})`;
+  // PID 를 못 받았으면 괄호를 빼고 상태만
+  const pid = typeof l.pid === "number" && Number.isFinite(l.pid) ? ` (PID ${l.pid})` : "";
+  if (l.running === true) return `지금도 실행 중${pid}`;
+  if (l.ended === true) return `지금은 끝남${pid}`;
+  return `지금 상태 확인 못 함${pid}`;
 }
 
 export interface Investigation {
@@ -992,15 +1000,17 @@ export function conclusionFacts(v: Investigation, destroyCmd: string | null): In
 
 /// 카드 제목 사슬의 자식 부분: 최대 3개 + "외 N"
 export function chainKids(children: string[], total: number): string {
+  if (!Array.isArray(children)) return "";
   const shown = children.slice(0, 3);
-  const rest = Math.max(total, children.length) - shown.length;
+  const rest = Math.max(Number.isFinite(total) ? total : 0, children.length) - shown.length;
   return shown.join(", ") + (rest > 0 ? ` 외 ${rest}` : "");
 }
 
 /// 카드 제목 사슬 전체(툴팁·접근성)
 export function chainTitle(name: string, ch?: { parent?: string | null; children: string[]; children_total: number } | null): string {
-  if (!ch) return name;
-  return [ch.parent, name, ch.children.length ? chainKids(ch.children, ch.children_total) : null].filter(Boolean).join(" → ");
+  const nm = typeof name === "string" ? name : "";
+  if (!ch || !Array.isArray(ch.children)) return nm;
+  return [ch.parent, nm, ch.children.length ? chainKids(ch.children, ch.children_total) : null].filter(Boolean).join(" → ");
 }
 
 /// 권장 조치 문장(사실 판단은 서비스가, 화면은 말로만)
