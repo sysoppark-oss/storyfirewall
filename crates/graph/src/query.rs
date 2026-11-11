@@ -256,6 +256,8 @@ pub fn edges_of_actor_until(store: &Store, actor: i64, until_ts: i64) -> Result<
 // 같은 것을 IN 묶음(500개씩)으로 한 번에 읽는다.
 
 const CHUNK: usize = 500;
+/// 이만큼 넘게 찾으면 nodes 표를 한 번 차례로 읽는다(묶음 IN 조회보다 빠름)
+const FULL_SCAN_IDS: usize = 20_000;
 
 /// [from, to] 의 선 중 가장 늦은 `limit` 개(시각 오름차순으로 돌려준다). 잘렸는지도 함께
 pub fn edges_recent(
@@ -298,6 +300,33 @@ pub fn nodes_by_ids(store: &Store, ids: &[i64]) -> Result<std::collections::Hash
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
+    // diag-159: 전체 판정(노드 13만)에서 IN 묶음 조회가 노트북 콜드 캐시 31초 — 많이 찾을 때는 표를 한 번 차례로 읽고 거른다
+    if uniq.len() > FULL_SCAN_IDS {
+        let want: HashSet<i64> = uniq.iter().copied().collect();
+        let mut st = store.conn.prepare(
+            "SELECT id, kind, key, COALESCE(label, key), COALESCE(first_ts,0), COALESCE(last_ts,0), attrs_json FROM nodes",
+        )?;
+        let mut rows = st.query([])?;
+        while let Some(r) = rows.next()? {
+            let id: i64 = r.get(0)?;
+            if !want.contains(&id) {
+                continue;
+            }
+            out.insert(
+                id,
+                Node {
+                    id,
+                    kind: r.get(1)?,
+                    key: r.get(2)?,
+                    label: r.get(3)?,
+                    first_ts: r.get(4)?,
+                    last_ts: r.get(5)?,
+                    attrs_json: r.get(6)?,
+                },
+            );
+        }
+        return Ok(out);
+    }
     for ch in uniq.chunks(CHUNK) {
         let sql = format!(
             "SELECT id, kind, key, COALESCE(label, key), COALESCE(first_ts,0), COALESCE(last_ts,0), attrs_json FROM nodes WHERE id IN ({})",

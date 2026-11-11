@@ -121,7 +121,7 @@ impl View {
         }
         lp.index = t.elapsed();
         let t = std::time::Instant::now();
-        let table_only = table_only_connects(store, from_ts, to_ts)?;
+        let table_only = table_only_connects(store, &edges)?;
         lp.table_only = t.elapsed();
         let t = std::time::Instant::now();
         let debug_ports = rules::debug_ports_of(&edges, &nodes);
@@ -243,15 +243,47 @@ impl View {
 }
 
 /// 구간의 접속 선 중 근거 원시 이벤트가 모두 연결 표(source = 'conntable')인 것
-fn table_only_connects(store: &Store, from_ts: i64, to_ts: i64) -> Result<HashSet<i64>> {
-    let mut st = store.conn().prepare(
-        "SELECT e.id FROM edges e JOIN raw_events r ON r.id = e.evidence_id
-         WHERE e.rel = 'connected' AND e.ts >= ?1 AND e.ts <= ?2 AND r.source = 'conntable'
-           AND NOT EXISTS (SELECT 1 FROM edge_evidence x JOIN raw_events r2 ON r2.id = x.raw_id
-                           WHERE x.edge_id = e.id AND r2.source <> 'conntable')",
-    )?;
-    let rows = st.query_map(rusqlite::params![from_ts, to_ts], |r| r.get::<_, i64>(0))?;
-    Ok(rows.collect::<std::result::Result<_, _>>()?)
+fn table_only_connects(store: &Store, edges: &[Edge]) -> Result<HashSet<i64>> {
+    // diag-159: SQL 한 번(선마다 원시 기록을 찾아감)이 노트북 콜드 캐시에서 29초 → 같은 조건을 집합으로:
+    //   ① 연결 표 원시 기록 id 집합(부분 색인 ix_raw_conntable, 덮는 색인)
+    //   ② 불러온 접속 선 중 근거(evidence_id)가 ①에 있는 것
+    //   ③ 그 선의 추가 근거(edge_evidence) 중 ①에 없는 것이 하나라도 있으면 뺀다
+    //      (edge_evidence.raw_id 는 raw_events 를 FK 로 가리키고 보관 정리가 근거 행을 먼저 지우므로 늘 존재 — 원래 JOIN 과 같다)
+    let conntable: HashSet<i64> = {
+        let mut st = store.conn().prepare(
+            "SELECT id FROM raw_events INDEXED BY ix_raw_conntable WHERE source = 'conntable'",
+        )?;
+        let rows = st.query_map([], |r| r.get::<_, i64>(0))?;
+        rows.collect::<std::result::Result<_, _>>()?
+    };
+    let mut cand: HashSet<i64> = edges
+        .iter()
+        .filter(|e| e.rel == "connected" && e.evidence_id.is_some_and(|x| conntable.contains(&x)))
+        .map(|e| e.id)
+        .collect();
+    if cand.is_empty() {
+        return Ok(cand);
+    }
+    let ids: Vec<i64> = cand.iter().copied().collect();
+    let mut drop_ids: Vec<i64> = Vec::new();
+    for ch in ids.chunks(500) {
+        let marks = vec!["?"; ch.len()].join(",");
+        let sql = format!("SELECT edge_id, raw_id FROM edge_evidence WHERE edge_id IN ({marks})");
+        let mut st = store.conn().prepare(&sql)?;
+        let rows = st.query_map(rusqlite::params_from_iter(ch.iter()), |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+        })?;
+        for row in rows {
+            let (eid, rid) = row?;
+            if !conntable.contains(&rid) {
+                drop_ids.push(eid);
+            }
+        }
+    }
+    for e in drop_ids {
+        cand.remove(&e);
+    }
+    Ok(cand)
 }
 
 /// `table_only_connects` 와 같은 조건을 선 id 목록에만(증분)

@@ -124,4 +124,7 @@ CREATE TABLE IF NOT EXISTS blocked_filters (
 CREATE INDEX IF NOT EXISTS ix_edge_evidence_raw ON edge_evidence(raw_id);
 -- L028: 스냅샷 시각 목록(이야기의 "이미 열려 있음")을 매 호출 전체 훑기 없이. 스냅샷 행만 담는 작은 부분 색인(쓰기 비용은 스냅샷 때만)
 CREATE INDEX IF NOT EXISTS ix_raw_snapshot ON raw_events(ts) WHERE source = 'snapshot';
+-- diag-159: 전체 판정의 "연결 표에서만 본 접속" 찾기가 선마다 원시 기록을 찾아가 29초. 연결 표 원시 기록 id 만 담는 부분 색인
+-- (쓰기 비용은 연결 표 기록 때만). 처음 만들 때 원시 기록을 한 번 훑는다
+CREATE INDEX IF NOT EXISTS ix_raw_conntable ON raw_events(id) WHERE source = 'conntable';
 "#;
