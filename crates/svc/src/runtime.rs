@@ -173,6 +173,10 @@ pub struct World<'a> {
     pub remote: crate::remote_watch::RemoteWatch,
     /// AI 에이전트 감시(14판 20-5) 미리 계산: (계산한 엔진 벽시각, 최근 7일 목록). agents.list 는 이것만 읽는다
     pub agent_cache: Option<(i64, Vec<graph::agent::AgentRun>)>,
+    /// diag-164: AI 도구 목록 계산(7일)이 엔진 스레드를 10초씩 잡아 화면 요청이 대기열에서 17초까지 기다렸다 →
+    /// 읽기 전용 연결을 연 별도 스레드에서 계산하고 결과만 받는다. Some = 계산 중
+    pub agent_job:
+        Option<std::sync::mpsc::Receiver<(i64, Result<Vec<graph::agent::AgentRun>, String>)>>,
     /// 37차 Q2: 지난번 본 (별칭, LUID) 짝. 바뀌면 인터페이스 조건 규칙을 지금 LUID 로 다시 건다. None = 아직 못 봄
     pub if_seen: Option<Vec<(String, u64)>>,
     /// 개편안 2판 1-2②: 우리 WFP 필터 id 집합 — 차단 집계 스레드와 공유, 주기 판정마다 갱신
@@ -308,6 +312,7 @@ impl Runtime {
                     install_cache: graph::install::InstallCache::default(),
                     remote: Default::default(),
                     agent_cache: None,
+                    agent_job: None,
                     if_seen: None,
                     our_filters: our_filters_thread.clone(),
                     blocked_recent: blocked_recent_thread.clone(),
@@ -516,21 +521,7 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                         .record("엔진: 설치 목록 미리 계산", ti.elapsed());
                 }
                 // 14판 20-5: AI 도구 목록 미리 계산(5분마다, 최근 7일). 조회 때 계산하지 않는다(2초 원칙)
-                if world
-                    .agent_cache
-                    .as_ref()
-                    .is_none_or(|(at, _)| world.engine_wall() - at >= AGENT_EVERY_SECS)
-                {
-                    let ta = std::time::Instant::now();
-                    let since = unix_to_filetime(world.engine_wall() - 7 * 86_400);
-                    match graph::agent::agent_activity(&world.graph, since, 50, 300) {
-                        Ok(v) => world.agent_cache = Some((world.engine_wall(), v)),
-                        Err(e) => eprintln!("agents: refresh failed: {e}"),
-                    }
-                    world
-                        .timings
-                        .record("엔진: AI 도구 미리 계산", ta.elapsed());
-                }
+                refresh_agents(world);
                 // 37차 Q2: 어댑터 재설치·이름 바꾸기로 별칭↔LUID 짝이 바뀌면 인터페이스 규칙을 다시 건다(시작 때는 reconcile 이 함)
                 if let Ok(ifs) = world.host.interfaces() {
                     let mut now: Vec<(String, u64)> =
@@ -846,6 +837,70 @@ pub fn run_retention(world: &mut World) {
             world.judged = None;
             world.judge_cache = None;
             world.invalidate_reads();
+        }
+    }
+}
+
+/// AI 도구 목록 미리 계산. 파일 DB 면 읽기 전용 연결을 연 별도 스레드에서(엔진 스레드를 잡지 않음, WAL 읽기라 쓰기와 겹쳐도 됨),
+/// 메모리 DB(시험)면 예전처럼 이 자리에서. 끝난 결과는 다음 주기에 받는다
+fn refresh_agents(world: &mut World) {
+    // 끝난 계산 받기
+    if let Some(rx) = &world.agent_job {
+        match rx.try_recv() {
+            Ok((at, r)) => {
+                world.agent_job = None;
+                match r {
+                    Ok(v) => world.agent_cache = Some((at, v)),
+                    Err(e) => eprintln!("agents: refresh failed: {e}"),
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => world.agent_job = None,
+        }
+    }
+    if world
+        .agent_cache
+        .as_ref()
+        .is_some_and(|(at, _)| world.engine_wall() - at < AGENT_EVERY_SECS)
+    {
+        return;
+    }
+    let at = world.engine_wall();
+    let since = unix_to_filetime(at - 7 * 86_400);
+    let db = world
+        .graph
+        .conn()
+        .path()
+        .filter(|p| !p.is_empty())
+        .map(std::path::PathBuf::from);
+    match db {
+        Some(db) => {
+            let (tx, rx) = std::sync::mpsc::channel();
+            world.agent_job = Some(rx);
+            std::thread::spawn(move || {
+                let t = std::time::Instant::now();
+                let r = graph::store::Store::open_read_only(&db)
+                    .and_then(|st| graph::agent::agent_activity(&st, since, 50, 300))
+                    .map_err(|e| e.to_string());
+                // 처리 시간은 기록만(엔진 표에는 받는 쪽이 넣지 않는다 — 엔진을 잡지 않으므로)
+                if t.elapsed() > std::time::Duration::from_secs(5) {
+                    eprintln!(
+                        "agents: refresh took {}ms (별도 스레드)",
+                        t.elapsed().as_millis()
+                    );
+                }
+                let _ = tx.send((at, r));
+            });
+        }
+        None => {
+            let ta = std::time::Instant::now();
+            match graph::agent::agent_activity(&world.graph, since, 50, 300) {
+                Ok(v) => world.agent_cache = Some((at, v)),
+                Err(e) => eprintln!("agents: refresh failed: {e}"),
+            }
+            world
+                .timings
+                .record("엔진: AI 도구 미리 계산", ta.elapsed());
         }
     }
 }

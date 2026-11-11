@@ -2162,13 +2162,23 @@ pub fn warm_story_narratives(world: &mut World) {
         return;
     };
     let gen = world.judged_gen;
-    // 대시보드는 의심 이상(70), 이야기 화면 기본은 주의 이상(40) — 각 첫 쪽
-    for min in [70u8, 40] {
-        for s in stories.iter().filter(|s| s.score >= min).take(21) {
-            let _ = narrative_cached(world, gen, 0, "plain", s);
+    // diag-164: 대시보드는 주의 이상 61건(limit 60 + 1), 찾기(Ctrl+K)는 100건을 묻는데 전에는 첫 21건만 미리 만들어
+    // 나머지를 조회 때 만들었다("이야기 목록: 문장" 평균 6초, 화면은 "엔진이 다른 작업 중"). 이제 주의 이상 앞 WARM_N 건.
+    // 점수 순 정렬이라 의심 이상(70) 첫 쪽은 이 안에 든다. 바뀌지 않은 사건은 캐시에 맞아 거의 시간이 들지 않고,
+    // 처음(캐시가 빈 시작 직후)에는 엔진을 오래 잡지 않게 한 번에 WARM_BUDGET 까지만 — 남은 것은 다음 판정 때 이어서
+    let t0 = std::time::Instant::now();
+    for s in stories.iter().filter(|s| s.score >= 40).take(WARM_N) {
+        if t0.elapsed() >= WARM_BUDGET {
+            break;
         }
+        let _ = narrative_cached(world, gen, 0, "plain", s);
     }
 }
+
+/// 미리 만드는 문장 수: 찾기(100) + 1
+const WARM_N: usize = 101;
+/// 판정 한 번 뒤 미리 만들기에 쓰는 최대 시간
+const WARM_BUDGET: std::time::Duration = std::time::Duration::from_millis(1500);
 
 /// 지금 목록의 ASN·국가 중 "오늘 처음"인 것. 기준 집합은 10분마다 다시 센다(연결 목록은 2초마다 불린다)
 /// 구조 개선 B: 조회가 보는 판정 결과. since 0(기본)은 주기 판정 결과를 그대로 읽고,
