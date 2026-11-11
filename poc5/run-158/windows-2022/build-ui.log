@@ -1,0 +1,29 @@
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `npm run build`
+
+> story-firewall-ui@0.1.6 build
+> tsc --noEmit && vite build
+
+[36mvite v7.3.7 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 56 modules transformed.
+rendering chunks...
+[plugin vite:reporter] 
+(!) D:/a/storyfirewall/storyfirewall/ui/node_modules/@tauri-apps/api/core.js is dynamically imported by D:/a/storyfirewall/storyfirewall/ui/src/hud.ts, D:/a/storyfirewall/storyfirewall/ui/src/screens/settings.ts but also statically imported by D:/a/storyfirewall/storyfirewall/ui/node_modules/@tauri-apps/api/dpi.js, D:/a/storyfirewall/storyfirewall/ui/node_modules/@tauri-apps/api/event.js, D:/a/storyfirewall/storyfirewall/ui/node_modules/@tauri-apps/api/image.js, D:/a/storyfirewall/storyfirewall/ui/node_modules/@tauri-apps/api/window.js, D:/a/storyfirewall/storyfirewall/ui/src/rpc.ts, D:/a/storyfirewall/storyfirewall/ui/src/update.ts, dynamic import will not move module into another chunk.
+
+computing gzip size...
+[2mdist/[22m[32mindex.html                 [39m[1m[2m  0.41 kB[22m[1m[22m[2m │ gzip:   0.28 kB[22m
+[2mdist/[22m[35massets/index-CxnmBHYS.css  [39m[1m[2m 54.93 kB[22m[1m[22m[2m │ gzip:  11.36 kB[22m
+[2mdist/[22m[36massets/hud-CkCosfNE.js     [39m[1m[2m  2.11 kB[22m[1m[22m[2m │ gzip:   1.12 kB[22m
+[2mdist/[22m[36massets/window-HiL-5X3G.js  [39m[1m[2m 13.49 kB[22m[1m[22m[2m │ gzip:   3.29 kB[22m
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[2mdist/[22m[36massets/index-BZYIbJ5C.js   [39m[1m[33m927.17 kB[39m[22m[2m │ gzip: 324.46 kB[22m
+[32m✓ built in 1.92s[39m
+   Compiling story-firewall-ui v0.1.6 (D:\a\storyfirewall\storyfirewall\ui\src-tauri)
+   Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
+    Finished `release` profile [optimized] target(s) in 56.70s
+       Built application at: D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe
