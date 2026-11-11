@@ -1,0 +1,5 @@
+PASS attached to WebView2 over CDP
+PASS found app page (http://tauri.localhost/)
+PASS UI runs non-elevated (view mode) as standard user (elevated=false)
+PASS connected to service
+FAIL scenario threw: TimeoutError: page.waitForSelector: Timeout 15000ms exceeded. | console: 
