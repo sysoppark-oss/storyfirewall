@@ -487,6 +487,8 @@ export function dashboard(): HTMLElement {
     const prevFull = evPending > 0 ? lastGood.keep<EvRes>("story.events", { ok: false, error: { code: -32004, message: "pending" } }) : null;
     const ev: Kept<EvRes> = prevFull && prevFull.ok ? prevFull : evPending > 0 ? ev0 : lastGood.keep<EvRes>("story.events", ev0);
     if (evPending > 0) window.setTimeout(() => { if (body.isConnected && my === rfGen) void refresh(); }, 5000);
+    // 화면 확인(2026-11-11): 앱을 막 열었을 때 엔진이 바쁘면 보여 줄 지난 값도 없이 60초를 기다렸다 → 5초 뒤 다시
+    if (!ev.ok) window.setTimeout(() => { if (body.isConnected && my === rfGen) void refresh(); }, 5000);
     const hr = lastGood.keep("collector.health", hr0);
     const se = lastGood.keep("service.events", se0);
     clear(status);

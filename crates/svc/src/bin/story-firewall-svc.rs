@@ -754,6 +754,38 @@ mod real {
                 .and_then(|b| judge::assess(&store, 0, i64::MAX, &b))
             {
                 Ok(stories) => {
+                    // diag-180: 인시던트 목록 문장이 한 번에 10~18초 — 사건별 문장 시간과 선 수(가장 느린 8건)
+                    {
+                        let mut t: Vec<(u128, usize, String, u8)> = stories
+                            .iter()
+                            .filter(|s| s.score >= 40)
+                            .take(101)
+                            .map(|s| {
+                                let t0 = std::time::Instant::now();
+                                let _ = story::narrate(
+                                    &store,
+                                    std::slice::from_ref(s),
+                                    story::Voice::Plain,
+                                );
+                                (
+                                    t0.elapsed().as_millis(),
+                                    s.edges.len(),
+                                    s.root_label
+                                        .rsplit(['\\', '/'])
+                                        .next()
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    s.score,
+                                )
+                            })
+                            .collect();
+                        let total: u128 = t.iter().map(|x| x.0).sum();
+                        t.sort_by(|a, b| b.0.cmp(&a.0));
+                        println!("diag: narrate total_ms={total} n={}", t.len());
+                        for (ms, n, name, sc) in t.iter().take(8) {
+                            println!("diag: narrate ms={ms} edges={n} score={sc} root={name}");
+                        }
+                    }
                     for s in stories
                         .iter()
                         .filter(|s| s.level.rank() >= judge::Level::Suspicious.rank())
