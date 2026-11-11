@@ -500,6 +500,16 @@ fn elevation_service_signals() {
         w.contains(&"브라우저 종료 직후 권한 상승 서비스 시작"),
         "{w:?}"
     );
+    // 47차 Q1: Local State + 권한 상승 서비스 신호가 한 이야기에 함께면 결정적 — 저장소 본체를 감시 밖 경로
+    // (섀도 복사본 등)로 가져가 우리가 못 봐도, 외부 접속이 붙어 높음이 되면 심각
+    ing.ingest_all(&[conn(T0 + 9 * SEC, 8000, "203.0.113.40", 443)])
+        .unwrap();
+    let stories = judge_all(&store);
+    let s = stories
+        .iter()
+        .find(|s| whats(s).contains(&"브라우저 종료 직후 권한 상승 서비스 시작"))
+        .expect("권한 상승 신호 이야기");
+    assert_eq!(s.level, Level::Critical, "{:?}", s.reasons);
 
     // 브라우저가 아닌 프로그램이 직접 실행
     let store = Store::open_in_memory().unwrap();

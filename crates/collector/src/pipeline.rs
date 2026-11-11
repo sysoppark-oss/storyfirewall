@@ -138,10 +138,12 @@ impl Session {
                 .iter()
                 .map(|(k, v)| (k.to_string(), *v))
                 .collect();
-            v.push((
-                "cmdline_unmatched".into(),
-                ctx.cmd_rv.lock().unwrap().unmatched,
-            ));
+            {
+                let rv = ctx.cmd_rv.lock().unwrap();
+                v.push(("cmdline_unmatched".into(), rv.unmatched));
+                // 47차 Q3: PID 는 같고 시각이 안 맞아 짝짓지 않은 수(PID 재사용)
+                v.push(("cmdline_time_mismatch".into(), rv.time_mismatch));
+            }
             v.sort();
             v
         }

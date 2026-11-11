@@ -231,6 +231,21 @@ pub struct Rendezvous {
     starts: std::collections::HashMap<u32, (i64, Option<i64>, Option<String>)>,
     /// 29차 Q3: 도구로 판별된 시작인데 10초 안에 커널 명령줄이 오지 않아 버린 수(진단 "짝 못 지음")
     pub unmatched: u64,
+    /// 47차 Q3: PID 는 같은데 시각이 맞지 않아(PID 재사용) 짝짓지 않은 수
+    pub time_mismatch: u64,
+}
+
+/// 47차 Q3: 커널 Process Start 사건 시각과 그 프로세스의 생성 시각(CreateTime)이 이만큼 안이어야 같은 프로세스로 본다.
+/// 커널 사건 시각은 QPC→벽시계 변환값, CreateTime 은 시스템 시각이라 변환 오차를 덮을 만큼(1초) 둔다.
+/// (100ms 는 시각 변경·변환 오차에 깨질 수 있다 — 실측 전에는 넓게. 버려지는 수는 time_mismatch 로 센다)
+const RV_MATCH: i64 = 10_000_000;
+
+fn same_proc(cmd_ts: i64, create_time: Option<i64>) -> bool {
+    match create_time {
+        Some(ct) => (cmd_ts - ct).abs() <= RV_MATCH,
+        // 생성 시각을 모르면 PID 만으로(예전 동작) — 이 경우는 수집기가 CreateTime 을 못 읽은 드문 경우
+        None => true,
+    }
 }
 
 /// 100ns 단위 10초
@@ -261,8 +276,12 @@ impl Rendezvous {
         tool: Option<String>,
     ) -> Option<String> {
         self.prune(ts);
-        if let Some((_, c)) = self.cmds.remove(&pid) {
-            return Some(c);
+        if let Some((cts, c)) = self.cmds.remove(&pid) {
+            if same_proc(cts, create_time) {
+                return Some(c);
+            }
+            // 같은 PID 의 예전 프로세스 명령줄(PID 재사용) — 버리고 새 시작을 기다리게 둔다
+            self.time_mismatch += 1;
         }
         self.starts.insert(pid, (ts, create_time, tool));
         None
@@ -280,7 +299,12 @@ impl Rendezvous {
     ) -> Option<(Option<i64>, Option<String>)> {
         self.prune(ts);
         if let Some((_, ct, tool)) = self.starts.remove(&pid) {
-            return Some((ct, tool));
+            if same_proc(ts, ct) {
+                return Some((ct, tool));
+            }
+            // 기다리던 시작은 같은 PID 의 다른(예전) 프로세스 — 짝짓지 않는다. 시작은 짝 못 지음으로 센다
+            self.time_mismatch += 1;
+            self.unmatched += 1;
         }
         self.cmds.insert(pid, (ts, cmdline));
         None
@@ -294,6 +318,34 @@ impl Rendezvous {
 #[cfg(test)]
 mod tests {
     use super::{norm_original, Rendezvous, RV_CAP};
+
+    /// 47차 Q3: A(PID 1000)가 잠깐 살다 끝나 커널 명령줄만 남고, B 가 같은 PID 로 뜨면 A 의 명령줄을 B 에 붙이면 안 된다
+    #[test]
+    fn rendezvous_rejects_pid_reuse_by_time() {
+        const S: i64 = 10_000_000;
+        let mut r = Rendezvous::default();
+        // A 의 커널 명령줄(생성 시각 100초)
+        assert_eq!(r.on_cmd(1000, 100 * S, "a.exe --evil".into()), None);
+        // B 가 103초에 같은 PID 로 시작 → 시각이 맞지 않아 짝짓지 않음
+        assert_eq!(r.on_start(1000, 103 * S, Some(103 * S), None), None);
+        assert_eq!(r.time_mismatch, 1);
+        // B 의 진짜 커널 명령줄이 오면 B 와 짝
+        assert_eq!(
+            r.on_cmd(1000, 103 * S + 2_000, "b.exe --ok".into()),
+            Some((Some(103 * S), None))
+        );
+        // 반대 순서: 시작(200초)이 먼저 기다리는데 같은 PID 의 엉뚱한 시각 명령줄 → 짝짓지 않음
+        assert_eq!(r.on_start(1001, 200 * S, Some(200 * S), None), None);
+        assert_eq!(r.on_cmd(1001, 205 * S, "c.exe".into()), None);
+        assert_eq!(r.time_mismatch, 2);
+        // 생성 시각 안의 작은 차이(변환 오차)는 같은 프로세스
+        assert_eq!(r.on_cmd(1002, 300 * S, "d.exe".into()), None);
+        assert_eq!(
+            r.on_start(1002, 300 * S + 5_000_000, Some(300 * S + 3_000_000), None)
+                .as_deref(),
+            Some("d.exe")
+        );
+    }
 
     #[test]
     fn rendezvous_either_order_and_ttl() {
@@ -324,12 +376,17 @@ mod tests {
         assert_eq!(r.on_start(13, 20 * 10_000_000, Some(1), None), None);
         // 이름 바꾼 복사본: 원래 이름이 실려 나온다
         assert_eq!(
-            r.on_start(14, 21 * 10_000_000, Some(2), Some("vssadmin.exe".into())),
+            r.on_start(
+                14,
+                21 * 10_000_000,
+                Some(21 * 10_000_000),
+                Some("vssadmin.exe".into())
+            ),
             None
         );
         assert_eq!(
             r.on_cmd(14, 21 * 10_000_000, "x.exe delete shadows".into()),
-            Some((Some(2), Some("vssadmin.exe".into())))
+            Some((Some(21 * 10_000_000), Some("vssadmin.exe".into())))
         );
         assert!(r.unmatched >= 1, "짝 못 지은 시작(12) 이 세어짐");
     }

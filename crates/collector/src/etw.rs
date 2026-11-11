@@ -147,10 +147,17 @@ pub fn process_provider(ctx: Arc<Ctx>) -> Provider {
                     let installer =
                         ident.is_none() && !browser && graph::install::is_installer_image(&image);
                     // diag-146: System32 svchost 도 명령줄을 읽되 서비스 이름(-s)만 남긴다(graph::svchost::service_arg)
-                    let svchost = ident.is_none()
+                    let svchost_img = ident.is_none()
                         && !browser
                         && !installer
                         && graph::svchost::is_system_svchost(&image);
+                    // 47차 Q2: 부모 위장(PPID spoofing) 대비. Kernel-Process 시작 사건은 만드는 쪽 문맥에서 기록되어
+                    // 사건 헤더 PID = 실제로 만든 프로세스다. 부모 PID 를 바꿔 띄우면 둘이 달라진다.
+                    // 서비스 관리자가 띄운 svchost 는 둘이 같다 — 다르면 서비스 이름을 읽지 않는다(믿지 않는 쪽으로 닫힘)
+                    let svchost = svchost_img && record.process_id() == ppid;
+                    if svchost_img && !svchost {
+                        ctx.count("svchost_parent_mismatch");
+                    }
                     let cmd = if ident.is_some() || browser || installer || svchost {
                         let mut rv = ctx.cmd_rv.lock().unwrap();
                         match rv.on_start(pid, ts, create_time, tool.clone()) {

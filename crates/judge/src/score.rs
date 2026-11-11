@@ -144,7 +144,12 @@ pub fn score_table_markdown() -> String {
         LEVEL_BOUNDS.0,
         LEVEL_BOUNDS.1 - 1,
         LEVEL_BOUNDS.1,
-        DECISIVE.join("·")
+        format!(
+            "{} · {} + ({})",
+            DECISIVE.join("·"),
+            KEY_OPEN,
+            ELEVATION_SIGNALS.join(" 또는 ")
+        )
     ));
     for (n, p) in WEIGHTS {
         out.push_str(&format!("| {n} | {p:+} |\n"));
@@ -196,12 +201,27 @@ pub const DECISIVE: &[&str] = &[
     "브라우저가 아닌 프로그램이 브라우저 저장소를 엶",
 ];
 
+/// 47차 Q1 수용: Local State(암호화 키)를 연 것 + 브라우저 권한 상승 서비스 신호가 한 이야기에 함께 있으면 결정적.
+/// Local State 단독은 정상 프로그램도 읽지만(diag-142), 키 파일과 권한 상승 서비스(App-Bound Encryption 풀기)가 함께면
+/// 저장소 본체를 감시 밖 경로(섀도 복사본·원시 디스크 읽기)로 가져가도 자격 증명 추출이 완성된 것으로 본다
+pub const KEY_OPEN: &str = "브라우저가 아닌 프로그램이 브라우저 설정(Local State)을 엶";
+pub const ELEVATION_SIGNALS: &[&str] = &[
+    "브라우저가 아닌 프로그램이 브라우저 권한 상승 서비스를 실행",
+    "브라우저 종료 직후 권한 상승 서비스 시작",
+];
+
+fn key_with_elevation(reasons: &[Reason]) -> bool {
+    reasons.iter().any(|r| r.what == KEY_OPEN)
+        && reasons.iter().any(|r| ELEVATION_SIGNALS.contains(&r.what))
+}
+
 /// 점수 → 등급(개편안 2판 2-2, 구현 조정). 심각 = 높음 점수(70+)이면서 5장(파괴 행위) 또는 결정적 근거 포함.
 /// 점수 90 경계는 쓰지 않는다: 장 기본점 70 + 서명 없음 15 + 인터넷 출신 10 = 95 로 평범한 내려받기가 다 90 을 넘어
 /// "심각"이 흔해지기 때문(테스트 unsigned_portable_tool_* 가 그 예).
 pub fn level_of(score: u8, chapter: Chapter, reasons: &[Reason]) -> Level {
     if score >= LEVEL_BOUNDS.1 {
-        let decisive = reasons.iter().any(|r| DECISIVE.contains(&r.what));
+        let decisive =
+            reasons.iter().any(|r| DECISIVE.contains(&r.what)) || key_with_elevation(reasons);
         if chapter == Chapter::Destroy || decisive {
             Level::Critical
         } else {
