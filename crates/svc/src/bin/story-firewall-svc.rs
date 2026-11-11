@@ -903,6 +903,29 @@ mod real {
                 Err(e) => format!("err={e}"),
             },
         );
+        // 49차 답변 1·2: 세션 속성이 없는 프로세스 노드가 얼마나 되나(세션 모름 = 보임 규칙·DB 재확인 비용의 근거)
+        ms("process nodes without session", &mut || {
+            store
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*), \
+                            SUM(json_extract(attrs_json,'$.session') IS NULL), \
+                            SUM(json_extract(attrs_json,'$.session') IS NULL AND COALESCE(json_extract(attrs_json,'$.ended'),0) = 1), \
+                            SUM(json_extract(attrs_json,'$.session') IS NULL AND COALESCE(json_extract(attrs_json,'$.preexisting'),0) = 1) \
+                     FROM nodes WHERE kind = 'process'",
+                    [],
+                    |r| {
+                        Ok(format!(
+                            "total={} no_session={} no_session_ended={} no_session_preexisting={}",
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                            r.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                            r.get::<_, Option<i64>>(3)?.unwrap_or(0)
+                        ))
+                    },
+                )
+                .unwrap_or_else(|e| format!("err={e}"))
+        });
         // D021: 연결 탭 첫 로드(실기기 수 초~20초) — 연결 목록(최근 5분)·"오늘 처음" 기준 집합 질의
         ms("views::connections 5min", &mut || {
             graph::views::connections(&store, now_ft - 300 * 10_000_000, 500)

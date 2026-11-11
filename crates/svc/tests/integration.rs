@@ -2566,3 +2566,50 @@ fn emergency_block_start_confirm_expire_and_stop() {
     );
     rt.shutdown();
 }
+
+/// 49차(2420f24): 판정이 메모리에 든 그래프는 판정 주기만큼 늦다. 시작 기록 뒤, 세션 기록 전에 판정이 돌았어도
+/// 세션 기록이 DB 에 들어온 뒤의 조회는 다른 사용자의 사건을 숨겨야 한다(다음 판정을 기다리지 않는다)
+#[test]
+fn a30_session_arriving_after_judge_hides_story_without_rejudge() {
+    let (rt, _, _) = boot();
+    let (events, t) = a19_events();
+    let s = 10_000_000;
+    rt.tx.send(Command::Ingest(events)).unwrap();
+    // 세션 기록이 오기 전에 주기 판정 — 메모리 그래프에는 세션 없는 프로세스로 남는다
+    rt.tx.send(Command::Judge).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let mut b = Client::connect_session(&rt, 200, 2, Some(2));
+    b.hello();
+    let n = |c: &mut Client| {
+        c.call("story.events", serde_json::json!({"level_min": "normal"}))["result"]["items"]
+            .as_array()
+            .map(|x| x.len())
+            .unwrap_or(0)
+    };
+    // 지금 규칙(A30, 22차 Q6): 세션을 모르는 프로세스는 보인다 — 49차 답변 1번에서 다시 검토 중(이 줄이 그 규칙을 고정한다).
+    // 주의: 이 시험은 끝에서 끝까지의 성질만 고정한다. 기록 반영 뒤 판정 뒤 정리가 판정을 다시 돌려 메모리 그래프가
+    // 곧 새로워지므로 2420f24 의 분기(낡은 그래프 + 세션 없음 → DB 재확인) 자체는 가려내지 못한다
+    assert!(n(&mut b) >= 1, "세션 모름 = 보임(현재 규칙)");
+
+    // 세션 기록 도착(사용자 A = 세션 1). 다시 판정하지 않는다
+    let sess: Vec<Event> = [(1000u32, t), (2200, t + 3 * s), (2300, t + 4 * s)]
+        .into_iter()
+        .map(|(pid, ct)| Event {
+            ts: t + 9 * s,
+            source: "etw:process".into(),
+            kind: EventKind::ProcessSession {
+                pid,
+                create_time: ct,
+                session: 1,
+            },
+        })
+        .collect();
+    rt.tx.send(Command::Ingest(sess)).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(
+        n(&mut b),
+        0,
+        "세션이 DB 에 들어온 뒤에는 다음 판정 전이라도 숨김"
+    );
+}
