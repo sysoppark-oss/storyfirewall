@@ -75,6 +75,8 @@ describe("공통 상단 띠(UI 명세 4판 3-1)", () => {
   });
   it("엔진 뱃지 — 수치가 없으면 빼고 정책 수는 늘", () => {
     expect(engineBadges(null, 0, 0)).toEqual(["정책 0개"]);
+    // 5판 2장: 받지 못한 정책 수는 0 이 아니라 "—"
+    expect(engineBadges(null, null, 0)).toEqual(["정책 —"]);
     expect(engineBadges({ now: 0, last_event_ft: null, timings: [{ name: "엔진: 주기 판정", last_ms: 400 }], wfp_filters: 4 }, 2, 1)).toEqual(["판정 지연 400ms", "필터 4개", "정책 2개 (확인 대기 1)"]);
   });
 });

@@ -8,6 +8,7 @@ import { el, button } from "./ui";
 import { engineStuckText, state } from "./state";
 import { collectionStalled, type HealthLike } from "./list-state";
 import { icon } from "./screens/dash-viz";
+import { LastGood } from "./last-good";
 import { bytes } from "./screens/connections";
 
 /// collector.health 중 띠가 쓰는 것
@@ -45,13 +46,15 @@ export function emergencyText(st: EmergencyStatus | null, left?: number): string
 }
 
 /// 엔진 뱃지 문구(순수 함수 — 시험용). 수치가 없으면 그 뱃지는 뺀다(개편안 2판 3-2)
-export function engineBadges(h: TopHealth | null, policies: number, pending: number): string[] {
+/// policies 가 null 이면 정책 수를 받지 못한 것 — 0 이 아니라 "정책 —"(UI 명세 5판 2장: 모르는 값을 0 으로 그리지 않는다)
+export function engineBadges(h: TopHealth | null, policies: number | null, pending: number): string[] {
   const out: string[] = [];
   const j = h?.timings?.find((t) => t.name === "엔진: 주기 판정");
   if (j) out.push(`판정 지연 ${j.last_ms}ms`);
   if (typeof h?.wfp_filters === "number") out.push(`필터 ${h.wfp_filters}개`);
   if (typeof h?.db_bytes === "number") out.push(`DB ${bytes(h.db_bytes)}`);
-  out.push(pending ? `정책 ${policies}개 (확인 대기 ${pending})` : `정책 ${policies}개`);
+  if (policies === null) out.push("정책 —");
+  else out.push(pending ? `정책 ${policies}개 (확인 대기 ${pending})` : `정책 ${policies}개`);
   return out;
 }
 
@@ -74,9 +77,11 @@ export function learnText(b: { pc_learned: boolean; days_left?: number }): strin
 export const EMERGENCY_EVENT = "sf-emergency";
 
 /// 긴급 차단 대화상자: 기한·원격 도구 예외를 고르고 승인 창으로 보낸다(서비스가 RDP 세션은 자동으로 예외)
-export function emergencyDialog(done: () => void, suggested: { display: string; path: string }[] = []) {
+/// `note`: 상태를 읽지 못한 채 여는 경우의 안내(5판 2장: 엔진이 바빠도 단추는 늘 누를 수 있다 — 대화상자 안에서 알린다)
+export function emergencyDialog(done: () => void, suggested: { display: string; path: string }[] = [], note?: string) {
   const dlg = el("dialog", "ack");
   dlg.append(el("h3", undefined, "긴급 차단"));
+  if (note) dlg.append(el("p", "warn small", note));
   dlg.append(el("p", undefined, "이 PC 의 나가는·들어오는 통신을 모두 막습니다. 예외: 이 PC 안 통신(루프백) · DNS · DHCP · 이 앱 · 지금 접속한 원격 데스크톱 세션의 상대 IP · 아래에 적은 원격 도구."));
   dlg.append(el("p", "muted small", "승인 창에서 확인한 뒤 60초 안에 [유지]를 눌러야 유지됩니다(원격으로 접속해 있다가 끊기면 자동으로 되돌아갑니다). 재부팅하면 풀립니다. 이미 열려 있는 연결도 끊길 수 있습니다. 예외로 연 원격 도구 안에 다른 프로그램이 숨어 들어가면 막지 못합니다."));
   const mins = el("select") as HTMLSelectElement;
@@ -126,6 +131,8 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
   let endAt = 0; // 긴급 차단 끝 시각(ms, 이 PC 시계) — 1초 갱신용
   let emgLabel: HTMLElement | null = null;
   let lastSt: EmergencyStatus | null = null;
+  // 5판 2장: 엔진이 바빠 받지 못하면 마지막으로 받은 값을 쓴다(유효 기간 안에서만 — last-good)
+  const kept = new LastGood();
 
   const toDiag = () => state.go("settings", { tab: "diag" });
   const badgeBtn = (cls: string, text: string, onClick: () => void, title?: string, ico?: string) => {
@@ -153,17 +160,20 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
       root.classList.remove("emg-on");
       return;
     }
-    const [hr, pol, er, bl] = await Promise.all([
+    const [hr, pol0, er0, bl] = await Promise.all([
       rpc<TopHealth>("collector.health", {}),
       rpc<{ items: { state: string }[] }>("policy.list", {}),
       rpc<EmergencyStatus>("emergency.status", {}),
       rpc<{ pc_learned: boolean; days_left?: number }>("judge.baseline_status", {}),
     ]);
     if (my !== gen) return; // 더 새 갱신이 시작됐다(겹침 방지 — 대시보드 KPI 중복 결함과 같은 원인)
+    const pol = kept.keep("policy.list", pol0);
+    const er = kept.keep("emergency.status", er0);
     const h = hr.ok ? hr.result : null;
     const sw = serviceWord(true, !!h && collectionStalled(h), !!engineStuckText(state.engineBusyMs));
     const items = pol.ok ? pol.result.items : [];
-    const applied = items.filter((p) => /^(applied|confirmed)$/i.test(p.state)).length;
+    // 받지 못했으면(지난 값도 없으면) 0 이 아니라 null → "정책 —"
+    const applied = pol.ok ? items.filter((p) => /^(applied|confirmed)$/i.test(p.state)).length : null;
     const pend = items.filter((p) => /^applied$/i.test(p.state)).length;
     const row: HTMLElement[] = [badgeBtn(`badge-${sw.tone}`, `보호 서비스 ${sw.word}`, toDiag, `서비스 ${state.serverVersion} · 누르면 진단`, "heart")];
     const extra = engineBadges(h, applied, pend);
@@ -172,7 +182,8 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
       // tb-extra: 좁은 창에서 접히는 뱃지(4판 3-1) — 보호 서비스 뱃지와 긴급 차단은 접지 않는다
       // 확인 대기가 있는 정책 뱃지는 주의 색으로, 접지 않는다(검수: 경고까지 접혀 숨으면 안 됨)
       const warn = isPolicy && /확인 대기/.test(t);
-      row.push(badgeBtn(warn ? "badge-warn" : "tb-extra", t, isPolicy ? () => state.go("policy", {}) : toDiag, isPolicy ? "정책 화면" : "설정 › 진단"));
+      const polTitle = !pol.ok ? "정책 수를 아직 받지 못했습니다(엔진 바쁨) · 정책 화면" : pol.stale_at ? "엔진이 바빠 조금 전에 받은 값입니다 · 정책 화면" : "정책 화면";
+      row.push(badgeBtn(warn ? "badge-warn" : "tb-extra", t, isPolicy ? () => state.go("policy", {}) : toDiag, isPolicy ? polTitle : "설정 › 진단"));
     }
     const nFold = row.filter((b) => b.classList.contains("tb-extra")).length;
     const moreText = () => (root.classList.contains("tb-expanded") ? "접기" : `⋯ ${nFold}개`);
@@ -236,9 +247,10 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
       start.dataset["cmd"] = "emg-start";
       emg.replaceChildren(start);
     } else {
-      // 상태를 못 읽으면 단추를 숨기지 않고 흐리게 — 이유는 툴팁(믿을 수 없는 값을 안심처럼 보이지 않음)
-      const b = button("긴급 차단…", () => undefined, "btn small danger");
-      b.disabled = true;
+      // 5판 2장: 상태를 못 읽어도(엔진 바쁨) 단추는 늘 누를 수 있다 — 대화상자 안에서 알린다.
+      // 이미 걸려 있었다면 같은 긴급 차단 정책의 새 판으로 바뀐다(engine::apply_emergency — 겹쳐 쌓이지 않고 기한이 새로 잡힌다)
+      const b = button("긴급 차단…", () => emergencyDialog(() => { window.dispatchEvent(new Event(EMERGENCY_EVENT)); void refresh(); }, [], "지금 긴급 차단 상태를 읽지 못했습니다(엔진이 바쁠 수 있습니다). 요청은 보낼 수 있지만 반영이 늦을 수 있고, 지금 통신 중인 원격 도구를 미리 채우지 못했습니다."), "btn small danger");
+      b.dataset["cmd"] = "emg-start";
       b.title = `긴급 차단 상태를 읽지 못했습니다: ${er.error.message}`;
       emg.replaceChildren(b);
     }
