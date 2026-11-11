@@ -14,6 +14,7 @@ import { applyTheme } from "./theme";
 import { autoCheck, checkUpdate, updateBanner, updaterEnabled, storyToast, setStoryToast } from "./update";
 applyTheme();
 import { el, button, clear } from "./ui";
+import { emptyVerse } from "./word";
 import { isElevated, setUnauthorizedHandler } from "./rpc";
 import { listen } from "@tauri-apps/api/event";
 
@@ -113,7 +114,17 @@ async function showStatus(ok: boolean) {
   status.className = elevated ? "status ok mixed elevated" : "status ok mixed";
 }
 
+/// 시작 화면(말씀 규칙 2): 서비스에 닿기 전 본문 자리에 프로그램 이름·연결 중 한 줄·짧은 구절. 닿으면 대시보드가 대신한다
+function startView(): HTMLElement {
+  const v = el("div", "start-view", el("h2", undefined, "Story Firewall"), el("p", "muted", "보호 서비스에 연결하는 중…"));
+  const verse = emptyVerse();
+  if (verse) v.append(verse);
+  return v;
+}
+
 async function boot() {
+  clear(main);
+  main.append(startView());
   await state.start();
   const ok = await state.connect();
   await showStatus(ok);
