@@ -103,7 +103,15 @@ fn main() {
                 // A22: 실제 UI(WebView2) 시험용 재현 이벤트 (svc-dev 와 같은 것)
                 let now_ft = time::WinClock::default().wall() * 10_000_000 + 116_444_736_000_000_000;
                 geo::init_global(svc::demo::demo_geo());
-                let _ = rt.tx.send(svc::runtime::Command::Ingest(svc::demo::demo_events(now_ft)));
+                // 시연 프로세스를 이 서버의 로그온 세션에 둔다 — 일반 사용자 화면(A27)은 자기 세션·시스템 세션의 프로세스만 본다
+                let evs = svc::demo::demo_events(now_ft);
+                let mut sid = 0u32;
+                // SAFETY: 자기 PID 와 유효한 출력 포인터
+                let ok = unsafe {
+                    windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId(std::process::id(), &mut sid)
+                };
+                let evs = if ok != 0 { svc::demo::with_session(evs, sid) } else { evs };
+                let _ = rt.tx.send(svc::runtime::Command::Ingest(evs));
                 let _ = rt.tx.send(svc::runtime::Command::Judge);
             }
             // --concurrent: 연결마다 스레드로 처리하고 곧바로 다음 인스턴스를 연다(실제 서비스 구조, A22 실제 UI 시험).

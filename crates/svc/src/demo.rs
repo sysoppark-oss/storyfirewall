@@ -547,3 +547,31 @@ pub fn demo_live_connect(now_ft: i64, n: u32) -> Vec<Event> {
         },
     }]
 }
+
+/// 시연 프로세스에 로그온 세션을 붙인다(ProcessStart 마다 바로 뒤에 ProcessSession).
+/// 세션을 모르는 프로세스가 든 사건은 일반 사용자에게 보이지 않으므로(49차 답변 1), 일반 사용자로 띄운 실제 화면 시험(A27)은
+/// 시연 프로세스가 그 사용자의 세션에 있어야 사건을 본다
+pub fn with_session(events: Vec<Event>, session: u32) -> Vec<Event> {
+    let mut out = Vec::with_capacity(events.len() * 2);
+    for e in events {
+        let add = match &e.kind {
+            EventKind::ProcessStart {
+                pid,
+                create_time: Some(ct),
+                ..
+            } => Some(Event {
+                ts: e.ts,
+                source: e.source.clone(),
+                kind: EventKind::ProcessSession {
+                    pid: *pid,
+                    create_time: *ct,
+                    session,
+                },
+            }),
+            _ => None,
+        };
+        out.push(e);
+        out.extend(add);
+    }
+    out
+}

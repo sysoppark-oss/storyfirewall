@@ -234,3 +234,47 @@ fn dec_saturating_stops_at_zero() {
     svc::runtime::dec_saturating(&n);
     assert_eq!(n.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
+
+/// 시연 프로세스에 세션을 붙이면 그 세션의 일반 사용자에게 보이고, 붙이지 않으면 보이지 않는다(A27 실제 화면 시험의 전제)
+#[test]
+fn demo_with_session_is_visible_to_that_session() {
+    use svc::dispatch::Scope;
+    let now_ft = svc::runtime::unix_to_filetime(NOW);
+    let count = |evs: Vec<graph::event::Event>, me: u32| {
+        let g = Store::open_in_memory().unwrap();
+        Ingester::new(&g).ingest_all(&evs).unwrap();
+        let ids: Vec<i64> = g
+            .conn()
+            .prepare("SELECT id FROM nodes WHERE kind = 'process'")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .filter_map(|x| x.ok())
+            .collect();
+        assert!(!ids.is_empty());
+        (
+            ids.iter()
+                .filter(|id| Scope::Session(me).process_visible(&g, **id))
+                .count(),
+            ids.len(),
+        )
+    };
+    let (seen, _) = count(svc::demo::demo_events(now_ft), 2);
+    assert_eq!(
+        seen, 0,
+        "세션 없는 시연 프로세스는 일반 사용자에게 안 보인다"
+    );
+    let (seen, started) = count(
+        svc::demo::with_session(svc::demo::demo_events(now_ft), 2),
+        2,
+    );
+    assert!(
+        seen > 0 && seen * 2 >= started,
+        "세션을 붙인 시연 프로세스가 보여야 한다: {seen}/{started}"
+    );
+    let (other, _) = count(
+        svc::demo::with_session(svc::demo::demo_events(now_ft), 2),
+        3,
+    );
+    assert_eq!(other, 0, "다른 세션에는 안 보인다");
+}

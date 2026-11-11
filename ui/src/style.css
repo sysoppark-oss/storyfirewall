@@ -701,8 +701,10 @@ body.hud-body #app { display: block; }
 
 /* 4판 3-11: 용어 풀이 — 점선 밑줄, 0.2초 뒤 말풍선(hover·focus) */
 .term { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
-.term::after { content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 6px); z-index: 30; width: max-content; max-width: 280px; padding: 8px 10px; border-radius: 8px; background: var(--card); color: var(--fg); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0,0,0,.3); font-size: 12px; font-weight: 400; line-height: 1.5; white-space: normal; text-align: left; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .1s ease .2s, visibility 0s linear .2s; }
-.term:hover::after, .term:focus-visible::after { opacity: 1; visibility: visible; }
+.term::after { content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 6px); z-index: 30; width: max-content; max-width: 280px; padding: 8px 10px; border-radius: 8px; background: var(--card); color: var(--fg); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0,0,0,.3); font-size: 12px; font-weight: 400; line-height: 1.5; white-space: normal; text-align: left; opacity: 0; pointer-events: none; display: none; }
+/* 숨긴 말풍선은 display:none — visibility:hidden 은 자리를 차지해, 오른쪽 끝의 용어가 화면에 가로 스크롤을 만들었다(660px 종단 시험) */
+.term:hover::after, .term:focus-visible::after { display: block; animation: term-tip .1s ease .2s forwards; }
+@keyframes term-tip { to { opacity: 1; } }
 
 /* UI 명세 4판 3-6: 설치 사실 칩·왼쪽 테두리 */
 .card.install.edge-line { border-left: 3px solid var(--line); }
