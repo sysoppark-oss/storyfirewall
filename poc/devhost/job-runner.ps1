@@ -18,7 +18,7 @@
 #   cmd.exe is always started with /d (ignores HKCU Command Processor AutoRun).
 # - Output goes to %ProgramFiles%\StoryFirewallDev\logs (admin-written, user-readable).
 # Request format (UTF-8 JSON, one object):  {"job":"b2","seconds":900}   {"job":"pull"}   {"job":"status"}
-#                                           {"job":"install"}   {"job":"uninstall"}   {"job":"selfupdate"}   {"job":"diag"}   {"job":"hostinfo"}   {"job":"sandbox","reboot":"true"}   {"job":"sysmon"}   {"job":"webview2"}   {"job":"sbread"}
+#                                           {"job":"install"}   {"job":"uninstall"}   {"job":"selfupdate"}   {"job":"diag"}   {"job":"diag","full":"true"}   {"job":"hostinfo"}   {"job":"sandbox","reboot":"true"}   {"job":"sysmon"}   {"job":"webview2"}   {"job":"sbread"}
 # selfupdate: pull, then replace bin\job-runner.ps1 with the repo copy (no new trust: b2 already runs repo scripts
 #   as SYSTEM; whoever can write main can already run code here). Takes effect from the next run.
 # install (user decision 2026-11-02): installs the latest dev build from the orphan branch dev-builds (CI-built,
@@ -224,7 +224,8 @@ try {
                     # L059: svc prints UTF-8; decode it as UTF-8 (default console code page garbled Hangul names)
                     $prevEnc = [Console]::OutputEncoding
                     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-                    try { $o = & $svcExe diag 2>&1 | Out-String } finally { [Console]::OutputEncoding = $prevEnc }
+                    $dargs = @("diag"); if ([string]$r.full -eq "true") { $dargs += "--full" }
+                    try { $o = & $svcExe @dargs 2>&1 | Out-String } finally { [Console]::OutputEncoding = $prevEnc }
                     foreach ($l in ($o -split "`r?`n")) { if ($l.Trim()) { Log $id ($l -replace '[^\x20-\x7E\u3131-\uD7A3]', '?') } }
                     Log $id "done exit=0"
                 }

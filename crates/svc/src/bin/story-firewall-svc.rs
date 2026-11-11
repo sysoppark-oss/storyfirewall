@@ -636,7 +636,9 @@ mod real {
         );
     }
 
-    fn diag() {
+    /// `full` 이 아니면 가벼운 진단: 파일 크기·서비스 기록·처리 시간 표·정책·마지막 보관 정리만.
+    /// 그래프를 통째로 불러오는 측정은 엔진과 디스크를 다퉈 엔진을 느리게 한다(diag-205: 불러오기 751초, 엔진 178초 묶임)
+    fn diag(full: bool) {
         let dir = pipe_name::reg_get(data_dir::REG_DATA_DIR)
             .map(PathBuf::from)
             .unwrap_or_else(data_dir::base);
@@ -679,6 +681,10 @@ mod real {
         // install-124·126 실측(시작 때 보관 정리 6분): 마지막 보관 정리의 단계별 시간
         if let Ok(Some(v)) = store.get_meta("retention_last") {
             println!("diag: retention_last {v}");
+        }
+        if !full {
+            println!("diag: light (graph not loaded; use diag --full for query timings)");
+            return;
         }
         // 2026-11-10: 높음·심각 사건의 근거 항목(무엇 때문에 그 등급인지) — 실행 파일 이름과 근거 글자만, 경로·주소 없음.
         // 판정은 쓰지 않는 assess(읽기만). 서비스와 같게 자기 구성요소 폴더를 알려 준다(안 주면 우리 화면이 뿌리로 잡힌다 — diag-140 실측)
@@ -1128,7 +1134,7 @@ mod real {
                 // exe_version: 이 실행 파일의 판 — 설치 뒤 서비스 파일이 정말 바뀌었는지 설치 기록에서 확인한다(install-199: 화면만 새 판)
                 println!("status: state={st} published={published} wfp_filters={filters} data_dir={} owner_trusted={trusted} exe_version={SVC_VERSION}{note}", dir.display());
             }
-            "diag" => diag(),
+            "diag" => diag(args.iter().any(|a| a == "--full")),
             "run" => {
                 let o = opts.clone();
                 if let Err(e) = service::run(SERVICE_NAME, Box::new(move |rx| body(rx, o))) {
