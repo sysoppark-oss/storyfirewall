@@ -1,0 +1,13 @@
+server: waiting connection 1
+server: client pid=7524 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc.exe") signature_ok=true (D:\a\storyfirewall\storyfirewall\target\release\svc-poc.exe: status=valid signer=Some("StoryFirewall Test") catalog=false)
+authn: admin=true
+authn: admin=true
+server: connection 1 closed: closed
+server: waiting connection 2
+server: client pid=1592 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc-unsigned.exe") signature_ok=false (D:\a\storyfirewall\storyfirewall\target\release\svc-poc-unsigned.exe: status=nosignature signer=None catalog=false)
+server: connection 2 closed: signature_failed
+server: waiting connection 3
+server: client pid=1180 image=Some("D:\\a\\storyfirewall\\storyfirewall\\target\\release\\svc-poc.exe") signature_ok=true (D:\a\storyfirewall\storyfirewall\target\release\svc-poc.exe: status=valid signer=Some("StoryFirewall Test") catalog=false)
+authn: admin=false
+authn: admin=false
+server: connection 3 closed: closed
