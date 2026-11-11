@@ -181,8 +181,7 @@ fn handler_answers_heavy_reads_while_engine_is_stuck() {
         .ingest_all(&svc::demo::demo_events(svc::runtime::unix_to_filetime(NOW)))
         .unwrap();
     let gate = reads::Gate::default();
-    let rd = reads::spawn_counted(&w.path(), Arc::new(AtomicU64::new(0)), Default::default())
-        .expect("작업자");
+    let rd = reads::spawn_counted(&w.path(), Arc::new(AtomicU64::new(0)), &gate).expect("작업자");
     gate.open(rd, NOW);
     // 엔진: 채널만 있고 아무도 읽지 않는다
     let (etx, _erx) = mpsc::channel::<svc::runtime::Command>();
@@ -216,5 +215,14 @@ fn handler_answers_heavy_reads_while_engine_is_stuck() {
     );
     let s = call(3, "story.today", serde_json::json!({}));
     assert!(s["result"]["sentences"].is_array(), "{s}");
+    // 작업자 길의 처리 시간이 문에 남는다(진단 표에 합쳐 나간다)
+    let names: Vec<&str> = gate.stats().iter().map(|(k, _)| *k).collect();
+    for want in [
+        "작업자: story.today",
+        "작업자: connections.list",
+        "작업자: (대기열)",
+    ] {
+        assert!(names.contains(&want), "{want} 없음: {names:?}");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

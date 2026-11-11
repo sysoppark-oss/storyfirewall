@@ -333,8 +333,7 @@ impl Runtime {
                     read: Default::default(),
                     read_gen: read_gen.clone(),
                     reader: {
-                        let rd =
-                            crate::reads::spawn_counted(&db_path, read_gen, gate_thread.pending());
+                        let rd = crate::reads::spawn_counted(&db_path, read_gen, &gate_thread);
                         if let Some(rd) = &rd {
                             gate_thread.open(rd.clone(), clock.wall());
                         }
@@ -745,6 +744,12 @@ impl Timings {
         e.2 = e.2.max(ms);
         e.3 = ms;
     }
+    /// 읽기 작업자 길의 시간을 합친 사본(진단 표용)
+    pub fn with_reads(&self, gate: &crate::reads::Gate) -> Timings {
+        let mut t = Timings(self.0.clone());
+        t.0.extend(gate.stats());
+        t
+    }
     /// 최대가 큰 순, 상위 n
     pub fn to_json(&self, n: usize) -> serde_json::Value {
         let mut v: Vec<_> = self.0.iter().collect();
@@ -1032,8 +1037,7 @@ fn write_timings_file(world: &World) {
     if db.as_os_str().is_empty() {
         return;
     }
-    let body =
-        serde_json::json!({ "wall": world.engine_wall(), "timings": world.timings.to_json(40) });
+    let body = serde_json::json!({ "wall": world.engine_wall(), "timings": world.timings.with_reads(&world.read_gate).to_json(40) });
     let tmp = dir.join("timings.json.tmp");
     if std::fs::write(&tmp, body.to_string()).is_ok() {
         let _ = std::fs::rename(&tmp, dir.join("timings.json"));

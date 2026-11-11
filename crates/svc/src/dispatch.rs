@@ -1693,7 +1693,7 @@ fn handle(
                 "gaps_24h": gaps,
                 "clock_changes_24h": clock,
                 // 진단 "처리 시간"(서비스 시작 뒤, 최대가 큰 순 15개) — 느린 곳을 diag 없이 찾는다
-                "timings": world.timings.to_json(15),
+                "timings": world.timings.with_reads(&world.read_gate).to_json(15),
                 // 개편안 2판 3-2 엔진 건강 뱃지: 우리 WFP 필터 수(엔진 장부 기준)·그래프 DB 크기(바이트)
                 "wfp_filters": world.engine.store.all_filters().map(|v| v.len()).unwrap_or(0),
                 "db_bytes": db_bytes(&world.graph.path()),

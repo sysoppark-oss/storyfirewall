@@ -53,6 +53,8 @@ struct GateInner {
     pending: Arc<std::sync::atomic::AtomicUsize>,
     /// 개발 서버 강제 모드(dev_force) — 엔진의 dispatch 가 처리해야 하므로 직접 넘기지 않는다
     forced: std::sync::atomic::AtomicBool,
+    /// 작업자 길의 처리 시간(진단 "처리 시간" 표에 엔진 것과 함께 나간다) — 엔진을 거치지 않아 엔진 표에는 안 남는다
+    stats: std::sync::Mutex<crate::runtime::Timings>,
 }
 
 /// 작업자 대기열 상한(50차 Q3): 일반 사용자 조회 홍수가 작업자 줄을 끝없이 늘리지 않게 — 넘으면 바로 busy
@@ -91,8 +93,18 @@ impl Gate {
     pub fn now(&self) -> i64 {
         self.0.now.load(Ordering::SeqCst)
     }
-    pub(crate) fn pending(&self) -> Arc<std::sync::atomic::AtomicUsize> {
-        self.0.pending.clone()
+    fn record(&self, name: &'static str, d: std::time::Duration) {
+        if let Ok(mut t) = self.0.stats.lock() {
+            t.record(name, d);
+        }
+    }
+    /// 작업자 길의 처리 시간 사본(엔진이 진단 표에 합친다)
+    pub fn stats(&self) -> Vec<(&'static str, (u64, u128, u128, u128))> {
+        self.0
+            .stats
+            .lock()
+            .map(|t| t.0.iter().map(|(k, v)| (*k, *v)).collect())
+            .unwrap_or_default()
     }
     /// handler: 조회를 작업자에게 직접 넘긴다
     pub fn submit(&self, job: ReadJob) -> Direct {
@@ -106,6 +118,7 @@ impl Gate {
             return Direct::Closed(job);
         };
         if self.0.pending.load(Ordering::SeqCst) >= MAX_PENDING_READS {
+            self.record("작업자: (가득 차 busy)", std::time::Duration::ZERO);
             return Direct::Full(job);
         }
         self.0.pending.fetch_add(1, Ordering::SeqCst);
@@ -135,15 +148,12 @@ pub fn is_heavy_read(m: Method) -> bool {
 
 /// 읽기 작업자를 띄운다. 파일 DB 가 아니거나 열기에 실패하면 None (엔진이 직접 처리)
 pub fn spawn(path: &str, gen: Arc<AtomicU64>) -> Option<Sender<ReadJob>> {
-    spawn_counted(path, gen, Default::default())
+    spawn_counted(path, gen, &Gate::default())
 }
 
-/// `pending`: 문(Gate)이 세는 대기 수 — 작업자가 한 건 꺼낼 때마다 내린다
-pub fn spawn_counted(
-    path: &str,
-    gen: Arc<AtomicU64>,
-    pending: Arc<std::sync::atomic::AtomicUsize>,
-) -> Option<Sender<ReadJob>> {
+/// `gate`: 대기 수(작업자가 한 건 꺼낼 때마다 내린다)와 처리 시간을 이 문에 남긴다
+pub fn spawn_counted(path: &str, gen: Arc<AtomicU64>, gate: &Gate) -> Option<Sender<ReadJob>> {
+    let gate = gate.clone();
     if path.is_empty() || path == ":memory:" {
         return None;
     }
@@ -151,7 +161,7 @@ pub fn spawn_counted(
     let (tx, rx) = mpsc::channel::<ReadJob>();
     std::thread::Builder::new()
         .name("reader".into())
-        .spawn(move || run(store, rx, gen, pending))
+        .spawn(move || run(store, rx, gen, gate))
         .ok()?;
     Some(tx)
 }
@@ -161,12 +171,7 @@ pub const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(8);
 /// 27차 Gemini Q5: 읽기 질의 하나가 이보다 오래 걸리면 끊는다(긴 읽기 트랜잭션이 WAL 체크포인트를 막지 않게)
 pub const QUERY_LIMIT: std::time::Duration = std::time::Duration::from_secs(6);
 
-fn run(
-    store: Store,
-    rx: Receiver<ReadJob>,
-    gen: Arc<AtomicU64>,
-    pending: Arc<std::sync::atomic::AtomicUsize>,
-) {
+fn run(store: Store, rx: Receiver<ReadJob>, gen: Arc<AtomicU64>, gate: Gate) {
     let mut rs = ReadState::default();
     // 감시 스레드: 질의 마감(t0 기준 ms, 0 = 없음)이 지나면 sqlite3_interrupt — hooks 기능 없이 InterruptHandle 로
     let deadline = Arc::new(AtomicU64::new(0));
@@ -186,8 +191,10 @@ fn run(
             });
     }
     for job in rx {
-        dec(&pending);
+        dec(&gate.0.pending);
+        gate.record("작업자: (대기열)", job.enqueued.elapsed());
         if job.enqueued.elapsed() > STALE_AFTER {
+            gate.record("작업자: (낡은 조회 건너뜀)", job.enqueued.elapsed());
             let _ = job.reply.send(Response::err(
                 Some(job.id),
                 RpcError::with(ErrorCode::Busy, "읽기 대기열에서 너무 오래 기다림"),
@@ -203,6 +210,7 @@ fn run(
             rs.today_cache = None;
             rs.gen = g;
         }
+        let tw = std::time::Instant::now();
         let r = match job.method {
             Method::StoryToday => story_today(&store, &mut rs, job.now, job.params, &job.caller),
             Method::ConnectionsList => {
@@ -214,6 +222,14 @@ fn run(
             )),
         };
         deadline.store(0, Ordering::SeqCst);
+        gate.record(
+            match job.method {
+                Method::StoryToday => "작업자: story.today",
+                Method::ConnectionsList => "작업자: connections.list",
+                _ => "작업자: 기타",
+            },
+            tw.elapsed(),
+        );
         // 끊긴 질의(interrupted)는 일시 상태로 — 화면은 busy 처럼 다시 부른다
         let r = r.map_err(|e| {
             if e.message.contains("interrupt") {
