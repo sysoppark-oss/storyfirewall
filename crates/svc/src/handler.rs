@@ -47,12 +47,24 @@ pub const QUEUE_WAIT: Duration = Duration::from_secs(5);
 /// 48차 Q1: 엔진이 아직 꺼내지 않은 화면 요청의 최대 수(화면 하나가 한 번에 여는 조회는 10개 안팎)
 pub const MAX_QUEUED_RPCS: usize = 32;
 
-/// 연결 하나를 끝까지 처리한다. 반환: 끊은 이유
+/// 연결 하나를 끝까지 처리한다. 반환: 끊은 이유. 조회는 모두 엔진을 거친다(시험·PoC)
 pub fn serve(
     conn_id: u64,
     t: &mut dyn Transport,
     auth: &dyn Authn,
     engine: &Sender<Command>,
+) -> &'static str {
+    serve_direct(conn_id, t, auth, engine, &crate::reads::Gate::default())
+}
+
+/// 50차 1단계: 무거운 읽기(story.today·connections.list)는 엔진을 거치지 않고 읽기 작업자에게 직접 넘긴다.
+/// `reads` = Runtime::reads. 문이 닫혀 있으면(메모리 DB·작업자 없음·강제 모드) 전처럼 엔진으로 간다
+pub fn serve_direct(
+    conn_id: u64,
+    t: &mut dyn Transport,
+    auth: &dyn Authn,
+    engine: &Sender<Command>,
+    reads: &crate::reads::Gate,
 ) -> &'static str {
     let pid = t.client_pid();
     // 1) 서명 검사 실패 = 조회도 없이 끊음 (10차 Q5)
@@ -183,6 +195,8 @@ pub fn serve(
         // 27차 Gemini Q1: 연결 중 rpc.hello 도 엔진 밖에서 — UI 가 주기적으로 불러 엔진이 한 일에 묶여 있는지(engine_busy_ms) 본다
         let resp = if method == Method::RpcHello {
             hello_reply(id, params)
+        } else if crate::reads::is_heavy_read(method) {
+            ask_reader(reads, engine, id, method, params, &caller)
         } else {
             ask(engine, id, method, params, &caller)
         };
@@ -220,6 +234,42 @@ fn hello_reply(id: api::rpc::Id, params: serde_json::Value) -> Response {
     // 27차 Gemini Q1: hello 가 엔진 밖에서 답하므로 엔진이 멈춰도 "연결됨"으로 보인다 — 지금 처리 중인 일이 얼마나 오래 걸리고 있는지 함께 준다
     out["engine_busy_ms"] = serde_json::json!(crate::runtime::engine_busy_ms());
     Response::ok(id, out)
+}
+
+/// 읽기 작업자에게 직접 묻는다. 권한·세션 범위(Caller)는 엔진 경로와 같은 것을 붙인다
+fn ask_reader(
+    reads: &crate::reads::Gate,
+    engine: &Sender<Command>,
+    id: Id,
+    method: Method,
+    params: serde_json::Value,
+    caller: &Caller,
+) -> Response {
+    use crate::reads::Direct;
+    let (reply_tx, reply_rx) = mpsc::channel();
+    let job = crate::reads::ReadJob {
+        id: id.clone(),
+        method,
+        params,
+        caller: caller.clone(),
+        now: reads.now(),
+        enqueued: std::time::Instant::now(),
+        reply: reply_tx,
+    };
+    match reads.submit(job) {
+        Direct::Sent => match reply_rx.recv_timeout(QUEUE_WAIT) {
+            Ok(r) => r,
+            Err(_) => Response::err(
+                Some(id),
+                RpcError::with(ErrorCode::Busy, "읽기 작업자 대기 5초 초과"),
+            ),
+        },
+        Direct::Full(_) => Response::err(
+            Some(id),
+            RpcError::with(ErrorCode::Busy, "읽기 대기열이 가득 참"),
+        ),
+        Direct::Closed(job) => ask(engine, id, method, job.params, caller),
+    }
 }
 
 fn ask(

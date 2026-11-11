@@ -39,6 +39,95 @@ pub struct ReadJob {
     pub reply: Sender<Response>,
 }
 
+/// 50차 1단계: 파이프 연결 스레드(handler)가 엔진을 거치지 않고 읽기 작업자에게 조회를 직접 넘기는 문.
+/// 엔진이 판정·정리로 바쁜 동안에도 story.today·connections.list 가 답한다. 엔진 스레드가 작업자를 띄운 뒤 채운다.
+#[derive(Clone, Default)]
+pub struct Gate(Arc<GateInner>);
+
+#[derive(Default)]
+struct GateInner {
+    tx: std::sync::Mutex<Option<Sender<ReadJob>>>,
+    /// 엔진 시계의 벽시각(unix 초) — 엔진이 한 바퀴 돌 때마다 맞춘다. 엔진이 바쁜 동안은 그만큼 늦다(범위가 조금 앞에서 시작할 뿐)
+    now: std::sync::atomic::AtomicI64,
+    /// 작업자 대기열에 들어가 아직 꺼내지 않은 조회 수
+    pending: Arc<std::sync::atomic::AtomicUsize>,
+    /// 개발 서버 강제 모드(dev_force) — 엔진의 dispatch 가 처리해야 하므로 직접 넘기지 않는다
+    forced: std::sync::atomic::AtomicBool,
+}
+
+/// 작업자 대기열 상한(50차 Q3): 일반 사용자 조회 홍수가 작업자 줄을 끝없이 늘리지 않게 — 넘으면 바로 busy
+pub const MAX_PENDING_READS: usize = 16;
+
+/// 직접 넘기기 결과
+pub enum Direct {
+    /// 넘겼다 — 응답은 reply 로 온다
+    Sent,
+    /// 줄이 가득 찼다 — busy 로 답한다
+    Full(ReadJob),
+    /// 문이 닫혀 있다(작업자 없음·강제 모드) — 엔진으로 보낸다
+    Closed(ReadJob),
+}
+
+impl Gate {
+    /// 엔진 스레드: 작업자를 띄운 뒤 문을 연다
+    pub fn open(&self, tx: Sender<ReadJob>, now: i64) {
+        self.set_now(now);
+        if let Ok(mut g) = self.0.tx.lock() {
+            *g = Some(tx);
+        }
+    }
+    /// 작업자가 죽었다 — 이후로는 엔진이 직접
+    pub fn close(&self) {
+        if let Ok(mut g) = self.0.tx.lock() {
+            *g = None;
+        }
+    }
+    pub fn set_now(&self, now: i64) {
+        self.0.now.store(now, Ordering::SeqCst);
+    }
+    pub fn set_forced(&self) {
+        self.0.forced.store(true, Ordering::SeqCst);
+    }
+    pub fn now(&self) -> i64 {
+        self.0.now.load(Ordering::SeqCst)
+    }
+    pub(crate) fn pending(&self) -> Arc<std::sync::atomic::AtomicUsize> {
+        self.0.pending.clone()
+    }
+    /// handler: 조회를 작업자에게 직접 넘긴다
+    pub fn submit(&self, job: ReadJob) -> Direct {
+        if self.0.forced.load(Ordering::SeqCst) {
+            return Direct::Closed(job);
+        }
+        let Ok(g) = self.0.tx.lock() else {
+            return Direct::Closed(job);
+        };
+        let Some(tx) = g.as_ref() else {
+            return Direct::Closed(job);
+        };
+        if self.0.pending.load(Ordering::SeqCst) >= MAX_PENDING_READS {
+            return Direct::Full(job);
+        }
+        self.0.pending.fetch_add(1, Ordering::SeqCst);
+        match tx.send(job) {
+            Ok(()) => Direct::Sent,
+            Err(mpsc::SendError(job)) => {
+                dec(&self.0.pending);
+                drop(g);
+                self.close();
+                Direct::Closed(job)
+            }
+        }
+    }
+}
+
+/// 0 아래로 내려가지 않게
+fn dec(n: &std::sync::atomic::AtomicUsize) {
+    let _ = n.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+        Some(v.saturating_sub(1))
+    });
+}
+
 /// 작업자가 맡는 메서드
 pub fn is_heavy_read(m: Method) -> bool {
     matches!(m, Method::StoryToday | Method::ConnectionsList)
@@ -46,6 +135,15 @@ pub fn is_heavy_read(m: Method) -> bool {
 
 /// 읽기 작업자를 띄운다. 파일 DB 가 아니거나 열기에 실패하면 None (엔진이 직접 처리)
 pub fn spawn(path: &str, gen: Arc<AtomicU64>) -> Option<Sender<ReadJob>> {
+    spawn_counted(path, gen, Default::default())
+}
+
+/// `pending`: 문(Gate)이 세는 대기 수 — 작업자가 한 건 꺼낼 때마다 내린다
+pub fn spawn_counted(
+    path: &str,
+    gen: Arc<AtomicU64>,
+    pending: Arc<std::sync::atomic::AtomicUsize>,
+) -> Option<Sender<ReadJob>> {
     if path.is_empty() || path == ":memory:" {
         return None;
     }
@@ -53,7 +151,7 @@ pub fn spawn(path: &str, gen: Arc<AtomicU64>) -> Option<Sender<ReadJob>> {
     let (tx, rx) = mpsc::channel::<ReadJob>();
     std::thread::Builder::new()
         .name("reader".into())
-        .spawn(move || run(store, rx, gen))
+        .spawn(move || run(store, rx, gen, pending))
         .ok()?;
     Some(tx)
 }
@@ -63,7 +161,12 @@ pub const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(8);
 /// 27차 Gemini Q5: 읽기 질의 하나가 이보다 오래 걸리면 끊는다(긴 읽기 트랜잭션이 WAL 체크포인트를 막지 않게)
 pub const QUERY_LIMIT: std::time::Duration = std::time::Duration::from_secs(6);
 
-fn run(store: Store, rx: Receiver<ReadJob>, gen: Arc<AtomicU64>) {
+fn run(
+    store: Store,
+    rx: Receiver<ReadJob>,
+    gen: Arc<AtomicU64>,
+    pending: Arc<std::sync::atomic::AtomicUsize>,
+) {
     let mut rs = ReadState::default();
     // 감시 스레드: 질의 마감(t0 기준 ms, 0 = 없음)이 지나면 sqlite3_interrupt — hooks 기능 없이 InterruptHandle 로
     let deadline = Arc::new(AtomicU64::new(0));
@@ -83,6 +186,7 @@ fn run(store: Store, rx: Receiver<ReadJob>, gen: Arc<AtomicU64>) {
             });
     }
     for job in rx {
+        dec(&pending);
         if job.enqueued.elapsed() > STALE_AFTER {
             let _ = job.reply.send(Response::err(
                 Some(job.id),

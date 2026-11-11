@@ -100,3 +100,121 @@ fn reader_matches_inline_and_cannot_write() {
     drop(tx);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// 50차 1단계: 문(Gate)으로 직접 넘긴 조회는 작업자가 답하고, 줄이 가득 차면 넘기지 않으며, 닫힌 문은 엔진으로 돌려보낸다
+#[test]
+fn gate_submits_directly_and_bounds_queue() {
+    use svc::reads::{Direct, Gate, MAX_PENDING_READS};
+    let job = |reply: mpsc::Sender<api::Response>| ReadJob {
+        id: api::rpc::Id::Num(7),
+        method: api::Method::ConnectionsList,
+        params: serde_json::json!({ "since_secs": 300 }),
+        caller: caller(),
+        now: NOW,
+        reply,
+        enqueued: std::time::Instant::now(),
+    };
+    // 닫힌 문(작업자 없음) → 엔진으로
+    let gate = Gate::default();
+    let (rtx, _rrx) = mpsc::channel();
+    assert!(matches!(gate.submit(job(rtx)), Direct::Closed(_)));
+
+    // 작업자 없이 채널만 연 문: 아무도 꺼내지 않으므로 상한까지만 받는다
+    let (tx, rx) = mpsc::channel::<ReadJob>();
+    gate.open(tx, NOW);
+    assert_eq!(gate.now(), NOW);
+    let (rtx, _rrx) = mpsc::channel();
+    for _ in 0..MAX_PENDING_READS {
+        assert!(matches!(gate.submit(job(rtx.clone())), Direct::Sent));
+    }
+    assert!(matches!(gate.submit(job(rtx.clone())), Direct::Full(_)));
+    // 강제 모드면 줄이 비어도 엔진으로
+    gate.set_forced();
+    assert!(matches!(gate.submit(job(rtx.clone())), Direct::Closed(_)));
+    // 작업자가 죽으면(수신 쪽 닫힘) 문이 닫힌다
+    let gate2 = Gate::default();
+    let (tx2, rx2) = mpsc::channel::<ReadJob>();
+    gate2.open(tx2, NOW);
+    drop(rx2);
+    assert!(matches!(gate2.submit(job(rtx.clone())), Direct::Closed(_)));
+    assert!(matches!(gate2.submit(job(rtx)), Direct::Closed(_)));
+    drop(rx);
+}
+
+/// 50차 1단계: 엔진 채널을 아무도 읽지 않아도(엔진이 판정에 묶인 상황) handler 가 작업자에게 직접 넘겨 답한다
+#[test]
+fn handler_answers_heavy_reads_while_engine_is_stuck() {
+    use svc::handler::{Authn, Read, Transport};
+    struct T(mpsc::Receiver<String>, mpsc::Sender<String>);
+    impl Transport for T {
+        fn read_line(&mut self, timeout: Duration) -> Read {
+            match self.0.recv_timeout(timeout) {
+                Ok(l) => Read::Line(l),
+                Err(mpsc::RecvTimeoutError::Timeout) => Read::Timeout,
+                Err(_) => Read::Closed,
+            }
+        }
+        fn write_line(&mut self, line: &str) -> bool {
+            self.1.send(line.to_string()).is_ok()
+        }
+        fn client_pid(&self) -> u32 {
+            1
+        }
+    }
+    struct A;
+    impl Authn for A {
+        fn client_image(&self, _: u32) -> Option<String> {
+            Some("ui.exe".into())
+        }
+        fn signature_ok(&self, _: u32) -> bool {
+            true
+        }
+        fn is_admin(&self, _: u32) -> bool {
+            false
+        }
+    }
+    let dir = std::env::temp_dir().join(format!("sf-gate-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let w = Store::open(dir.join("graph.db")).unwrap();
+    Ingester::new(&w)
+        .ingest_all(&svc::demo::demo_events(svc::runtime::unix_to_filetime(NOW)))
+        .unwrap();
+    let gate = reads::Gate::default();
+    let rd = reads::spawn_counted(&w.path(), Arc::new(AtomicU64::new(0)), Default::default())
+        .expect("작업자");
+    gate.open(rd, NOW);
+    // 엔진: 채널만 있고 아무도 읽지 않는다
+    let (etx, _erx) = mpsc::channel::<svc::runtime::Command>();
+    let (c2s, c2s_rx) = mpsc::channel::<String>();
+    let (s2c, s2c_rx) = mpsc::channel::<String>();
+    let g2 = gate.clone();
+    std::thread::spawn(move || {
+        let mut t = T(c2s_rx, s2c);
+        svc::handler::serve_direct(1, &mut t, &A, &etx, &g2);
+    });
+    let mut call = |id: i64, m: &str, p: serde_json::Value| {
+        c2s.send(serde_json::to_string(&api::Request::new(id, m, p)).unwrap())
+            .unwrap();
+        let l = s2c_rx.recv_timeout(Duration::from_secs(4)).expect("응답");
+        serde_json::from_str::<serde_json::Value>(l.trim_end()).unwrap()
+    };
+    let h = call(
+        1,
+        "rpc.hello",
+        serde_json::json!({ "api": api::API_VERSION, "client_version": "test" }),
+    );
+    assert!(h.get("error").is_none(), "{h}");
+    let c = call(
+        2,
+        "connections.list",
+        serde_json::json!({ "since_secs": 604800 }),
+    );
+    assert!(
+        !c["result"]["items"].as_array().unwrap().is_empty(),
+        "엔진 없이도 연결 목록이 와야 한다: {c}"
+    );
+    let s = call(3, "story.today", serde_json::json!({}));
+    assert!(s["result"]["sentences"].is_array(), "{s}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

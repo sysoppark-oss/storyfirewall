@@ -152,6 +152,8 @@ pub struct World<'a> {
     pub read_gen: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// 구조 개선 C: 읽기 작업자(story.today·connections.list). None 이면 엔진이 직접
     pub reader: Option<Sender<crate::reads::ReadJob>>,
+    /// 50차 1단계: 연결 스레드용 문 — 엔진은 시각을 맞추고, 작업자가 죽거나 강제 모드면 닫는다
+    pub read_gate: crate::reads::Gate,
     /// L030: 판정 결과 캐시 (계산 시각 wall, since_ts, 사건들)
     pub judge_cache: Option<(i64, i64, std::sync::Arc<Vec<judge::Story>>)>,
     /// 구조 개선 B: 주기 판정(1분, 보관 기간 전체)의 결과. 조회(story.events 기본·process.detail)는 이것만 읽는다.
@@ -220,6 +222,8 @@ pub struct Runtime {
     pub our_filters: crate::blocked::OurFilters,
     /// 차단 기록(집계 스레드가 채우고 엔진 스레드의 blocked.recent 가 읽음)
     pub blocked_recent: crate::blocked::Recent,
+    /// 50차 1단계: 연결 스레드가 읽기 작업자에게 조회를 직접 넘기는 문(handler::serve_direct 에 준다)
+    pub reads: crate::reads::Gate,
 }
 
 pub use crate::host::{Host, NoHost};
@@ -256,6 +260,8 @@ impl Runtime {
         let blocked_recent: crate::blocked::Recent = Default::default();
         let blocked_recent_thread = blocked_recent.clone();
         let host: Box<dyn Host> = host.unwrap_or_else(|| Box::new(NoHost));
+        let gate = crate::reads::Gate::default();
+        let gate_thread = gate.clone();
         let (tx, rx) = mpsc::channel::<Command>();
         let ver = server_version.to_string();
         if let Ok(mut g) = SERVER_VERSION.write() {
@@ -326,7 +332,15 @@ impl Runtime {
                     clock_changes: Vec::new(),
                     read: Default::default(),
                     read_gen: read_gen.clone(),
-                    reader: crate::reads::spawn(&db_path, read_gen),
+                    reader: {
+                        let rd =
+                            crate::reads::spawn_counted(&db_path, read_gen, gate_thread.pending());
+                        if let Some(rd) = &rd {
+                            gate_thread.open(rd.clone(), clock.wall());
+                        }
+                        rd
+                    },
+                    read_gate: gate_thread,
                     judge_cache: None,
                     judged: None,
                     judged_prev: None,
@@ -365,6 +379,7 @@ impl Runtime {
             handle: Some(handle),
             our_filters,
             blocked_recent,
+            reads: gate,
         }
     }
 
@@ -395,6 +410,7 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
     loop {
         // 기준선 시계를 엔진 시계에 맞춘다 (judge 는 FILETIME)
         world.baseline.now_ts = unix_to_filetime(clock.wall());
+        world.read_gate.set_now(clock.wall());
         // 하루 1회 기준선 학습 (판정 전에)
         if clock.wall() - world.last_learn_wall >= 86_400 {
             let t = std::time::Instant::now();
@@ -565,6 +581,7 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
             }
             Command::DevForce(f) => {
                 world.dev_force = Some(f);
+                world.read_gate.set_forced();
             }
             Command::DevHeartbeat(ft) => {
                 let _ = graph::views::heartbeat(&world.graph, ft);
@@ -631,6 +648,7 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                         if let Err(mpsc::SendError(job)) = rd.send(job) {
                             // 작업자가 죽었다 → 이후로는 엔진이 직접
                             world.reader = None;
+                            world.read_gate.close();
                             let resp = dispatch(world, job.id, job.method, job.params, &job.caller);
                             let _ = job.reply.send(resp);
                         }

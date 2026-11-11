@@ -491,6 +491,7 @@ mod real {
                     Err(e) => log.w(format!("pipe: publish failed {e}")),
                 }
                 let tx = rt.tx.clone();
+                let reads2 = rt.reads.clone();
                 let log2 = log.clone();
                 let opts2 = opts.clone();
                 std::thread::spawn(move || {
@@ -522,11 +523,12 @@ mod real {
                         active.fetch_add(1, Ordering::SeqCst);
                         let active2 = active.clone();
                         let tx = tx.clone();
+                        let reads3 = reads2.clone();
                         let log3 = log2.clone();
                         let opts3 = opts2.clone();
                         std::thread::spawn(move || {
                             let au = authn_for(&opts3, s.raw());
-                            let why = svc::handler::serve(id, &mut s, &au, &tx);
+                            let why = svc::handler::serve_direct(id, &mut s, &au, &tx, &reads3);
                             log3.w(format!("pipe: connection {id} closed: {why}"));
                             s.disconnect();
                             active2.fetch_sub(1, Ordering::SeqCst);
