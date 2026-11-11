@@ -2141,11 +2141,7 @@ fn narrative_cached(
     voice: &str,
     s: &judge::Story,
 ) -> Result<story::events::Narrative, RpcError> {
-    use std::hash::{Hash, Hasher};
-    // 사건 내용 해시: 같은 뿌리라도 선·점수·이유가 달라지면 다른 문장
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    format!("{s:?}").hash(&mut h);
-    let key = (s.root, voice.to_string(), h.finish());
+    let key = narr_key(s, voice);
     let now = world.engine_wall();
     if let Some((t, n)) = world.narr_cache.get(&key) {
         if now - *t < NARR_TTL_SECS && now >= *t {
@@ -2169,16 +2165,39 @@ fn narrative_cached(
     Ok(n)
 }
 
+/// 문장 캐시 키. 사건 내용 해시: 같은 뿌리라도 선·점수·이유가 달라지면 다른 문장.
+/// diag-182: 선이 3만 개인 사건(sh.exe·claude.exe)은 접속이 하나 늘 때마다 키가 바뀌어 판정마다 문장을 다시 만들었다(각 3~4초).
+/// 큰 사건(선 BIG_STORY_EDGES 이상)은 선 목록 대신 (수준·점수·장·이유·선 수 BIG_STORY_STEP 단위)로 — 선이 그만큼 늘거나
+/// 캐시 유효 시간(NARR_TTL_SECS)이 지나면 다시 만든다. 그 사이 문장 속 마지막 시각·횟수는 그만큼 늦을 수 있다
+fn narr_key(s: &judge::Story, voice: &str) -> (i64, String, u64) {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    if s.edges.len() >= BIG_STORY_EDGES {
+        format!(
+            "{:?}|{}|{:?}|{:?}|{:?}|{}",
+            s.level,
+            s.score,
+            s.chapter,
+            s.root_kind,
+            s.reasons,
+            s.edges.len() / BIG_STORY_STEP
+        )
+        .hash(&mut h);
+    } else {
+        format!("{s:?}").hash(&mut h);
+    }
+    (s.root, voice.to_string(), h.finish())
+}
+const BIG_STORY_EDGES: usize = 1000;
+const BIG_STORY_STEP: usize = 500;
+
 /// 캐시에 있으면 그 문장(만들지 않는다)
 fn narrative_peek(
     world: &World,
     voice: &str,
     s: &judge::Story,
 ) -> Option<story::events::Narrative> {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    format!("{s:?}").hash(&mut h);
-    let key = (s.root, voice.to_string(), h.finish());
+    let key = narr_key(s, voice);
     let now = world.engine_wall();
     world
         .narr_cache
@@ -2464,5 +2483,44 @@ mod open_conn_tests {
         assert!(!is_external_remote("::1"));
         assert!(!is_external_remote("0.0.0.0"));
         assert!(!is_external_remote("not-an-ip"));
+    }
+}
+
+#[cfg(test)]
+mod narr_key_tests {
+    use super::*;
+    fn story(n: usize) -> judge::Story {
+        judge::Story {
+            root: 7,
+            root_label: "claude.exe".into(),
+            root_kind: judge::RootKind::UnsignedProcess,
+            chapter: judge::Chapter::Egress,
+            score: 95,
+            level: judge::Level::Suspicious,
+            reasons: vec![],
+            edges: (0..n as i64).collect(),
+            ingress_unknown: false,
+        }
+    }
+    /// diag-182: 큰 사건은 선이 조금 늘어도 같은 키(문장을 다시 만들지 않음), BIG_STORY_STEP 만큼 늘면 다른 키.
+    /// 작은 사건은 선 하나만 달라도 다른 키(예전과 같음)
+    #[test]
+    fn big_story_key_ignores_small_growth() {
+        assert_eq!(
+            narr_key(&story(30_000), "plain"),
+            narr_key(&story(30_001), "plain")
+        );
+        assert_ne!(
+            narr_key(&story(30_000), "plain"),
+            narr_key(&story(30_000 + BIG_STORY_STEP), "plain")
+        );
+        assert_ne!(narr_key(&story(10), "plain"), narr_key(&story(11), "plain"));
+        assert_ne!(
+            narr_key(&story(30_000), "plain"),
+            narr_key(&story(30_000), "expert")
+        );
+        let mut hi = story(30_000);
+        hi.level = judge::Level::Critical;
+        assert_ne!(narr_key(&story(30_000), "plain"), narr_key(&hi, "plain"));
     }
 }
