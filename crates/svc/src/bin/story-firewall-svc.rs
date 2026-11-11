@@ -1016,13 +1016,37 @@ mod real {
                 pipe_name::reg_delete(data_dir::REG_DATA_DIR);
                 println!("uninstall: ok");
             }
-            "start" => match service::start(SERVICE_NAME) {
-                Ok(()) => println!("start: ok state={:?}", wait_state(4, 20)),
-                Err(e) => println!("start: {e}"),
-            },
+            "start" => {
+                // install-171(2026-11-11): 설치 프로그램이 서비스를 멈추는 중(STOP_PENDING=3)에 시작을 부르면
+                // 0x420(이미 실행 중)으로 실패하고, 곧 멈춰 서비스가 꺼진 채로 남았다(7분). 멈추는 중이면 끝나기를 기다렸다가
+                // 시작하고, 실패하면 상태를 다시 보고 한 번 더 시도한다
+                if service::query_state(SERVICE_NAME).ok() == Some(3) {
+                    wait_state(1, 60);
+                }
+                let mut r = service::start(SERVICE_NAME);
+                if let Err(e) = &r {
+                    match service::query_state(SERVICE_NAME).ok() {
+                        Some(4) | Some(2) => {
+                            println!("start: already running/starting ({e})");
+                            r = Ok(());
+                        }
+                        _ => {
+                            wait_state(1, 60);
+                            std::thread::sleep(Duration::from_millis(500));
+                            println!("start: retry after {e}");
+                            r = service::start(SERVICE_NAME);
+                        }
+                    }
+                }
+                match r {
+                    Ok(()) => println!("start: ok state={:?}", wait_state(4, 20)),
+                    Err(e) => println!("start: {e}"),
+                }
+            }
             "stop" => match service::stop(SERVICE_NAME) {
                 Ok(()) => println!("stop: ok state={:?}", wait_state(1, 30)),
-                Err(e) => println!("stop: {e}"),
+                // 0x425(제어를 받을 수 없음 = 이미 멈추는 중) 등: 멈출 때까지 기다린다
+                Err(e) => println!("stop: {e} → state={:?}", wait_state(1, 60)),
             },
             "status" => {
                 let st = service::query_state(SERVICE_NAME)
