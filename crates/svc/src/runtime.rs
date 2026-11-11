@@ -167,6 +167,9 @@ pub struct World<'a> {
     /// L052: 판정 결과 세대로 열쇠를 삼으면 이야기 화면의 30초 판정 캐시가 바뀔 때마다 모든 문장을 다시 만들었다(노트북 평균 2.5초).
     /// 사건 내용(선·점수·이유)이 같으면 같은 문장이다 — 내용으로 열쇠를 삼고, 실행 횟수처럼 사건 밖에서 변하는 숫자를 위해 10분이 지나면 다시 만든다
     pub narr_cache: std::collections::HashMap<(i64, String, u64), (i64, story::events::Narrative)>,
+    /// diag-184: 큰 사건(선 수천~수만)의 문장은 별도 스레드(읽기 전용 연결)에서 만들고 결과만 받는다. Some = 만드는 중
+    pub narr_job:
+        Option<std::sync::mpsc::Receiver<Vec<((i64, String, u64), story::events::Narrative)>>>,
     /// judged·judge_cache 를 새로 넣을 때마다 오르는 세대(결과마다 따로 기억 — judged_gen·judge_cache_gen)
     pub judge_gen: u64,
     /// judged 를 넣을 때의 세대
@@ -297,6 +300,7 @@ impl Runtime {
                     last_install_wall: 0,
                     timings: Timings::default(),
                     narr_cache: std::collections::HashMap::new(),
+                    narr_job: None,
                     judge_gen: 0,
                     judged_gen: 0,
                     judge_cache_gen: 0,

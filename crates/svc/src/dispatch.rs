@@ -886,16 +886,29 @@ fn handle(
             // diag-170: 서비스 재시작 직후(문장 캐시가 빔) 61건을 이 조회 안에서 만들며 엔진을 31초 잡았다 →
             // 화면은 5초에 포기하고 다시 불러 대기열 평균 40초. 조회 안에서 새로 만드는 문장은 NARR_QUERY_BUDGET 까지만,
             // 그 뒤로는 캐시에 있는 것만 담고 나머지는 "pending"(아직 문장을 만드는 중)으로 알린다 — 판정 뒤 정리가 이어서 만든다
+            // diag-184: 재시작 직후 큰 사건(선 3만) 하나의 문장이 조회 안에서 8초 이상 — 첫 사건은 예산과 상관없이 만들어 조회가 34초.
+            // 이제 조회 안에서는 ① 캐시에 있으면 그것 ② 예산 안이고 작은 사건이면 만들기 ③ 아니면 선을 훑지 않는 한 줄(OneLine: 제목·수준)로
+            // 대신 담고 partial 표시 — 목록의 사건 수는 늘 완전하고(숫자가 맞음) 설명만 판정 뒤 정리가 이어서 채운다
             let mut pending = 0usize;
+            let mut partial_roots: std::collections::HashSet<i64> =
+                std::collections::HashSet::new();
             for s in &page_stories {
-                if t_narr.elapsed() >= NARR_QUERY_BUDGET {
-                    match narrative_peek(world, &v.voice, s) {
-                        Some(n) => nar.push(n),
-                        None => pending += 1,
-                    }
+                if let Some(n) = narrative_peek(world, &v.voice, s) {
+                    nar.push(n);
                     continue;
                 }
-                nar.push(narrative_cached(world, gen, v.since_ts, &v.voice, s)?);
+                if t_narr.elapsed() < NARR_QUERY_BUDGET && s.edges.len() < BIG_STORY_EDGES {
+                    nar.push(narrative_cached(world, gen, v.since_ts, &v.voice, s)?);
+                    continue;
+                }
+                pending += 1;
+                partial_roots.insert(s.root);
+                let n =
+                    story::narrate(&world.graph, std::slice::from_ref(s), story::Voice::OneLine)
+                        .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?
+                        .pop()
+                        .ok_or_else(|| RpcError::with(ErrorCode::Internal, "narrate"))?;
+                nar.push(n);
             }
             if pending > 0 {
                 // 미리 만들기가 기본 화법이 아니어도 다음 정리에서 이어 만들도록
@@ -910,6 +923,10 @@ fn handle(
                 .iter()
                 .map(|n| {
                     let mut v = serde_json::to_value(n).unwrap();
+                    if partial_roots.contains(&n.root) {
+                        // 설명을 아직 만드는 중(한 줄 요약만) — 화면은 "설명 준비 중"으로
+                        v["partial"] = serde_json::json!(true);
+                    }
                     // D020-1: 뿌리가 Windows 핵심 프로세스면 화면이 "끊기" 대신 "이 접속지만 차단"을 보이고 서명·위치를 밝힌다.
                     // (끊기 계획도 이미 핵심 프로세스는 막거나 끝내지 않는다 — cut.rs)
                     let root_kind = world.graph.node(n.root).map(|x| x.kind).unwrap_or_default();
@@ -997,7 +1014,7 @@ fn handle(
                 .timings
                 .record("이야기 목록: 기록 없는 구간", t_gaps.elapsed());
             j(
-                serde_json::json!({ "items": page.items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(), "next": if pending > 0 { None } else { page.next }, "gaps": gaps, "counts": counts, "hidden_low": hidden_low, "pending": pending }),
+                serde_json::json!({ "items": page.items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(), "next": page.next, "gaps": gaps, "counts": counts, "hidden_low": hidden_low, "pending": pending }),
             )
         }
         Method::StoryTriage => {
@@ -2216,20 +2233,78 @@ const NARR_CAP: usize = 4096;
 /// L052: 주기 판정 직후 대시보드·이야기 목록 첫 쪽(주의 이상, 기본 화법 plain, 21건)의 문장을 미리 만든다.
 /// 조회는 캐시만 읽어 2초 안에 끝난다(CLAUDE.md: 무거운 계산은 조회 때가 아니라 주기 작업으로)
 pub fn warm_story_narratives(world: &mut World) {
+    // 별도 스레드가 만든 큰 사건 문장을 받아 캐시에 넣는다
+    if let Some(rx) = &world.narr_job {
+        match rx.try_recv() {
+            Ok(done) => {
+                world.narr_job = None;
+                let now = world.engine_wall();
+                for (k, n) in done {
+                    world.narr_cache.insert(k, (now, n));
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => world.narr_job = None,
+        }
+    }
     let Some((_, stories)) = world.judged.clone() else {
         return;
     };
     let gen = world.judged_gen;
-    // diag-164: 대시보드는 주의 이상 61건(limit 60 + 1), 찾기(Ctrl+K)는 100건을 묻는데 전에는 첫 21건만 미리 만들어
-    // 나머지를 조회 때 만들었다("이야기 목록: 문장" 평균 6초, 화면은 "엔진이 다른 작업 중"). 이제 주의 이상 앞 WARM_N 건.
+    // diag-164: 대시보드는 주의 이상 61건(limit 60 + 1), 찾기(Ctrl+K)는 100건 → 주의 이상 앞 WARM_N 건.
     // 점수 순 정렬이라 의심 이상(70) 첫 쪽은 이 안에 든다. 바뀌지 않은 사건은 캐시에 맞아 거의 시간이 들지 않고,
-    // 처음(캐시가 빈 시작 직후)에는 엔진을 오래 잡지 않게 한 번에 WARM_BUDGET 까지만 — 남은 것은 다음 판정 때 이어서
+    // 처음(캐시가 빈 시작 직후)에는 엔진을 오래 잡지 않게 한 번에 WARM_BUDGET 까지만 — 남은 것은 다음 판정 때 이어서.
+    // diag-184: 큰 사건(선 BIG_STORY_EDGES 이상)은 하나에 8초 — 엔진 스레드에서 만들지 않고 별도 스레드로
     let t0 = std::time::Instant::now();
+    let mut big: Vec<judge::Story> = Vec::new();
     for s in stories.iter().filter(|s| s.score >= 40).take(WARM_N) {
+        if narrative_peek(world, "plain", s).is_some() {
+            continue;
+        }
+        if s.edges.len() >= BIG_STORY_EDGES {
+            big.push(s.clone());
+            continue;
+        }
         if t0.elapsed() >= WARM_BUDGET {
-            break;
+            continue;
         }
         let _ = narrative_cached(world, gen, 0, "plain", s);
+    }
+    if big.is_empty() || world.narr_job.is_some() {
+        return;
+    }
+    let db = world
+        .graph
+        .conn()
+        .path()
+        .filter(|p| !p.is_empty())
+        .map(std::path::PathBuf::from);
+    match db {
+        Some(db) => {
+            let (tx, rx) = std::sync::mpsc::channel();
+            world.narr_job = Some(rx);
+            std::thread::spawn(move || {
+                let mut out = Vec::new();
+                if let Ok(st) = graph::store::Store::open_read_only(&db) {
+                    for s in &big {
+                        if let Ok(mut v) =
+                            story::narrate(&st, std::slice::from_ref(s), story::Voice::Plain)
+                        {
+                            if let Some(n) = v.pop() {
+                                out.push((narr_key(s, "plain"), n));
+                            }
+                        }
+                    }
+                }
+                let _ = tx.send(out);
+            });
+        }
+        // 메모리 DB(시험): 이 자리에서
+        None => {
+            for s in &big {
+                let _ = narrative_cached(world, gen, 0, "plain", s);
+            }
+        }
     }
 }
 

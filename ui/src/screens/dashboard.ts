@@ -16,7 +16,7 @@ import { distPanel, openAsConnLike } from "./dist-panel";
 import { overview, type DashConn, type DashListener } from "./dash-overview";
 import { bytes } from "./connections";
 import { fileName } from "../sanitize";
-import { LastGood, type Kept } from "../last-good";
+import { LastGood } from "../last-good";
 
 /// 서비스가 남긴 보호 사건 (A29): 파이프 이름 가로채기, 데이터 폴더 점유 등. 대상이 그래프의 프로세스면 상세로 잇는다
 interface ServiceEvent {
@@ -480,12 +480,10 @@ export function dashboard(): HTMLElement {
       rpc<{ items: ServiceEvent[] }>("service.events", { since_secs: 7 * 86400, limit: 50 }),
     ]);
     if (my !== rfGen) return;
-    // diag-170: 서비스가 문장을 다 만들지 못했으면(pending) 목록이 일부뿐 — 수를 세면 적게 센다.
-    // 직전 완전한 목록이 있으면 그것을(지난 값 표시), 없으면 일부를 보이되 숫자는 "—", 5초 뒤 다시 불러온다
+    // diag-184: 서비스가 설명을 다 만들지 못했으면(pending) 그 사건들은 한 줄 요약(partial)으로 온다 — 사건 수는 완전하므로 그대로 쓰고
+    // "설명 준비 중" 한 줄 + 5초 뒤 다시
     const evPending = ev0.ok ? ev0.result.pending ?? 0 : 0;
-    type EvRes = { items: StoryEvent[]; counts?: TriageCounts; pending?: number };
-    const prevFull = evPending > 0 ? lastGood.keep<EvRes>("story.events", { ok: false, error: { code: -32004, message: "pending" } }) : null;
-    const ev: Kept<EvRes> = prevFull && prevFull.ok ? prevFull : evPending > 0 ? ev0 : lastGood.keep<EvRes>("story.events", ev0);
+    const ev = lastGood.keep("story.events", ev0);
     if (evPending > 0) window.setTimeout(() => { if (body.isConnected && my === rfGen) void refresh(); }, 5000);
     // 화면 확인(2026-11-11): 앱을 막 열었을 때 엔진이 바쁘면 보여 줄 지난 값도 없이 60초를 기다렸다 → 5초 뒤 다시
     if (!ev.ok) window.setTimeout(() => { if (body.isConnected && my === rfGen) void refresh(); }, 5000);
@@ -500,7 +498,7 @@ export function dashboard(): HTMLElement {
       // 지난 값은 유효 기간(2분)이 있으므로 60초 주기를 기다리지 않고 10초 뒤 다시
       window.setTimeout(() => { if (body.isConnected && my === rfGen) void refresh(); }, 10_000);
     }
-    else if (evPending > 0) body.append(el("p", "warn small stale-note", `인시던트 ${evPending}건의 설명을 아직 만드는 중이라 일부만 표시했습니다. 잠시 뒤 다시 불러옵니다.`));
+    else if (evPending > 0) body.append(el("p", "warn small stale-note", `인시던트 ${evPending}건의 설명을 아직 만드는 중입니다(제목만 표시). 잠시 뒤 다시 불러옵니다.`));
     const stalledNow = hr.ok && collectionStalled(hr.result);
     // D004-2: 숫자는 오늘 새로 일어난 일 기준. 수집 전부터 실행 중·오늘 새 활동 없는 것은 보조 줄로
     const allLv = ev.ok ? ev.result.items : [];
@@ -542,7 +540,7 @@ export function dashboard(): HTMLElement {
       .filter((x) => x.ts > 0)
       .sort((a, b) => b.ts - a.ts);
     reach = chapterReach([...sus, ...watchFresh].map((x) => x.reached ?? []));
-    levelKnown = ev.ok && !(evPending > 0 && ev.stale_at == null);
+    levelKnown = ev.ok;
     const susSpark = hourlyCounts(susTs, Date.now() / 1000);
     const card = (title: string, body: Node, cls = "card", ic?: string, tone: Tone = "neutral", spark?: number[]) => {
       const c = el("div", `${cls} kpi tone-${tone}`, ic ? el("div", "kpi-head", icon(ic), el("h3", undefined, title)) : el("h3", undefined, title), body);
