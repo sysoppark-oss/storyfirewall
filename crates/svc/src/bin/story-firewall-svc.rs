@@ -689,6 +689,25 @@ mod real {
                 &std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into()),
             );
         }
+        // 전체 판정 "불러오기" 단계별 시간(diag-156: 12초)
+        {
+            let mut lp = judge::LoadProfile::default();
+            let t = std::time::Instant::now();
+            match judge::View::load_profiled(&store, 0, i64::MAX, &mut lp) {
+                Ok(_) => println!(
+                    "diag: view_load total_ms={} edges_ms={} n_edges={} nodes_ms={} n_nodes={} index_ms={} table_only_ms={} debug_ports_ms={}",
+                    t.elapsed().as_millis(),
+                    lp.edges.as_millis(),
+                    lp.n_edges,
+                    lp.nodes.as_millis(),
+                    lp.n_nodes,
+                    lp.index.as_millis(),
+                    lp.table_only.as_millis(),
+                    lp.debug_ports.as_millis()
+                ),
+                Err(e) => println!("diag: view_load error {e}"),
+            }
+        }
         // svchost 서비스 이름(명령줄 -s) 수집 확인: 최근 svchost 노드 8개의 SCM 목록·명령줄 서비스 이름
         {
             let rows: Vec<String> = store

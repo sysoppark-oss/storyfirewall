@@ -85,10 +85,27 @@ pub struct View {
 
 impl View {
     pub fn load(store: &Store, from_ts: i64, to_ts: i64) -> Result<Self> {
+        Self::load_profiled(store, from_ts, to_ts, &mut LoadProfile::default())
+    }
+
+    /// 전체 판정의 "불러오기"가 노트북에서 12초(diag-156) — 어느 단계인지 진단이 잰다
+    pub fn load_profiled(
+        store: &Store,
+        from_ts: i64,
+        to_ts: i64,
+        lp: &mut LoadProfile,
+    ) -> Result<Self> {
+        let t = std::time::Instant::now();
         let edges = graph::query::edges_between(store, from_ts, to_ts)?;
+        lp.edges = t.elapsed();
+        lp.n_edges = edges.len();
         // L030: 노드는 묶음 조회로 한 번에(선마다 따로 묻지 않는다)
+        let t = std::time::Instant::now();
         let ids: Vec<i64> = edges.iter().flat_map(|e| [e.src, e.dst]).collect();
         let nodes = graph::query::nodes_by_ids(store, &ids)?;
+        lp.nodes = t.elapsed();
+        lp.n_nodes = nodes.len();
+        let t = std::time::Instant::now();
         let mut out: HashMap<i64, Vec<usize>> = HashMap::new();
         let mut inc: HashMap<i64, Vec<usize>> = HashMap::new();
         let mut by_id: HashMap<i64, usize> = HashMap::with_capacity(edges.len());
@@ -102,8 +119,13 @@ impl View {
             out.entry(e.src).or_default().push(i);
             inc.entry(e.dst).or_default().push(i);
         }
+        lp.index = t.elapsed();
+        let t = std::time::Instant::now();
         let table_only = table_only_connects(store, from_ts, to_ts)?;
+        lp.table_only = t.elapsed();
+        let t = std::time::Instant::now();
         let debug_ports = rules::debug_ports_of(&edges, &nodes);
+        lp.debug_ports = t.elapsed();
         Ok(Self {
             nodes,
             edges,
@@ -355,6 +377,18 @@ fn judge(
 /// `cache` 가 있으면 (뿌리, 종류)별 사슬을 거기서 꺼내 쓰고 없으면 모아 넣는다(증분). `None` 이면 매번 모은다(전체).
 /// 점수는 캐시하지 않는다: 기준선(학습 14일 경과는 시각에 따라 바뀐다)·PC 도메인·"정상" 피드백을 매번 DB 에서 읽는다.
 /// 두 번째 값 = 사건 선의 (선 id, 장). 쓰기는 부르는 쪽이 한다
+/// View::load 단계별 시간(진단용)
+#[derive(Debug, Default, Clone)]
+pub struct LoadProfile {
+    pub edges: std::time::Duration,
+    pub nodes: std::time::Duration,
+    pub index: std::time::Duration,
+    pub table_only: std::time::Duration,
+    pub debug_ports: std::time::Duration,
+    pub n_edges: usize,
+    pub n_nodes: usize,
+}
+
 pub(crate) fn assemble(
     view: &View,
     roots: &[(i64, RootKind)],
