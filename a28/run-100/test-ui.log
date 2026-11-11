@@ -1,15 +1,15 @@
    Compiling story-firewall-ui v0.1.6 (D:\a\storyfirewall\storyfirewall\ui\src-tauri)
    Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
-    Finished `release` profile [optimized] target(s) in 10.55s
+    Finished `release` profile [optimized] target(s) in 18.21s
      Running unittests src\lib.rs (target\release\deps\story_firewall_ui_lib-ca9754926deb224e.exe)
 
 running 6 tests
 test hud::tests::badge_paints_bottom_right_only ... ok
 test approve::tests::uuid_and_args ... ok
-test hud::tests::tone_and_counts_follow_open_critical_and_high ... ok
 test hud::tests::tooltip_has_emergency_and_is_capped ... ok
+test hud::tests::tone_and_counts_follow_open_critical_and_high ... ok
 test tests::story_toast_only_for_suspicious_story_and_strips_control_chars ... ok
 test tray::tests::watchdog_notifies_once_after_threshold_and_probes ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.61s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.62s
 

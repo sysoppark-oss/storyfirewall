@@ -4,7 +4,7 @@ PASS  ui exe in Program Files
 PASS  svc exe in Program Files
 PASS  geo data installed
 PASS  service running after install (Running)
-status: state=4 published=\\.\pipe\story-firewall-69dedc239f7543a1a27a9a25ebe71971 wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+status: state=4 published=\\.\pipe\story-firewall-9e455cc9e5ae4981bfab654608da7d94 wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
 
 PASS  pipe name published
 PASS  data dir owner trusted
@@ -24,15 +24,15 @@ reinstall exit=0
 during upgrade: samples=37 min=2
 PASS  filters never dropped during upgrade (min=2, before=2)
 PASS  service running after reinstall
-service pid before=7232 after=7120 (restarted = files replaced)
-status: state=4 published=\\.\pipe\story-firewall-02167e0420144fddbbbab003960bf245 wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+service pid before=3672 after=7272 (restarted = files replaced)
+status: state=4 published=\\.\pipe\story-firewall-4ca8597e6a524a138bf899ac448465fd wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
 
 PASS  same filter count after upgrade + restart reconcile
 uninstall exit=0
 PASS  service removed
 PASS  files removed
 PASS  Run value removed
-status: state=(OpenServiceW 실패 0x424) published=- wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+status: state=(OpenServiceW 실패 0x424) published=- wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
 
 PASS  pipe name unpublished
 PASS  no WFP filters left
