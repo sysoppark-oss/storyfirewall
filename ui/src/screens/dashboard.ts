@@ -17,6 +17,7 @@ import { overview, type DashConn, type DashListener } from "./dash-overview";
 import { bytes } from "./connections";
 import { fileName } from "../sanitize";
 import { LastGood } from "../last-good";
+import { appendEmptyVerse } from "../word";
 
 /// 서비스가 남긴 보호 사건 (A29): 파이프 이름 가로채기, 데이터 폴더 점유 등. 대상이 그래프의 프로세스면 상세로 잇는다
 interface ServiceEvent {
@@ -677,6 +678,7 @@ export function dashboard(): HTMLElement {
         emptyConnEl = facts.querySelector("p.muted.small");
         box.append(facts);
         body.append(box);
+        appendEmptyVerse(body); // 말씀 규칙 2: 빈 목록 화면
       }
     }
     clear(foot);

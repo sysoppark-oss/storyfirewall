@@ -16,6 +16,7 @@ import {
   agentRangeLabel, agentDidSomething, groupByTool, moreText, runCountText,
   agentBlockYaml, BLOCK_SPAN_LABEL, remoteCountText, sharedRuntime, type BlockSpan,
 } from "./agents-text";
+import { appendEmptyVerse } from "../word";
 
 const LIMIT = 50;
 
@@ -151,6 +152,7 @@ export function agents(): HTMLElement {
     if (!r.result.items.length) {
       if (collectionStalled(h.ok ? h.result : null)) return void cards.append(noDataBox());
       cards.append(el("p", undefined, agentEmptyText(days)), el("p", "muted small", AGENT_HOW_FOUND));
+      appendEmptyVerse(cards);
       return;
     }
     cards.append(el("p", "muted small", AGENT_HOW_FOUND));

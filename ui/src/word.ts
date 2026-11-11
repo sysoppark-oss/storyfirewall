@@ -126,3 +126,16 @@ export function rotatingVerse(): HTMLElement {
   }, 1_000);
   return slot;
 }
+
+/** 빈 목록 화면용(규칙 2): 기다리는 화면과 같은 차례의 짧은 구절. 한 화면에 구절은 하나만 —
+ * 이미 붙어 있는(화면에 보이는) 구절이 있으면 null. 수집 안 됨·불러오지 못함·필터 결과 없음에는 쓰지 않는다 */
+export function emptyVerse(): HTMLElement | null {
+  for (const x of document.querySelectorAll(".word-slot")) if ((x as HTMLElement).offsetParent !== null) return null;
+  return rotatingVerse();
+}
+
+/** 빈 화면 문장 뒤에 구절을 붙인다(있을 때만) */
+export function appendEmptyVerse(parent: HTMLElement): void {
+  const v = emptyVerse();
+  if (v) parent.append(v);
+}

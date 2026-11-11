@@ -12,6 +12,7 @@ import { openProcessDrawer } from "./process";
 import { el, ext, button, clear, fmtTs, fmtShort, fmtShortSec, fmtRange, filetimeToUnix, errorBox, extPath, dataPath, term } from "../ui";
 import { loadingBox, failBox, isBusy, noDataBox, collectionStalled, type HealthLike } from "../list-state";
 import { state } from "../state";
+import { appendEmptyVerse } from "../word";
 
 export interface Sentence {
   text: string;
@@ -457,7 +458,10 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       cards.append(det);
     }
     // D015-4: 0건이어도 수집이 멈췄으면 "없음"이 아니라 "수집 안 됨"
-    if (!r.result.items.length) cards.append(collectionStalled(health) ? noDataBox() : el("p", "muted", emptyText(triageSel.value, r.result.counts)));
+    if (!r.result.items.length) {
+      if (collectionStalled(health)) cards.append(noDataBox());
+      else { cards.append(el("p", "muted", emptyText(triageSel.value, r.result.counts))); appendEmptyVerse(cards); }
+    }
     // 4판 3-2: 칩 필터(단계·시간·샌드박스·심각도만·처리 상태) — 서비스가 못 거르는 것
     const nowSec = Date.now() / 1000;
     const items = r.result.items.filter((ev) => matches(ev, filt, nowSec));
@@ -565,7 +569,11 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
     }
     const since = sinceOf(range.value === "24h" ? "24h" : "today");
     const xs = t.result.sentences.filter((s) => !s.ts || filetimeToUnix(s.ts) >= since);
-    if (!xs.length) return today.append(collectionStalled(health) ? noDataBox() : el("p", "muted", range.value === "24h" ? "최근 24시간에 기록된 일이 없습니다." : "오늘 기록된 일이 없습니다."));
+    if (!xs.length) {
+      if (collectionStalled(health)) return today.append(noDataBox());
+      today.append(el("p", "muted", range.value === "24h" ? "최근 24시간에 기록된 일이 없습니다." : "오늘 기록된 일이 없습니다."));
+      return appendEmptyVerse(today);
+    }
     if (t.result.truncated) today.append(el("p", "muted small", "기록이 많아 가장 최근 것부터 일부만 표시합니다."));
     for (const g of groupToday(sortToday(xs)).slice(-200)) {
       const line = todayLine(g.s);

@@ -11,6 +11,7 @@ import {
   type InstallRun, INSTALL_DAYS, daysLabel, emptyText, HOW_FOUND, FILES_SCOPE, AUTORUN_SCOPE, GROUPED_NOTE,
   baseName, childProcs, originHost, summaryText, remoteText, sortInstalls, countPaths, installChips, installEdge,
 } from "./installs-text";
+import { appendEmptyVerse } from "../word";
 
 /// UI 명세 4판 4-2: 요약 단추 — 이 설치(뿌리)가 인시던트면 그 카드로, 아니면 프로그램 상세 서랍(실행 흐름)으로.
 /// 인시던트가 아닌 것을 인시던트처럼 보이지 않는다. 목록을 못 받으면 서랍으로(잘못된 카드로 보내지 않음)
@@ -157,6 +158,7 @@ export function installs(): HTMLElement {
     if (!r.result.items.length) {
       if (collectionStalled(health)) return void cards.append(noDataBox());
       cards.append(el("p", undefined, emptyText(days)), el("p", "muted small", HOW_FOUND));
+      appendEmptyVerse(cards);
       return;
     }
     // 31차 검수 2: 왜 이 항목이 설치인지 — 기준을 목록 위에 둔다

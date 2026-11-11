@@ -2,7 +2,7 @@
 // L028: 조회가 시간 초과·오류여도 "오늘은 조용합니다"처럼 빈 목록으로 그려져 사용자가 오판할 수 있었다 — 오류는 오류로 보인다.
 import { el, ext, button, fmtShort, filetimeToUnix } from "./ui";
 import type { RpcError, RpcResult } from "./rpc";
-import { rotatingVerse } from "./word";
+import { emptyVerse } from "./word";
 
 export type ListState = "error" | "nodata" | "empty" | "items";
 
@@ -34,7 +34,8 @@ export function loadingBox(opts: { word?: boolean } = {}): HTMLElement {
   setTimeout(() => {
     if (!b.isConnected) return;
     b.append(p);
-    if (opts.word !== false && !document.querySelector(".word-slot")) b.append(rotatingVerse());
+    const v = opts.word !== false ? emptyVerse() : null;
+    if (v) b.append(v);
   }, 2000);
   // D021-2: 10초가 넘으면 이유를 덧붙인다
   setTimeout(() => { if (b.isConnected) p.textContent = "불러오는 중… (기록이 많으면 시간이 걸릴 수 있습니다)"; }, 10000);

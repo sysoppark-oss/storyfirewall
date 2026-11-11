@@ -56,6 +56,15 @@ describe("말씀 표시 — 넣지 않는 자리·바꾸는 간격", () => {
     expect(src("screens/story.ts")).toMatch(/triage-log"\);\s*box\.append\(loadingBox\(\{ word: false \}\)\)/);
     expect(src("screens/dashboard.ts")).toMatch(/loadingBox\(\{ word: false \}\)\); \/\/ 말씀 규칙 3: 변경 장부/);
   });
+  it("빈 화면 구절: 기록·진단 화면과 필터 결과 없음·수집 안 됨에는 붙이지 않는다", () => {
+    for (const f of ["screens/diag.ts", "screens/blocked-log.ts", "screens/live-conns.ts", "screens/policy.ts"]) expect(src(f), f).not.toContain("appendEmptyVerse");
+    // 수집 안 됨(noDataBox)·필터 결과 없음과 같은 줄에 붙지 않는다
+    for (const f of ["screens/story.ts", "screens/connections.ts", "screens/dashboard.ts"]) {
+      for (const line of src(f).split("\n").filter((l) => l.includes("appendEmptyVerse") && !l.startsWith("import"))) {
+        expect(line, f).not.toMatch(/noDataBox|필터에 맞는/);
+      }
+    }
+  });
   it("10초보다 빨리 바꾸지 않고, 자정에 day % |W| 에서 시작", () => {
     expect(ROTATE_MS).toBeGreaterThanOrEqual(10_000);
     expect(waitStep(new Date(2026, 10, 11, 0, 0, 0))).toBe(0);

@@ -6,6 +6,7 @@ import { fileName } from "../sanitize";
 import { openProcessDrawer } from "./process";
 import { groupConns, matchesFilter, type GroupMode } from "./conn-group";
 import { distPanel } from "./dist-panel";
+import { appendEmptyVerse } from "../word";
 
 interface Conn {
   process_id: number;
@@ -263,7 +264,8 @@ export function connections(opts: { map?: boolean; cc?: string; org?: string; q?
     if (!r.result.items.length) {
       // D015-4: 0건이고 수집이 멈췄으면 "기록 없음"이 아니라 "텔레메트리 없음"
       const h = await rpc<HealthLike>("collector.health", {});
-      note.append(h.ok && collectionStalled(h.result) ? noDataBox() : el("p", "muted", "이 범위에 연결 기록이 없습니다."));
+      if (h.ok && collectionStalled(h.result)) note.append(noDataBox());
+      else { note.append(el("p", "muted", "이 범위에 연결 기록이 없습니다.")); appendEmptyVerse(note); }
     }
     paintBars(r.result.items);
     const shown = r.result.items.filter((c) => matchesFilter(c, filter) && textMatch(c, textQ));
