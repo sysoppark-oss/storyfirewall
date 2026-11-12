@@ -1,7 +1,7 @@
 # 제품 본체 워크스페이스. poc/ 아래의 검증 코드는 여기에 포함하지 않는다.
 [workspace]
 resolver = "2"
-members = ["crates/decoy", "crates/graph", "crates/story", "crates/collector", "crates/policy", "crates/dsl", "crates/judge", "crates/engine", "crates/api", "crates/svc", "crates/b2", "crates/geo", "crates/board"]
+members = ["crates/decoy", "crates/rack", "crates/graph", "crates/story", "crates/collector", "crates/policy", "crates/dsl", "crates/judge", "crates/engine", "crates/api", "crates/svc", "crates/b2", "crates/geo", "crates/board"]
 
 [workspace.package]
 edition = "2021"

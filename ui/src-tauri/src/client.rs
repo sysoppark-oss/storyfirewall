@@ -96,6 +96,23 @@ pub mod pipe {
     /// 서버 프로세스가 session 0(서비스)인지 확인한다. 일반 사용자 프로세스는 session 0 에서 돌 수 없다.
     /// 시험 빌드(e2e-cdp)는 러너에서 서버를 콘솔로 띄우므로 session 을 기록만 한다.
     pub fn open(name: &str) -> std::io::Result<Arc<Handle>> {
+        let (handle, spid) = open_unchecked(name)?;
+        let h = handle.0;
+        // 세션은 파이프 핸들에서 바로 얻는다 (A25 실측: 일반 사용자는 LocalSystem 서비스 프로세스를 열 수 없어
+        // ProcessIdToSessionId 가 접근 거부 → 예전 코드는 배포 빌드의 보기 모드 UI 가 진짜 서비스까지 거부했을 것)
+        let mut sess = u32::MAX;
+        let known = unsafe { GetNamedPipeServerSessionId(h, &mut sess) } != 0;
+        SERVER_PID.store(spid, std::sync::atomic::Ordering::SeqCst);
+        SERVER_SESSION.store(if known { sess } else { u32::MAX }, std::sync::atomic::Ordering::SeqCst);
+        if !(known && sess == 0) && !cfg!(feature = "e2e-cdp") {
+            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, format!("파이프 서버(PID {spid})가 서비스(session 0)가 아닙니다 — 가로채기 의심")));
+        }
+        Ok(handle)
+    }
+
+    /// 파이프를 열고 (핸들, 서버 PID) 를 돌려준다. **서버가 누구인지는 확인하지 않는다** — 부르는 쪽이 확인한다
+    /// (우리 서비스: `open` 의 session 0 검사, 다른 랙 구성원: rack.rs 의 등록부 경로 확인). SQOS 식별 수준은 여기서 건다.
+    pub fn open_unchecked(name: &str) -> std::io::Result<(Arc<Handle>, u32)> {
         let w: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
         let mut tries = 0;
         let h = loop {
@@ -119,20 +136,11 @@ pub mod pipe {
         if unsafe { GetNamedPipeServerProcessId(h, &mut spid) } == 0 {
             return Err(std::io::Error::last_os_error());
         }
-        // 세션은 파이프 핸들에서 바로 얻는다 (A25 실측: 일반 사용자는 LocalSystem 서비스 프로세스를 열 수 없어
-        // ProcessIdToSessionId 가 접근 거부 → 예전 코드는 배포 빌드의 보기 모드 UI 가 진짜 서비스까지 거부했을 것)
-        let mut sess = u32::MAX;
-        let known = unsafe { GetNamedPipeServerSessionId(h, &mut sess) } != 0;
-        SERVER_PID.store(spid, std::sync::atomic::Ordering::SeqCst);
-        SERVER_SESSION.store(if known { sess } else { u32::MAX }, std::sync::atomic::Ordering::SeqCst);
-        if !(known && sess == 0) && !cfg!(feature = "e2e-cdp") {
-            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, format!("파이프 서버(PID {spid})가 서비스(session 0)가 아닙니다 — 가로채기 의심")));
-        }
         let mut mode = PIPE_READMODE_MESSAGE;
         if unsafe { SetNamedPipeHandleState(h, &mut mode, std::ptr::null(), std::ptr::null()) } == 0 {
             return Err(std::io::Error::last_os_error());
         }
-        Ok(handle)
+        Ok((handle, spid))
     }
 
     struct Event(HANDLE);
@@ -270,6 +278,17 @@ impl Client {
                 return Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "이 OS 에서는 tcp: 끝점만"));
             }
         };
+        Ok(Self::start(line, sink, endpoint, on_notify))
+    }
+
+    /// 이미 연(그리고 부르는 쪽이 서버를 확인한) 파이프 위에 클라이언트를 만든다 — 다른 랙 구성원(NetX)과의 짧은 대화용
+    #[cfg(windows)]
+    pub fn over_pipe(h: Arc<pipe::Handle>, endpoint: &str) -> std::io::Result<Client> {
+        let (line, sink): (Box<dyn Line>, Box<dyn Sink>) = (Box::new(pipe::PipeLine::new(h.clone())?), Box::new(pipe::PipeSink::new(h)?));
+        Ok(Self::start(line, sink, endpoint, Box::new(|_| {})))
+    }
+
+    fn start(line: Box<dyn Line>, sink: Box<dyn Sink>, endpoint: &str, on_notify: Box<dyn Fn(serde_json::Value) + Send>) -> Client {
         let waiters: Arc<Mutex<HashMap<i64, Sender<serde_json::Value>>>> = Arc::new(Mutex::new(HashMap::new()));
         let w = waiters.clone();
         let closing = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -300,7 +319,7 @@ impl Client {
                 on_notify(serde_json::json!({"jsonrpc": "2.0", "method": "client.disconnected", "params": {"reason": reason}}));
             }
         });
-        Ok(Client { sink: Mutex::new(sink), next_id: Mutex::new(1), waiters, endpoint: endpoint.to_string(), closing })
+        Client { sink: Mutex::new(sink), next_id: Mutex::new(1), waiters, endpoint: endpoint.to_string(), closing }
     }
 
     pub fn call(&self, method: &str, params: serde_json::Value, timeout: Duration) -> Result<serde_json::Value, String> {

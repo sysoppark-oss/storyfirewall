@@ -13,6 +13,7 @@ import { el, ext, button, clear, fmtTs, fmtShort, fmtShortSec, fmtRange, filetim
 import { loadingBox, failBox, isBusy, noDataBox, collectionStalled, type HealthLike } from "../list-state";
 import { state } from "../state";
 import { appendEmptyVerse } from "../word";
+import { netxRegistered, netxDiagnose, parseEndpoint, uniqueEndpoints, endpointText, diagnoseText, type Endpoint } from "../netx";
 
 export interface Sentence {
   text: string;
@@ -749,6 +750,45 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       if (st !== "closed") actions.append(closeBtn);
       if (normalBtn) actions.append(normalBtn);
       actions.append(cutBtn);
+      // 안디옥 첫 연동(통합 설계 0.15판 8.1): NetX 가 등록돼 있을 때만 [NetX로 정밀 진단]. 접속지 주소·포트만 넘긴다.
+      // 이 단추로는 아무것도 실행·차단되지 않는다 — NetX 가 입력칸을 채우고, 실행은 사용자가 NetX 에서 누른다
+      if (ev.egress) void netxRegistered().then((on) => {
+        if (!on) return;
+        const out = el("p", "muted small netx-result");
+        out.setAttribute("role", "status");
+        const send = async (e: Endpoint) => {
+          out.className = "muted small netx-result";
+          out.textContent = `${endpointText(e)} — NetX로 넘기는 중…`;
+          const r = await netxDiagnose(e);
+          out.className = r.ok && r.accepted ? "muted small netx-result" : "warn small netx-result";
+          out.textContent = diagnoseText(e, r);
+        };
+        const netxBtn = withIcon(button(ACT.netx, async () => {
+          netxBtn.disabled = true;
+          if (!out.isConnected) actions.after(out);
+          // 카드의 접속지가 주소면 그것, 도메인 이름이면(이름은 보내지 않는다) 이 사건의 접속 주소 목록에서 고른다
+          const one = parseEndpoint(ev.egress);
+          let targets: Endpoint[] = one ? [one] : [];
+          if (!targets.length) {
+            const r = await rpc<CutPlan>("cut.preview", { story_root: ev.root, also: ["terminate"] });
+            if (r.ok) targets = uniqueEndpoints([...r.result.addresses.map((x) => ({ ip: x.ip, port: x.port })), ...r.result.system_addresses.map(([ip, port]) => ({ ip, port }))]);
+          }
+          if (!targets.length) {
+            out.className = "warn small netx-result";
+            out.textContent = "이 사건에서 NetX로 넘길 접속지 주소(IP)를 찾지 못했습니다";
+          } else if (targets.length === 1) {
+            await send(targets[0]!);
+          } else {
+            // 주소가 여럿이면 하나를 고르게 한다(한 번에 한 곳)
+            out.className = "muted small netx-result";
+            out.replaceChildren("이 사건의 프로그램들이 접속한 주소가 여럿입니다. 이름(도메인)은 보내지 않으므로, NetX로 넘길 주소 한 곳을 누르세요(누르면 바로 넘깁니다): ", ...targets.flatMap((t) => [button(endpointText(t), () => void send(t), "btn small"), " "]));
+          }
+          netxBtn.disabled = false;
+        }, "btn"), "search");
+        netxBtn.title = ACT.netxTip;
+        netxBtn.dataset["cmd"] = "netx-diagnose";
+        actions.querySelector(".spacer")?.after(netxBtn);
+      });
       // 개편안 2판 4-2: 파괴 행위 자동 대응이 끊은 사건(메모 auto:<policy_id>:<version>) → [되돌리기] (정책 되돌리기 + 사건을 다시 염)
       const auto = parseAutoNote(ev.triage?.note);
       if (auto) {

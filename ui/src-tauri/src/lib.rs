@@ -7,6 +7,7 @@ pub mod approve_win;
 mod client;
 pub mod elevate;
 pub mod hud;
+pub mod rack;
 pub mod tray;
 
 use std::sync::{Arc, Mutex};
@@ -212,7 +213,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![connect, rpc, endpoint, elevated, approve, update_enabled, update_check, update_install, set_story_toast, hud::hud_state, hud::hud_mode, hud::set_hud_mode, hud::hud_last, hud::open_main])
+        .invoke_handler(tauri::generate_handler![connect, rpc, endpoint, elevated, approve, update_enabled, update_check, update_install, set_story_toast, hud::hud_state, hud::hud_mode, hud::set_hud_mode, hud::hud_last, hud::open_main, rack::netx_registered, rack::netx_diagnose])
         .on_window_event(|w, e| {
             // 닫기(X) = 트레이로 숨김. 끝내기는 트레이 메뉴 (A28)
             if let tauri::WindowEvent::CloseRequested { api, .. } = e {

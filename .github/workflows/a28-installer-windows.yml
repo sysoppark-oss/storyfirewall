@@ -120,6 +120,11 @@ jobs:
           Check ($st -match 'owner_trusted=true') "data dir owner trusted"
           $run = (Get-ItemProperty $runKey -Name StoryFirewall -ErrorAction SilentlyContinue).StoryFirewall
           Check ($run -match 'story-firewall-ui\.exe" --tray') "HKLM Run --tray ($run)"
+          # Antioch slot registry (first integration): 64-bit view, values point into Program Files
+          $rack = Get-ItemProperty "HKLM:\SOFTWARE\Antioch\Modules\storyfirewall" -ErrorAction SilentlyContinue
+          Check ($rack.Exe -eq $svcExe) "rack Exe = service exe ($($rack.Exe))"
+          Check ($rack.ClientExe -eq (Join-Path $dir "story-firewall-ui.exe")) "rack ClientExe = ui exe ($($rack.ClientExe))"
+          Check ($rack.Kind -eq "service" -and $rack.Api -eq "1.0") "rack Kind/Api ($($rack.Kind) $($rack.Api))"
           $acl = (Get-Acl $dir).Access | Where-Object { $_.IdentityReference -match 'Users|Authenticated' -and $_.FileSystemRights -match 'Write|Modify|FullControl' -and $_.AccessControlType -eq 'Allow' }
           Check ($null -eq $acl) "users cannot write install dir"
           $start = (Get-CimInstance Win32_Service -Filter "Name='StoryFirewall'")
@@ -182,6 +187,7 @@ jobs:
           Check ($st3 -match 'published=-') "pipe name unpublished"
           Check ($st3 -match 'wfp_filters=0') "no WFP filters left"
           Check (Test-Path (Join-Path $env:ProgramData "StoryFirewall")) "data kept on silent uninstall"
+          Check (-not (Test-Path "HKLM:\SOFTWARE\Antioch\Modules\storyfirewall")) "rack registry entry removed on uninstall"
           Log "assert: $bad failed"
           if ($bad -gt 0) { exit 1 }
 

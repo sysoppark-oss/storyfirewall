@@ -6,6 +6,13 @@
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "StoryFirewall" '"$INSTDIR\story-firewall-ui.exe" --tray'
 !macroend
 
+!macro SF_RACK_SET
+  WriteRegStr HKLM "SOFTWARE\Antioch\Modules\storyfirewall" "Exe" "$INSTDIR\story-firewall-svc.exe"
+  WriteRegStr HKLM "SOFTWARE\Antioch\Modules\storyfirewall" "ClientExe" "$INSTDIR\story-firewall-ui.exe"
+  WriteRegStr HKLM "SOFTWARE\Antioch\Modules\storyfirewall" "Kind" "service"
+  WriteRegStr HKLM "SOFTWARE\Antioch\Modules\storyfirewall" "Api" "1.0"
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
   ; L049: 로그온 때 Run 키로 뜬 트레이 UI(사용자 세션)가 있으면 템플릿의 "실행 중인 앱" 확인이 /S 에서 설치를 중단(exit 2)한다.
   ;  이 훅은 그 확인보다 먼저 돈다(노트북 install-21: 훅의 svc stop 은 실행됐고 그 뒤 exit 2). 업그레이드 전에 UI 를 끈다.
@@ -30,6 +37,9 @@
   Pop $0
   ; 로그온하면 트레이에 뜬다 (모든 사용자)
   !insertmacro SF_RUNKEY_SET
+  ; 안디옥 슬롯 등록부(통합 설계 0.15판 8.1 "첫 연동", 8.3 의 1번): 다른 랙 구성원(NetX)이 이 값으로 우리를 확인한다.
+  ;  Exe = 파이프를 여는 쪽(서비스), ClientExe = 남에게 접속하는 쪽(화면). HKLM 은 관리자만 쓸 수 있다.
+  !insertmacro SF_RACK_SET
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
@@ -57,6 +67,8 @@
   nsExec::ExecToLog '"$INSTDIR\story-firewall-svc.exe" uninstall$R7'
   Pop $0
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "StoryFirewall"
+  ; 안디옥 등록부에서 우리 항목만 지운다. 위의 Modules·Antioch 열쇠는 다른 프로그램(NetX 등)과 언어 설정이 함께 쓰므로 건드리지 않는다
+  DeleteRegKey HKLM "SOFTWARE\Antioch\Modules\storyfirewall"
   sf_skip_uninstall:
 !macroend
 

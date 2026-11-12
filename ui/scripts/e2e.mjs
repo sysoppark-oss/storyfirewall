@@ -85,6 +85,9 @@ const server = http.createServer(async (req, res) => {
     else if (cmd === "elevated") out = mode !== "nonadmin";
     else if (cmd === "approve") out = await helperEmu(args.changeId);
     else if (cmd === "notes") out = notes.splice(0);
+    // 안디옥 첫 연동 캡처(shots:netx): NetX 가 등록돼 있고 인계를 받는 것으로 흉내 낸다. 그 밖의 모드에서는 등록 안 됨(단추 없음)
+    else if (cmd === "netx_registered") out = mode === "shots:netx";
+    else if (cmd === "netx_diagnose") out = { accepted: true, opened: true };
     else out = null;
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify(out));
@@ -292,6 +295,20 @@ if (mode.startsWith("shots:")) {
     await page.locator(".new-pill").waitFor({ timeout: 15000 }).catch(() => {});
     console.log(`shots live: pill=${await page.locator(".new-pill").count()}`);
     await page.screenshot({ path: path.join(outDir, `${label}-new-pill.png`) });
+  }
+  if (label === "netx") {
+    // 통합 설계 0.15판 8.1 "첫 연동": 사건 카드의 [NetX로 정밀 진단] — 주소인 접속지(바로 인계)와 도메인인 접속지(주소 고르기)
+    await page.click("button.nav-btn[data-key=story]");
+    await page.locator("[data-cmd=netx-diagnose]").first().waitFor({ timeout: 20000 }).catch(() => {});
+    console.log(`shots netx: buttons=${await page.locator("[data-cmd=netx-diagnose]").count()}`);
+    for (const who of ["helper.exe", "payload.exe"]) {
+      const card = page.locator(".card.event", { hasText: who }).first();
+      if (!(await card.count())) continue;
+      await card.locator("[data-cmd=netx-diagnose]").click().catch(() => {});
+      await page.waitForTimeout(1200);
+      console.log(`shots netx ${who}: ${(await card.locator(".netx-result").innerText().catch(() => "(없음)")).replace(/\n/g, " ")}`);
+      await card.screenshot({ path: path.join(outDir, `${label}-card-${who}.png`) });
+    }
   }
   if (label === "busy") {
     // UI 명세 5판 2장 끝: 엔진 바쁨일 때 상단 띠("정책 —")와 긴급 차단 대화상자(단추는 늘 누를 수 있다)

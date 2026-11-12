@@ -36,6 +36,8 @@ serde_json = "1"
 getrandom = "0.2"
 # 미끼 폴더 만들기(사용자 권한에서만, L061). 우리 크레이트, 의존성 없음
 decoy = { path = "../../crates/decoy" }
+# 안디옥 첫 연동(NetX 인계)의 형식 검사·메시지. 우리 크레이트, serde_json 만 의존
+rack = { path = "../../crates/rack" }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_IO", "Win32_System_Threading", "Win32_UI_Shell", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging", "Win32_System_RemoteDesktop", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_System_LibraryLoader", "Win32_UI_Input_KeyboardAndMouse"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_IO", "Win32_System_Threading", "Win32_UI_Shell", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging", "Win32_System_RemoteDesktop", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_System_LibraryLoader", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Com"] }

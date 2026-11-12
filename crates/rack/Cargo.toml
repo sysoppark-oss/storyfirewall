@@ -1,0 +1,10 @@
+[package]
+name = "rack"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "안디옥 첫 연동(통합 설계 0.15판 8.1 '첫 연동'): 등록부 값 검사, 경로 비교, rack.hello·rack.handoff 메시지 — 순수 함수만. epistle 크레이트가 생기면 그쪽으로 옮긴다"
+
+# 화면(src-tauri, 일반 권한)이 쓴다. Windows 호출은 여기 두지 않아 Linux 에서 전부 시험한다
+[dependencies]
+serde_json = { workspace = true }

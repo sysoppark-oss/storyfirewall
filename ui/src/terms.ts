@@ -43,6 +43,8 @@ export const ACT = {
   cut: "격리·차단…",
   cutTip: "원인 프로그램을 끝내고 자손·접속지를 차단합니다(Containment).",
   cutAddrOnly: "접속지만 차단…",
+  netx: "NetX로 정밀 진단",
+  netxTip: "이 사건의 접속지 주소·포트만 NetX로 넘깁니다. 이 단추로는 아무것도 실행·차단되지 않습니다 — 진단 실행은 NetX에서 직접 누릅니다.",
   watch: "모니터링",
   watchTip: "조치 완료(모니터링)로 표시합니다(승인 창). 더 높은 단계로 가거나 새 접속지가 생기면 다시 알립니다.",
   undoAuto: "자동 대응 되돌리기",
