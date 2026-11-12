@@ -1,4 +1,4 @@
-interface=Ethernet 3 local=10.1.0.18
+interface=Ethernet 3 local=10.1.0.27
 PASS before: curl reaches 1.1.1.1
 curl: (7) Failed to connect to 1.1.1.1:443 after 0 ms: Could not connect to server
 PASS interface+local address block stops curl
