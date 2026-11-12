@@ -184,13 +184,17 @@ export function policy(args: Record<string, unknown> = {}): HTMLElement {
       }
       // UI 명세 5판 1장: "이 정책으로 막힌 기록 N건 ›" → 네트워크 › 차단 기록을 그 정책으로 걸러 연다. 막힌 것이 없으면 줄을 만들지 않는다
       const hits = blockedN.get(p.id) ?? 0;
+      let hitsLine: HTMLElement | null = null;
       if (hits > 0) {
         const link = el("a", "origin", `이 정책으로 막힌 기록 ${hits}건 ›`);
         link.href = "#";
         link.addEventListener("click", (e) => { e.preventDefault(); state.go("connections", { tab: "blocked", policy: p.id, policyName: p.name }); });
-        meta.append(el("span", "muted", " · "), link);
+        hitsLine = el("div", "policy-hits small", link);
       }
-      const row = el("div", "row policy-row", el("div", "policy-main", el("div", "policy-head", chip, " ", name, " ", ver), meta), el("span", "spacer"));
+      // 링크는 따로 한 줄(실기 검수 install-210: 요약 줄 끝에 붙이면 긴 요약의 말줄임에 잘려 보이지 않았다)
+      const main = el("div", "policy-main", el("div", "policy-head", chip, " ", name, " ", ver), meta);
+      if (hitsLine) main.append(hitsLine);
+      const row = el("div", "row policy-row", main, el("span", "spacer"));
       // D007-1: 확인 대기 — 남은 시간(1초 갱신, 주황) + 주 단추 "승인(유지)". 확인은 기존 경로(mutation: 보기 모드면 승인 창)
       if (p.state === "Applied" && p.confirm_deadline && p.id === cardPolicyId) {
         row.append(el("span", "muted", "위 카드에서 유지/되돌리기"));

@@ -773,3 +773,4 @@ table.grid.blocked .c-rule { min-width: 280px; }
 .blocked-help { margin: 0 0 10px; }
 .blocked-help > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .blocked-help > p { margin: 6px 0 0; }
+.policy-hits { margin-top: 2px; }

@@ -131,7 +131,7 @@ export function kindFilter(items: BlockedItem[], kind: RuleKind | null): Blocked
 
 /// 차단 기록 탭
 /// 화면을 여는 쪽이 넘기는 거르기(UI 명세 5판 1장·5장 6항): 대시보드 KPI = 오늘만, 정책 화면 링크 = 그 정책으로 막힌 것만
-export interface BlockedScope { today?: boolean; policyId?: number; policyName?: string }
+export interface BlockedScope { today?: boolean; policyId?: number; policyName?: string; kind?: RuleKind }
 
 /// 주소 매개변수 → 거르기(순수 함수). 외부에서 온 값이라 모양만 받는다
 export function scopeArg(args: Record<string, unknown>): BlockedScope {
@@ -140,6 +140,7 @@ export function scopeArg(args: Record<string, unknown>): BlockedScope {
   const pid = args["policy"];
   if (typeof pid === "number" && Number.isInteger(pid) && pid > 0) out.policyId = pid;
   if (typeof args["policyName"] === "string") out.policyName = (args["policyName"] as string).slice(0, 80);
+  if (typeof args["kind"] === "string" && Object.prototype.hasOwnProperty.call(KIND_LABEL, args["kind"])) out.kind = args["kind"] as RuleKind;
   return out;
 }
 
@@ -156,7 +157,8 @@ export function todayHead(items: BlockedItem[], midnight: number, limit: number)
   const last = Math.max(...today.map((b) => b.ts));
   const cut = items.length >= limit && today.length === items.length;
   const hm = new Date(last * 1000).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
-  return `오늘 차단 ${today.length}건${cut ? " 이상" : ""} · 마지막 ${hm}`;
+  // 기준을 머리에 쓴다(5판 4장): 이 목록은 우리 정책뿐 아니라 Windows 방화벽 등 모든 규칙이 막은 것이다 — 대시보드 KPI(우리 정책만)와 숫자가 다르다
+  return `오늘 차단 ${today.length}건${cut ? " 이상" : ""}(모든 규칙) · 마지막 ${hm}`;
 }
 
 /// 정책별 누적 차단 수(정책 화면 "이 정책으로 막힌 기록 N건 ›")
@@ -202,7 +204,7 @@ export function blockedLog(initial: BlockedScope = {}): { root: HTMLElement; sto
     box,
   );
   let paused = false;
-  let kind: RuleKind | null = null;
+  let kind: RuleKind | null = initial.kind ?? null;
   let timer = 0;
   let gen = 0;
   let qT = 0;

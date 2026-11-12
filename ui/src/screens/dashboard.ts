@@ -272,7 +272,7 @@ export function dashboard(): HTMLElement {
     const blocked = th ? th.blocked.reduce((a, b) => a + b, 0) : 0;
     const lost = th ? th.lost : 0;
     const blockedSub = !th ? "서비스 판이 낮아 집계 없음" : lost > 0 ? `최소 ${blocked}건 · 유실 ${lost}건(폭주)` : blocked ? "우리 정책이 막은 연결" : "막은 연결 없음";
-    status.insertBefore(tile("오늘 차단 통신", th ? `${blocked}건` : "—", blockedSub, () => state.go("connections", { tab: "blocked", range: "today" }), "shield", blocked ? "bad" : "neutral", th ? th.blocked : undefined), anchor);
+    status.insertBefore(tile("오늘 차단 통신", th ? `${blocked}건` : "—", blockedSub, () => state.go("connections", { tab: "blocked", range: "today", kind: "ours" }), "shield", blocked ? "bad" : "neutral", th ? th.blocked : undefined), anchor);
     // KPI ④ 일일 트래픽 — 보조 줄에 접속한 곳·프로그램 수
     status.append(tile("일일 트래픽", bytes(o.sent + o.recv), o.sent + o.recv ? `송신 ${bytes(o.sent)} · 수신 ${bytes(o.recv)}` : `${o.remotes}곳 · 프로그램 ${o.programs}개`, () => state.go("connections", { tab: "history" }), "swap", "neutral", th ? th.conns : o.hourly));
 
