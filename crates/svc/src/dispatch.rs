@@ -1129,13 +1129,17 @@ fn handle(
                         v["first_run_watch"] = serde_json::to_value(w).unwrap_or_default();
                     }
                     // D022-4: 접속지의 등록 국가(발생 시각 목록 줄)
-                    if let Some(w) = n
+                    let egress_ip = n
                         .egress_node
                         .and_then(|id| world.graph.node(id).ok())
-                        .and_then(|nd| nd.attr("ip").and_then(|ip| ip.as_str().map(|s| s.to_string())))
-                        .and_then(|ip| geo::global().lookup_str(&ip))
-                    {
+                        .and_then(|nd| nd.attr("ip").and_then(|ip| ip.as_str().map(|s| s.to_string())));
+                    if let Some(w) = egress_ip.as_deref().and_then(|ip| geo::global().lookup_str(ip)) {
                         v["egress_where"] = serde_json::to_value(w).unwrap_or_default();
+                    }
+                    // 안디옥 인계(변경 제안 2판, 기획자 허락 2026-11-12): 접속지 이름에 짝지어진 숫자 주소 — 화면이 NetX 로 넘길 때
+                    // 이름을 다시 조회하지 않게 한다. 조회 응답에 한 칸을 더할 뿐이다(주소로 해석되는 값만)
+                    if let Some(ip) = egress_ip.filter(|ip| ip.parse::<std::net::IpAddr>().is_ok()) {
+                        v["egress_ip"] = serde_json::json!(ip);
                     }
                     v
                 })

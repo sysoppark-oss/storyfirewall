@@ -13,7 +13,7 @@ import { el, ext, button, clear, fmtTs, fmtShort, fmtShortSec, fmtRange, filetim
 import { loadingBox, failBox, isBusy, noDataBox, collectionStalled, type HealthLike } from "../list-state";
 import { state } from "../state";
 import { appendEmptyVerse } from "../word";
-import { netxRegistered, netxDiagnose, parseEndpoint, uniqueEndpoints, endpointText, diagnoseText, type Endpoint } from "../netx";
+import { netxRegistered, netxDiagnose, targetOf, uniqueEndpoints, endpointText, diagnoseText, type Endpoint } from "../netx";
 
 export interface Sentence {
   text: string;
@@ -89,6 +89,8 @@ interface StoryEvent {
   root_live?: { running: boolean; pid: number; ended: boolean } | null;
   /// D022-4: 가장 늦은 외부 접속지와 그 나라
   egress?: string;
+  /// 접속지 이름에 짝지어진 숫자 주소(서비스가 접속지 노드에서 읽어 줌) — NetX 인계 때 이름을 다시 조회하지 않게
+  egress_ip?: string;
   egress_where?: Where | null;
   /// 오늘(관측 뒤) 새 활동이 있는가(D004-2). 없으면 접힌 묶음
   fresh?: boolean;
@@ -766,8 +768,9 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
         const netxBtn = withIcon(button(ACT.netx, async () => {
           netxBtn.disabled = true;
           if (!out.isConnected) actions.after(out);
-          // 카드의 접속지가 주소면 그것, 도메인 이름이면(이름은 보내지 않는다) 이 사건의 접속 주소 목록에서 고른다
-          const one = parseEndpoint(ev.egress);
+          // 숫자 주소가 진단 대상이고 이름은 따라간다(변경 제안 2판): 접속지가 주소면 그것, 이름이면 서비스가 준 짝 주소 + 이름.
+          // 짝 주소가 없을 때만(낮은 판 서비스) 이 사건의 접속 주소 목록에서 고른다
+          const one = targetOf(ev.egress, ev.egress_ip);
           let targets: Endpoint[] = one ? [one] : [];
           if (!targets.length) {
             const r = await rpc<CutPlan>("cut.preview", { story_root: ev.root, also: ["terminate"] });
@@ -781,7 +784,7 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
           } else {
             // 주소가 여럿이면 하나를 고르게 한다(한 번에 한 곳)
             out.className = "muted small netx-result";
-            out.replaceChildren("이 사건의 프로그램들이 접속한 주소가 여럿입니다. 이름(도메인)은 보내지 않으므로, NetX로 넘길 주소 한 곳을 누르세요(누르면 바로 넘깁니다): ", ...targets.flatMap((t) => [button(endpointText(t), () => void send(t), "btn small"), " "]));
+            out.replaceChildren("이 접속지의 숫자 주소를 받지 못했습니다. 이 사건의 프로그램들이 접속한 주소 가운데 NetX로 넘길 한 곳을 누르세요(누르면 바로 넘깁니다): ", ...targets.flatMap((t) => [button(endpointText(t), () => void send(t), "btn small"), " "]));
           }
           netxBtn.disabled = false;
         }, "btn"), "search");

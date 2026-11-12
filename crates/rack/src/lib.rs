@@ -125,13 +125,33 @@ pub fn check_hello(reply: &serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
-/// rack.handoff(diagnose.target) 의 params (6.7). **보내는 값은 접속지 주소·포트뿐이다** —
-/// 이야기 본문, 프로세스 경로, 파일 이름, 도메인, 사건 번호는 싣지 않는다(8.1 첫 연동).
-/// `ip` 는 주소로 해석되는 글자열이어야 한다(해석한 값을 다시 글자로 적어 보낸다 — 받은 글자열을 그대로 싣지 않는다).
+/// 접속지 이름(도메인)으로 실을 수 있는 모양인가: 253자 이하, 조각마다 1~63자, 영문·숫자·`-` 만(앞뒤 `-` 금지), 조각 둘 이상.
+/// 이름은 **외부에서 온 문자열**이다 — 이 모양이 아니면 싣지 않는다(국제화 이름은 punycode 형태만 통과)
+pub fn valid_host_name(name: &str) -> bool {
+    let n = name.strip_suffix('.').unwrap_or(name);
+    if n.is_empty() || n.len() > 253 || n.parse::<IpAddr>().is_ok() {
+        return false;
+    }
+    let labels: Vec<&str> = n.split('.').collect();
+    labels.len() >= 2
+        && labels.iter().all(|l| {
+            (1..=63).contains(&l.len())
+                && l.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+                && !l.starts_with('-')
+                && !l.ends_with('-')
+        })
+}
+
+/// rack.handoff(diagnose.target) 의 params (6.7, 변경 제안 2판 "숫자 주소가 우선, 이름은 따라간다").
+/// **진단 대상은 숫자 주소다.** 이름은 그 접속에 짝지어진 표시로만 따라간다 — 받는 쪽은 이름을 다시 조회하지 않는다.
+/// 보내는 값은 접속지 주소·포트·이름뿐이다 — 이야기 본문, 프로세스 경로, 파일 이름, 사건 번호는 싣지 않는다.
+/// `ip` 는 주소로 해석되는 글자열이어야 한다(해석한 값을 다시 글자로 적어 보낸다). 주소 없이 이름만 있는 인계는 만들지 않는다.
+/// 이름이 `valid_host_name` 모양이 아니면 이름을 빼고 주소만 싣는다.
 pub fn handoff_params(
     request_id: &str,
     ip: &str,
     port: Option<u16>,
+    name: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     let addr: IpAddr = ip
         .trim()
@@ -141,9 +161,24 @@ pub fn handoff_params(
     if let Some(p) = port.filter(|p| *p != 0) {
         ep["port"] = serde_json::json!(p);
     }
+    if let Some(n) = name
+        .map(|n| n.trim().trim_end_matches('.').to_ascii_lowercase())
+        .filter(|n| valid_host_name(n))
+    {
+        ep["name"] = serde_json::json!(n);
+    }
     Ok(
         serde_json::json!({ "request_id": request_id, "intent": "diagnose.target", "from": MODULE_ID, "entities": [ep] }),
     )
+}
+
+/// 응답이 "잘못된 값"(-32602) 오류인가 — 이름 칸을 모르는 낮은 판의 NetX 가 거절한 경우를 가려, 이름을 빼고 한 번 더 보낸다
+pub fn is_invalid_params(reply: &serde_json::Value) -> bool {
+    reply
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_i64())
+        == Some(-32602)
 }
 
 /// rack.handoff 응답 (6.7): (받았는가, 창을 띄웠는가)
@@ -285,6 +320,7 @@ mod tests {
             "2f0c0000-0000-4000-8000-000000000000",
             " 203.0.113.9 ",
             Some(443),
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -293,21 +329,72 @@ mod tests {
             "entities": [{"type": "endpoint", "ip": "203.0.113.9", "port": 443}]})
         );
         // 포트를 모르면 주소만
-        let p = handoff_params("x", "2001:db8::1", None).unwrap();
+        let p = handoff_params("x", "2001:db8::1", None, None).unwrap();
         assert_eq!(
             p["entities"],
             json!([{"type": "endpoint", "ip": "2001:db8::1"}])
         );
         assert_eq!(
-            handoff_params("x", "1.2.3.4", Some(0)).unwrap()["entities"][0].get("port"),
+            handoff_params("x", "1.2.3.4", Some(0), None).unwrap()["entities"][0].get("port"),
             None
         );
         // 주소가 아닌 글자열(도메인, 명령처럼 보이는 것)은 보내지 않는다
-        assert!(handoff_params("x", "example.com", Some(443)).is_err());
-        assert!(handoff_params("x", "1.2.3.4; rm -rf", Some(443)).is_err());
+        assert!(handoff_params("x", "example.com", Some(443), Some("example.com")).is_err());
+        assert!(handoff_params("x", "1.2.3.4; rm -rf", Some(443), None).is_err());
         // 싣는 열쇠가 넷뿐인지(본문·경로·note 가 끼지 않는지)
         let keys: Vec<&String> = p.as_object().unwrap().keys().collect();
         assert_eq!(keys.len(), 4);
+    }
+
+    #[test]
+    fn 이름은_숫자_주소를_따라간다() {
+        // 숫자 주소가 대상, 이름은 꼬리표(소문자, 끝 점 제거)
+        let p = handoff_params(
+            "x",
+            "142.250.197.142",
+            Some(443),
+            Some("Edge.Microsoft.com."),
+        )
+        .unwrap();
+        assert_eq!(
+            p["entities"],
+            json!([{"type": "endpoint", "ip": "142.250.197.142", "port": 443, "name": "edge.microsoft.com"}])
+        );
+        // 이름 모양이 아니면 이름만 빼고 주소는 보낸다
+        for bad in [
+            "",
+            "localhost",
+            "a b.com",
+            "evil.com/x",
+            "evil.com;calc",
+            "-a.com",
+            "a-.com",
+            "a..com",
+            "1.2.3.4",
+            "한글.kr",
+            "a\nb.com",
+            &format!("{}.com", "a".repeat(64)),
+        ] {
+            let p = handoff_params("x", "1.2.3.4", Some(443), Some(bad)).unwrap();
+            assert_eq!(
+                p["entities"],
+                json!([{"type": "endpoint", "ip": "1.2.3.4", "port": 443}]),
+                "{bad}"
+            );
+        }
+        assert!(valid_host_name("xn--9t4b11yi5a.kr"));
+        assert!(!valid_host_name(&format!("{}.com", "a.".repeat(130))));
+        // 주소가 없으면 이름이 있어도 만들지 않는다
+        assert!(handoff_params("x", "", None, Some("edge.microsoft.com")).is_err());
+    }
+
+    #[test]
+    fn 잘못된_값_오류_가리기() {
+        assert!(is_invalid_params(
+            &json!({"error": {"code": -32602, "message": "unknown field name"}})
+        ));
+        assert!(!is_invalid_params(&json!({"error": {"code": -32010}})));
+        assert!(!is_invalid_params(&json!({"result": {"accepted": true}})));
     }
 
     #[test]

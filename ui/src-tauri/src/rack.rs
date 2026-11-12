@@ -3,7 +3,7 @@
 //! 화면(일반 권한)이 NetX 의 파이프에 직접 붙는다. **서비스는 거치지 않는다.**
 //! 순서: HKLM 등록부에서 NetX 의 Exe → 관리자만 쓸 수 있는 폴더 아래인지 → HKCU 의 실행 중 파이프 이름(형식 검사)
 //! → 접속 → 파이프 서버 프로세스의 실행 파일이 등록된 Exe 와 같은지 → rack.hello → rack.handoff(diagnose.target).
-//! 보내는 값은 접속지 주소·포트뿐이다. 이 인계로는 아무것도 실행·차단되지 않는다(NetX 가 입력칸을 채우고, 실행은 사용자가 누른다).
+//! 보내는 값은 접속지 주소·포트와 그 접속에 짝지어진 이름뿐이다(숫자 주소가 진단 대상, 이름은 표시로만 따라간다 — 변경 제안 2판). 이 인계로는 아무것도 실행·차단되지 않는다(NetX 가 입력칸을 채우고, 실행은 사용자가 누른다).
 //! 형식 검사·메시지 모양은 `rack` 크레이트(순수 함수, Linux 에서 시험)에 있다.
 
 /// NetX 가 꺼져 있을 때의 안내 (8.1: 첫 판에서는 대신 실행해 주지 않는다)
@@ -113,11 +113,11 @@ mod win {
         netx_exe().is_some()
     }
 
-    pub fn diagnose(ip: &str, port: Option<u16>) -> Result<serde_json::Value, String> {
+    pub fn diagnose(ip: &str, port: Option<u16>, name: Option<&str>) -> Result<serde_json::Value, String> {
         // 보낼 값을 먼저 검사한다(주소가 아니면 NetX 에 붙지도 않는다)
         let mut rnd = [0u8; 16];
         getrandom::getrandom(&mut rnd).map_err(|e| format!("난수: {e}"))?;
-        let params = rack::handoff_params(&rack::uuid_v4(rnd), ip, port)?;
+        let params = rack::handoff_params(&rack::uuid_v4(rnd), ip, port, name)?;
 
         let exe = netx_exe().ok_or("NetX 가 설치돼 있지 않습니다")?;
         let exe_final = final_path(&exe).ok_or("등록된 NetX 실행 파일을 찾지 못했습니다")?;
@@ -137,9 +137,18 @@ mod win {
         let c = Client::over_pipe(h, "netx").map_err(|e| format!("NetX 연결: {e}"))?;
         let hello = c.call("rack.hello", rack::hello_params(env!("CARGO_PKG_VERSION")), Duration::from_secs(5)).map_err(|e| format!("NetX 응답 없음: {e}"))?;
         rack::check_hello(&hello)?;
-        let reply = c.call("rack.handoff", params, Duration::from_secs(5)).map_err(|e| format!("NetX 응답 없음: {e}"))?;
+        let named = params["entities"][0].get("name").is_some();
+        let mut reply = c.call("rack.handoff", params, Duration::from_secs(5)).map_err(|e| format!("NetX 응답 없음: {e}"))?;
+        // 이름 칸(변경 제안 2판)을 모르는 낮은 판의 NetX 가 "잘못된 값"으로 거절하면, 이름을 빼고 주소만으로 한 번 더 보낸다
+        let mut name_sent = named;
+        if named && rack::is_invalid_params(&reply) {
+            getrandom::getrandom(&mut rnd).map_err(|e| format!("난수: {e}"))?;
+            let plain = rack::handoff_params(&rack::uuid_v4(rnd), ip, port, None)?;
+            reply = c.call("rack.handoff", plain, Duration::from_secs(5)).map_err(|e| format!("NetX 응답 없음: {e}"))?;
+            name_sent = false;
+        }
         let (accepted, opened) = rack::check_handoff(&reply)?;
-        Ok(serde_json::json!({ "accepted": accepted, "opened": opened }))
+        Ok(serde_json::json!({ "accepted": accepted, "opened": opened, "name_sent": name_sent }))
     }
 }
 
@@ -156,16 +165,16 @@ pub fn netx_registered() -> bool {
     }
 }
 
-/// 사건의 접속지 주소·포트를 NetX 로 넘긴다. 결과: {accepted, opened}. 실패는 화면에 그대로 보일 한국어 문장
+/// 사건의 접속지 주소·포트(와 짝지어진 이름)를 NetX 로 넘긴다. 결과: {accepted, opened, name_sent}. 실패는 화면에 그대로 보일 한국어 문장
 #[tauri::command]
-pub async fn netx_diagnose(ip: String, port: Option<u16>) -> Result<serde_json::Value, String> {
+pub async fn netx_diagnose(ip: String, port: Option<u16>, name: Option<String>) -> Result<serde_json::Value, String> {
     #[cfg(windows)]
     {
-        tauri::async_runtime::spawn_blocking(move || win::diagnose(&ip, port)).await.map_err(|e| e.to_string())?
+        tauri::async_runtime::spawn_blocking(move || win::diagnose(&ip, port, name.as_deref())).await.map_err(|e| e.to_string())?
     }
     #[cfg(not(windows))]
     {
-        let _ = (ip, port);
+        let _ = (ip, port, name);
         Err("이 운영체제에서는 NetX 연동을 쓸 수 없습니다".into())
     }
 }

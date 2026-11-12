@@ -87,7 +87,7 @@ const server = http.createServer(async (req, res) => {
     else if (cmd === "notes") out = notes.splice(0);
     // 안디옥 첫 연동 캡처(shots:netx): NetX 가 등록돼 있고 인계를 받는 것으로 흉내 낸다. 그 밖의 모드에서는 등록 안 됨(단추 없음)
     else if (cmd === "netx_registered") out = mode === "shots:netx";
-    else if (cmd === "netx_diagnose") out = { accepted: true, opened: true };
+    else if (cmd === "netx_diagnose") out = { accepted: true, opened: true, name_sent: !!args.name };
     else out = null;
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify(out));
