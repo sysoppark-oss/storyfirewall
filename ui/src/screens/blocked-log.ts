@@ -149,16 +149,20 @@ export function scopeFilter(items: BlockedItem[], scope: BlockedScope, midnight:
   return items.filter((b) => (!scope.today || b.ts >= midnight) && (scope.policyId === undefined || b.rule.policy_id === scope.policyId));
 }
 
-/// 첫 화면 머리(5판 5장 7항): "오늘 차단 N건 · 마지막 h:mm". 받은 목록(최근 `limit` 건)이 오늘 안에서 잘렸으면 "N건 이상".
-/// 오늘 막힌 것이 없으면 "오늘 차단 없음"(0 을 큰 숫자로 그리지 않는다 — 받은 범위 안에서의 사실)
-export function todayHead(items: BlockedItem[], midnight: number, limit: number): string {
-  const today = items.filter((b) => b.ts >= midnight);
-  if (!today.length) return "오늘 차단 없음";
+/// 첫 화면 머리(5판 5장 7항): "오늘 차단 N건(기준) · 마지막 h:mm". **지금 표에 보이는 거르기와 같은 기준으로 센다** —
+/// `basis` 는 그 기준의 이름("모든 규칙", "Story Firewall 정책" …)이고 머리에 적는다(5판 4장: 기준이 다르면 기준을 쓴다).
+/// `cut`: 받은 목록(최근 몇 건)이 오늘 안에서 잘렸을 수 있다 → "N건 이상". 오늘 것이 없으면 숫자를 그리지 않는다
+export function todayHead(shown: BlockedItem[], midnight: number, basis: string, cut: boolean): string {
+  const today = shown.filter((b) => b.ts >= midnight);
+  if (!today.length) return cut ? `오늘 차단(${basis}) — 받은 범위에는 없음` : `오늘 차단 없음(${basis})`;
   const last = Math.max(...today.map((b) => b.ts));
-  const cut = items.length >= limit && today.length === items.length;
   const hm = new Date(last * 1000).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
-  // 기준을 머리에 쓴다(5판 4장): 이 목록은 우리 정책뿐 아니라 Windows 방화벽 등 모든 규칙이 막은 것이다 — 대시보드 KPI(우리 정책만)와 숫자가 다르다
-  return `오늘 차단 ${today.length}건${cut ? " 이상" : ""}(모든 규칙) · 마지막 ${hm}`;
+  return `오늘 차단 ${today.length}건${cut ? " 이상" : ""}(${basis}) · 마지막 ${hm}`;
+}
+
+/// 받은 목록이 상한까지 찼고 가장 오래된 것도 오늘이면, 오늘 것이 더 있을 수 있다
+export function cutToday(items: BlockedItem[], midnight: number, limit: number): boolean {
+  return items.length >= limit && items.every((b) => b.ts >= midnight);
 }
 
 /// 정책별 누적 차단 수(정책 화면 "이 정책으로 막힌 기록 N건 ›")
@@ -247,7 +251,11 @@ export function blockedLog(initial: BlockedScope = {}): { root: HTMLElement; sto
     clear(box);
     // 머리: 찾기 글이 없을 때만 "오늘 차단"(찾은 것 가운데의 수를 전체처럼 보이지 않게)
     const mid = midnightNow();
-    headLine.textContent = q.value.trim() ? `찾은 기록 가운데 — ${todayHead(items, mid, LIMIT)}` : todayHead(items, mid, LIMIT);
+    // 실기 검수(install-211): 머리는 표와 같은 거르기로 센다(전에는 모든 규칙 기준이라 KPI 3건 → "500건 이상"으로 어긋나 보였다)
+    const basis = [kind ? KIND_LABEL[kind] : "모든 규칙", scope.policyId !== undefined ? "이 정책" : ""].filter(Boolean).join(" · ");
+    const headItems = kindFilter(scopeFilter(items, { policyId: scope.policyId }, mid), kind);
+    const headText = todayHead(headItems, mid, basis, cutToday(items, mid, LIMIT));
+    headLine.textContent = q.value.trim() ? `찾은 기록 가운데 — ${headText}` : headText;
     clear(scopeBox);
     if (scope.today) {
       const c = button("오늘만 ×", () => { scope = { ...scope, today: false }; void refresh(); }, "filter-chip on");
@@ -260,6 +268,8 @@ export function blockedLog(initial: BlockedScope = {}): { root: HTMLElement; sto
       c.setAttribute("aria-label", "정책 거르기 해제");
       scopeBox.append(" ", c);
     }
+    // 칩의 숫자는 서버가 센 "화면 범위 전체"(오늘만이 아님) — 거르기가 켜져 있으면 그 사실을 적는다
+    if (scope.today || scope.policyId !== undefined) scopeBox.append(el("span", "muted small", " 아래 칩의 숫자는 화면 범위 전체 기준입니다."));
     const shown = kindFilter(scopeFilter(items, scope, mid), kind);
     if (!shown.length) {
       box.append(el("p", "muted", total ? "조건에 맞는 차단 기록이 없습니다." : "서비스가 켜진 뒤(그리고 그 전 하루) 막힌 연결이 없습니다."));

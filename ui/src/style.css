@@ -774,3 +774,6 @@ table.grid.blocked .c-rule { min-width: 280px; }
 .blocked-help > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .blocked-help > p { margin: 6px 0 0; }
 .policy-hits { margin-top: 2px; }
+/* 차단 기록의 거르기 칩: 켜진 것을 색·테두리·굵기로 구별한다(실기 검수 install-211 — 전에는 모두 같은 회색 단추였다) */
+button.filter-chip { border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 999px; margin: 0 4px 4px 0; }
+button.filter-chip.on, button.filter-chip[aria-pressed="true"] { border-color: var(--brand-strong); background: color-mix(in srgb, var(--brand-strong) 18%, transparent); font-weight: 600; }
