@@ -243,7 +243,9 @@ export function topbar(): { root: HTMLElement; refresh: () => Promise<void> } {
       menu.append(el("div", "tb-menu-actions", ext30, off), el("p", "muted small", "기한이 지나거나 재부팅하면 저절로 풀립니다. 연장은 한 번에 30분, 지금부터 하루를 넘지 않습니다."));
       emg.replaceChildren(stat, menu);
     } else if (er.ok) {
-      const start = button("긴급 차단…", () => emergencyDialog(() => { window.dispatchEvent(new Event(EMERGENCY_EVENT)); void refresh(); }, st?.suggested_tools ?? []), "btn small danger");
+      // 5판 2장: 긴급 차단 상태는 읽었어도 엔진이 바쁘면(정책 수를 못 받았거나 지난 값, 엔진 묶임) 대화상자 안에서 알린다
+      const busyNote = !pol.ok || pol.stale_at || engineStuckText(state.engineBusyMs) ? "보호 엔진이 지금 바쁩니다. 요청은 보낼 수 있지만 반영이 늦을 수 있습니다." : undefined;
+      const start = button("긴급 차단…", () => emergencyDialog(() => { window.dispatchEvent(new Event(EMERGENCY_EVENT)); void refresh(); }, st?.suggested_tools ?? [], busyNote), "btn small danger");
       start.dataset["cmd"] = "emg-start";
       emg.replaceChildren(start);
     } else {

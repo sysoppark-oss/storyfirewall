@@ -293,6 +293,20 @@ if (mode.startsWith("shots:")) {
     console.log(`shots live: pill=${await page.locator(".new-pill").count()}`);
     await page.screenshot({ path: path.join(outDir, `${label}-new-pill.png`) });
   }
+  if (label === "busy") {
+    // UI 명세 5판 2장 끝: 엔진 바쁨일 때 상단 띠("정책 —")와 긴급 차단 대화상자(단추는 늘 누를 수 있다)
+    await page.click("button.nav-btn[data-key=dashboard]");
+    await page.waitForTimeout(2600);
+    await page.locator(".topbar, .tb").first().screenshot({ path: path.join(outDir, `${label}-topbar.png`) }).catch(() => {});
+    const emg = page.locator("button", { hasText: "긴급 차단…" }).first();
+    console.log(`shots busy: policy-dash=${await page.locator("text=정책 —").count()} emg-enabled=${(await emg.count()) ? await emg.isEnabled() : "none"}`);
+    if (await emg.count()) {
+      await emg.click();
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: path.join(outDir, `${label}-emg-dialog.png`) });
+      await page.keyboard.press("Escape");
+    }
+  }
   if (label === "items") {
     // D023-1: 대시보드 → 묶인 svchost "이야기 보기" → 그 카드로 이동·강조(이동 직후)
     await page.click("button.nav-btn[data-key=dashboard]");
