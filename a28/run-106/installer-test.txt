@@ -4,11 +4,14 @@ PASS  ui exe in Program Files
 PASS  svc exe in Program Files
 PASS  geo data installed
 PASS  service running after install (Running)
-status: state=4 published=\\.\pipe\story-firewall-66be64091e2548d6b9ebe32620c5b8d6 wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+status: state=4 published=\\.\pipe\story-firewall-2a1f10dbd25b4aa89296a63664e855ec wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
 
 PASS  pipe name published
 PASS  data dir owner trusted
 PASS  HKLM Run --tray ("C:\Program Files\Story Firewall\story-firewall-ui.exe" --tray)
+PASS  rack Exe = service exe (C:\Program Files\Story Firewall\story-firewall-svc.exe)
+PASS  rack ClientExe = ui exe (C:\Program Files\Story Firewall\story-firewall-ui.exe)
+PASS  rack Kind/Api (service 1.0)
 PASS  users cannot write install dir
 PASS  start mode auto (Auto)
 PASS  service path in Program Files ("C:\Program Files\Story Firewall\story-firewall-svc.exe" run)
@@ -24,17 +27,18 @@ reinstall exit=0
 during upgrade: samples=38 min=2
 PASS  filters never dropped during upgrade (min=2, before=2)
 PASS  service running after reinstall
-service pid before=6964 after=732 (restarted = files replaced)
-status: state=4 published=\\.\pipe\story-firewall-9015a4fb62d3491c972762d5b51e436c wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+service pid before=7060 after=6364 (restarted = files replaced)
+status: state=4 published=\\.\pipe\story-firewall-5a634c81a082462293263ee6ab8fdffe wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
 
 PASS  same filter count after upgrade + restart reconcile
 uninstall exit=0
 PASS  service removed
 PASS  files removed
 PASS  Run value removed
-status: state=(OpenServiceW 실패 0x424) published=- wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true
+status: state=(OpenServiceW 실패 0x424) published=- wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
 
 PASS  pipe name unpublished
 PASS  no WFP filters left
 PASS  data kept on silent uninstall
+PASS  rack registry entry removed on uninstall
 assert: 0 failed
