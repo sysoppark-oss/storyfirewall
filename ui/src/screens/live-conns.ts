@@ -7,7 +7,7 @@ import { el, ext, button, clear } from "../ui";
 import { state } from "../state";
 import { distPanel, openAsConnLike, type DistFilter } from "./dist-panel";
 import { matchesFilter } from "./conn-group";
-import { blockedLog } from "./blocked-log";
+import { blockedLog, scopeArg } from "./blocked-log";
 import { fileName } from "../sanitize";
 import { failBox, loadingBox } from "../list-state";
 import { connections, whereCell, type Where } from "./connections";
@@ -27,16 +27,38 @@ export interface OpenConn {
   v4: boolean;
   story_root?: number | null;
   story_level?: string | null;
+  /// 서비스가 이 연결을 처음 본 시각(unix 초). 낮은 판 서비스는 주지 않는다
+  first_seen_ts?: number;
+  /// 서비스가 처음 볼 때 이미 열려 있었다 — 실제로는 더 오래됐을 수 있다("N분 넘게")
+  since_before?: boolean;
+}
+
+/// 이 PC 의 나라(코드) 추정: Windows 표시 언어의 지역(ko-KR → KR). "해외 먼저" 정렬에만 쓴다 — 판정에는 쓰지 않는다
+export function homeCountry(lang: string | undefined = typeof navigator !== "undefined" ? navigator.language : undefined): string {
+  const m = /[-_]([A-Za-z]{2})$/.exec(lang ?? "");
+  return (m ? m[1]! : "KR").toUpperCase();
+}
+
+/// "열린 지" 글자(순수 함수): 3분 · 2시간 10분 · 방금. `sinceBefore` 면 "…넘게"(서비스가 처음 볼 때 이미 열려 있었음). 시각을 모르면 "—"
+export function openedText(firstSeen: number | undefined, now: number, sinceBefore?: boolean): string {
+  if (!firstSeen || !now || now < firstSeen) return "—";
+  const s = now - firstSeen;
+  const t = s < 60 ? (sinceBefore ? "1분 안" : "방금") : s < 3600 ? `${Math.floor(s / 60)}분` : s < 86400 ? `${Math.floor(s / 3600)}시간 ${Math.floor((s % 3600) / 60)}분` : `${Math.floor(s / 86400)}일`;
+  return sinceBefore && s >= 60 ? `${t} 넘게` : sinceBefore ? "—" : t;
 }
 
 /// 연결 하나의 열쇠(같은 연결인가)
 export const connKey = (c: OpenConn) => `${c.pid}|${c.laddr}|${c.lport}|${c.raddr}|${c.rport}`;
 
-/// 정렬(순수 함수 — 시험용): 인시던트 있는 것 → 연결됨 → 프로그램 이름 → 상대 주소
-export function sortOpen(xs: OpenConn[]): OpenConn[] {
+/// 정렬(순수 함수 — 시험용, UI 명세 4판 3-4): 인시던트 있는 것 → 해외 → 최신(늦게 열린 것) → 프로그램 이름 → 상대 주소.
+/// 나라를 모르는 주소는 해외도 국내도 아니다(해외 다음).
+export function sortOpen(xs: OpenConn[], home = homeCountry()): OpenConn[] {
   const rank = (c: OpenConn) => (c.story_root ? 0 : 1);
+  const abroad = (c: OpenConn) => { const cc = (c.where as { cc?: string } | null | undefined)?.cc; return cc ? (cc.toUpperCase() !== home ? 0 : 2) : 1; };
   return [...xs].sort((a, b) =>
     rank(a) - rank(b) ||
+    abroad(a) - abroad(b) ||
+    (b.first_seen_ts ?? 0) - (a.first_seen_ts ?? 0) ||
     Number(b.state === "연결됨") - Number(a.state === "연결됨") ||
     fileName(a.image ?? "").localeCompare(fileName(b.image ?? "")) ||
     a.raddr.localeCompare(b.raddr) || a.rport - b.rport);
@@ -64,6 +86,8 @@ export function connectionsScreen(args: Record<string, unknown> = {}): HTMLEleme
   root.append(tabs, panel);
   let live: { root: HTMLElement; stop: () => void } | null = null;
   let lastOpenN: number | null = null;
+  // 주소 매개변수의 거르기(오늘만·정책)는 들어올 때 한 번만 쓴다 — 탭을 다시 누르면 전체
+  let firstBlocked = true;
   const show = (which: "live" | "history" | "blocked") => {
     liveBtn.setAttribute("aria-selected", String(which === "live"));
     histBtn.setAttribute("aria-selected", String(which === "history"));
@@ -77,7 +101,8 @@ export function connectionsScreen(args: Record<string, unknown> = {}): HTMLEleme
       live = liveConns((n) => { lastOpenN = n; }, pickArg(args["pick"]));
       panel.append(live.root);
     } else if (which === "blocked") {
-      live = blockedLog();
+      live = blockedLog(firstBlocked ? scopeArg(args) : {});
+      firstBlocked = false;
       panel.append(live.root);
     } else {
       const h = connections({ map: args["map"] === true, cc: typeof args["cc"] === "string" ? args["cc"] : undefined, org: typeof args["org"] === "string" ? args["org"] : undefined, q: typeof args["q"] === "string" ? args["q"] : undefined });
@@ -131,6 +156,7 @@ function liveConns(onCount: (n: number) => void, initial: DistFilter = null): { 
   distBox.append(el("summary", undefined, "통신 대상 분포 (지금 열린 연결) ", distNote), dist.root);
   root.append(el("div", "toolbar", "갱신 ", every, " ", pause, " ", status), el("p", "muted small", "지금 소켓이 열려 있는 이 PC 의 TCP 연결입니다(이 PC 안 연결 제외). 듣는 포트는 연결 이력 탭 아래에 있습니다."), distBox, pill, box);
   let paused = false;
+  let nowTs = 0;
   let timer = 0;
   let prev: OpenConn[] = [];
   let shown: OpenConn[] = [];
@@ -159,7 +185,7 @@ function liveConns(onCount: (n: number) => void, initial: DistFilter = null): { 
     }
     const table = el("table", "grid conn live");
     const head = el("tr");
-    for (const [h, cls] of [["프로세스", "c-prog"], ["원격지", "c-remote"], ["나라 · 망", "c-where"], ["상태", "c-st"], ["로컬 포트", "c-num"], ["", "c-act"]] as const) head.append(el("th", cls, h));
+    for (const [h, cls] of [["프로그램", "c-prog"], ["상대", "c-remote"], ["나라 · 망", "c-where"], ["상태", "c-st"], ["열린 지", "c-num"], ["조치", "c-act"]] as const) head.append(el("th", cls, h));
     const body = el("tbody");
     table.append(el("thead", undefined, head), body);
     for (const c of sortOpen(now)) body.append(row(c, false));
@@ -187,7 +213,12 @@ function liveConns(onCount: (n: number) => void, initial: DistFilter = null): { 
       block.title = c.story_root ? "이 인시던트의 격리·차단으로" : "정책 › ACL 에 이 주소를 막는 규칙을 채워 엽니다";
       act.append(block, " ", kill);
     }
-    tr.append(prog, el("td", "c-remote mono", `${c.raddr}:${c.rport}`), where, el("td", "c-st", closed ? "닫힘" : c.state), el("td", "c-num mono", String(c.lport)), act);
+    // 4판 3-4 의 열: 프로그램 · 상대 · 나라·망 · 상태 · 열린 지 · 조치. 이 PC 쪽 포트는 상대 칸 툴팁으로 옮겼다
+    const remote = el("td", "c-remote mono", `${c.raddr}:${c.rport}`);
+    remote.title = `이 PC ${c.laddr}:${c.lport} → ${c.raddr}:${c.rport}`;
+    const opened = el("td", "c-num", closed ? "—" : openedText(c.first_seen_ts, nowTs, c.since_before));
+    if (c.since_before) opened.title = "보호 서비스가 처음 볼 때 이미 열려 있던 연결입니다 — 실제로는 더 오래됐을 수 있습니다";
+    tr.append(prog, remote, where, el("td", "c-st", closed ? "닫힘" : c.state), opened, act);
     return tr;
   };
 
@@ -215,7 +246,7 @@ function liveConns(onCount: (n: number) => void, initial: DistFilter = null): { 
     if (paused && !force) return;
     const my = ++gen;
     if (!shown.length && !box.firstChild) box.append(loadingBox());
-    const r = await rpc<{ items: OpenConn[] }>("connections.open", {});
+    const r = await rpc<{ items: OpenConn[]; now_ts?: number }>("connections.open", {});
     if (my !== gen) return;
     if (!r.ok) {
       clear(box);
@@ -223,6 +254,8 @@ function liveConns(onCount: (n: number) => void, initial: DistFilter = null): { 
       return;
     }
     const now = r.result.items;
+    // "열린 지"는 서비스 시계 기준(이 PC 화면 시계와 어긋나도 음수가 되지 않게)
+    nowTs = r.result.now_ts ?? Math.floor(Date.now() / 1000);
     const closed = closedSince(prev, now);
     prev = now;
     status.textContent = `${now.length}건 · 마지막 갱신 ${new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;

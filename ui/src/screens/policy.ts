@@ -1,4 +1,5 @@
 import { mutation, rpc, uuid } from "../rpc";
+import { countByPolicy, type RuleSum } from "./blocked-log";
 import { approvalBox, countdown, type ApplyReply } from "../confirm";
 import { el, ext, button, clear, errorBox, fmtShort, extPath } from "../ui";
 import { failBox } from "../list-state";
@@ -138,6 +139,9 @@ export function policy(args: Record<string, unknown> = {}): HTMLElement {
       if (!aclLoaded) list.replaceChildren(el("p", "muted", "— 정책 목록을 받으면 여기에 나옵니다."));
       return;
     }
+    // 정책별 누적 차단 수(차단 기록의 규칙별 누적에서). 못 받으면 링크를 만들지 않을 뿐이다 — 0 으로 그리지 않는다
+    const br = await rpc<{ rules?: RuleSum[] }>("blocked.recent", { limit: 1 });
+    const blockedN = br.ok ? countByPolicy(br.result.rules ?? []) : new Map<number, number>();
     clear(list);
     acl.root.hidden = false;
     // 지금 걸린 ACL = 적용(확인 대기)·확인됨 상태만. 되돌림·일시 중지·만료는 걸려 있지 않다
@@ -177,6 +181,14 @@ export function policy(args: Record<string, unknown> = {}): HTMLElement {
         meta.append(el("span", "muted", " · 설정에서(첫 실행 관찰실)"));
       } else {
         meta.append(el("span", "muted", " · 직접 작성"));
+      }
+      // UI 명세 5판 1장: "이 정책으로 막힌 기록 N건 ›" → 네트워크 › 차단 기록을 그 정책으로 걸러 연다. 막힌 것이 없으면 줄을 만들지 않는다
+      const hits = blockedN.get(p.id) ?? 0;
+      if (hits > 0) {
+        const link = el("a", "origin", `이 정책으로 막힌 기록 ${hits}건 ›`);
+        link.href = "#";
+        link.addEventListener("click", (e) => { e.preventDefault(); state.go("connections", { tab: "blocked", policy: p.id, policyName: p.name }); });
+        meta.append(el("span", "muted", " · "), link);
       }
       const row = el("div", "row policy-row", el("div", "policy-main", el("div", "policy-head", chip, " ", name, " ", ver), meta), el("span", "spacer"));
       // D007-1: 확인 대기 — 남은 시간(1초 갱신, 주황) + 주 단추 "승인(유지)". 확인은 기존 경로(mutation: 보기 모드면 승인 창)

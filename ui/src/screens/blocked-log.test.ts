@@ -43,3 +43,36 @@ describe("차단 기록 묶기", () => {
     expect(ruleText(rule("windows_firewall", { name: "Default Outbound" }), 1).fix).toContain("허용 규칙");
   });
 });
+
+import { scopeArg, scopeFilter, todayHead, countByPolicy, type RuleSum as RS, type BlockedItem as BI } from "./blocked-log";
+describe("차단 기록 첫 화면·거르기(UI 명세 5판 1장, 5장 6·7항)", () => {
+  const item = (ts: number, policy_id: number | null = null): BI => ({ ts, app: "a.exe", dir: "out", proto: 6, remote: "1.2.3.4", rport: 443, lport: 0, loopback: false, filter_id: 1,
+    rule: { kind: policy_id ? "ours" : "windows_firewall", name: "r", description: "", provider: "", gone: false, policy_id } });
+  const mid = 1_000_000;
+  it("주소 매개변수는 모양이 맞을 때만", () => {
+    expect(scopeArg({ range: "today", policy: 7, policyName: "p" })).toEqual({ today: true, policyId: 7, policyName: "p" });
+    expect(scopeArg({ range: "week", policy: "7", policyName: 3 })).toEqual({});
+    expect(scopeArg({ policy: -1 })).toEqual({});
+    expect(scopeArg({ policy: 1.5 })).toEqual({});
+  });
+  it("오늘만·정책 거르기", () => {
+    const xs = [item(mid + 10, 7), item(mid - 10, 7), item(mid + 20, 8), item(mid + 30)];
+    expect(scopeFilter(xs, { today: true }, mid).length).toBe(3);
+    expect(scopeFilter(xs, { policyId: 7 }, mid).length).toBe(2);
+    expect(scopeFilter(xs, { today: true, policyId: 7 }, mid).length).toBe(1);
+    expect(scopeFilter(xs, {}, mid).length).toBe(4);
+  });
+  it("머리: 오늘 건수와 마지막 시각, 잘렸으면 '이상', 없으면 숫자를 그리지 않는다", () => {
+    expect(todayHead([], mid, 500)).toBe("오늘 차단 없음");
+    expect(todayHead([item(mid - 5)], mid, 500)).toBe("오늘 차단 없음");
+    expect(todayHead([item(mid + 60), item(mid + 30), item(mid - 5)], mid, 500)).toMatch(/^오늘 차단 2건 · 마지막 /);
+    // 받은 목록이 상한까지 찼고 전부 오늘 것이면 더 있을 수 있다
+    expect(todayHead([item(mid + 3), item(mid + 2)], mid, 2)).toMatch(/^오늘 차단 2건 이상 · /);
+    expect(todayHead([item(mid + 3), item(mid - 2)], mid, 2)).toMatch(/^오늘 차단 1건 · /);
+  });
+  it("정책별 누적: 우리 정책만 더한다", () => {
+    const r = (n: number, kind: RS["rule"]["kind"], policy_id: number | null): RS => ({ filter_id: 1, app: "", n, first: 0, last: 0, remote: "", rport: 0, dir: "out", loopback: false, rule: { kind, name: "", provider: "", policy_id } });
+    const m = countByPolicy([r(3, "ours", 7), r(4, "ours", 7), r(9, "windows_firewall", null), r(2, "ours", 8), r(5, "ours", null)]);
+    expect([...m.entries()]).toEqual([[7, 7], [8, 2]]);
+  });
+});

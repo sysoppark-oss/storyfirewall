@@ -310,6 +310,23 @@ if (mode.startsWith("shots:")) {
       await card.screenshot({ path: path.join(outDir, `${label}-card-${who}.png`) });
     }
   }
+  if (label === "v5") {
+    // UI 명세 5판 5장 6~8항: KPI "오늘 차단 통신" → 차단 기록(오늘만), 차단 기록 첫 화면, 지금 열린 연결의 열·정렬, 정책 화면의 차단 기록 링크
+    await page.click("button.nav-btn[data-key=dashboard]");
+    await page.waitForTimeout(2600);
+    await page.locator(".tile.kpi", { hasText: "오늘 차단 통신" }).click().catch(() => {});
+    await page.waitForTimeout(2500);
+    console.log(`shots v5 blocked: head=${await page.locator(".blocked-head").innerText().catch(() => "(없음)")} chips=${await page.locator(".scope-chips").innerText().catch(() => "")}`);
+    await page.screenshot({ path: path.join(outDir, `${label}-blocked-today.png`) });
+    await page.click("button.u-tab >> text=지금 열린 연결").catch(() => {});
+    await page.waitForTimeout(2500);
+    console.log(`shots v5 live: th=${(await page.locator("table.live thead th").allInnerTexts().catch(() => [])).join("|")}`);
+    await page.screenshot({ path: path.join(outDir, `${label}-live.png`) });
+    await page.click("button.nav-btn[data-key=policy]");
+    await page.waitForTimeout(2600);
+    console.log(`shots v5 policy: links=${await page.locator("a.origin", { hasText: "막힌 기록" }).count()}`);
+    await page.screenshot({ path: path.join(outDir, `${label}-policy.png`) });
+  }
   if (label === "busy") {
     // UI 명세 5판 2장 끝: 엔진 바쁨일 때 상단 띠("정책 —")와 긴급 차단 대화상자(단추는 늘 누를 수 있다)
     await page.click("button.nav-btn[data-key=dashboard]");

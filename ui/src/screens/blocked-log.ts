@@ -130,7 +130,47 @@ export function kindFilter(items: BlockedItem[], kind: RuleKind | null): Blocked
 }
 
 /// 차단 기록 탭
-export function blockedLog(): { root: HTMLElement; stop: () => void } {
+/// 화면을 여는 쪽이 넘기는 거르기(UI 명세 5판 1장·5장 6항): 대시보드 KPI = 오늘만, 정책 화면 링크 = 그 정책으로 막힌 것만
+export interface BlockedScope { today?: boolean; policyId?: number; policyName?: string }
+
+/// 주소 매개변수 → 거르기(순수 함수). 외부에서 온 값이라 모양만 받는다
+export function scopeArg(args: Record<string, unknown>): BlockedScope {
+  const out: BlockedScope = {};
+  if (args["range"] === "today") out.today = true;
+  const pid = args["policy"];
+  if (typeof pid === "number" && Number.isInteger(pid) && pid > 0) out.policyId = pid;
+  if (typeof args["policyName"] === "string") out.policyName = (args["policyName"] as string).slice(0, 80);
+  return out;
+}
+
+/// 거르기 적용(순수 함수). `midnight` = 오늘 0시(이 PC 시각, unix 초)
+export function scopeFilter(items: BlockedItem[], scope: BlockedScope, midnight: number): BlockedItem[] {
+  return items.filter((b) => (!scope.today || b.ts >= midnight) && (scope.policyId === undefined || b.rule.policy_id === scope.policyId));
+}
+
+/// 첫 화면 머리(5판 5장 7항): "오늘 차단 N건 · 마지막 h:mm". 받은 목록(최근 `limit` 건)이 오늘 안에서 잘렸으면 "N건 이상".
+/// 오늘 막힌 것이 없으면 "오늘 차단 없음"(0 을 큰 숫자로 그리지 않는다 — 받은 범위 안에서의 사실)
+export function todayHead(items: BlockedItem[], midnight: number, limit: number): string {
+  const today = items.filter((b) => b.ts >= midnight);
+  if (!today.length) return "오늘 차단 없음";
+  const last = Math.max(...today.map((b) => b.ts));
+  const cut = items.length >= limit && today.length === items.length;
+  const hm = new Date(last * 1000).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
+  return `오늘 차단 ${today.length}건${cut ? " 이상" : ""} · 마지막 ${hm}`;
+}
+
+/// 정책별 누적 차단 수(정책 화면 "이 정책으로 막힌 기록 N건 ›")
+export function countByPolicy(rules: RuleSum[]): Map<number, number> {
+  const m = new Map<number, number>();
+  for (const r of rules) if (r.rule.kind === "ours" && r.rule.policy_id) m.set(r.rule.policy_id, (m.get(r.rule.policy_id) ?? 0) + r.n);
+  return m;
+}
+
+const LIMIT = 500;
+const midnightNow = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return Math.floor(d.getTime() / 1000); };
+
+export function blockedLog(initial: BlockedScope = {}): { root: HTMLElement; stop: () => void } {
+  let scope: BlockedScope = { ...initial };
   const root = el("div", "blocked-log");
   const q = el("input") as HTMLInputElement;
   q.type = "search";
@@ -146,8 +186,16 @@ export function blockedLog(): { root: HTMLElement; stop: () => void } {
   const rulesBody = el("div");
   const rulesSum = el("summary", undefined, "규칙·프로그램별 누적");
   rulesBox.append(rulesSum, rulesBody);
+  // 5판 5장 7항: 첫 화면 머리("오늘 차단 N건 · 마지막 h:mm") + 설명은 접어 둔다(검수 11번 — 긴 설명이 목록을 밀어냈다)
+  const headLine = el("h3", "blocked-head", "");
+  const scopeBox = el("div", "scope-chips");
+  const help = el("details", "blocked-help");
+  help.append(el("summary", undefined, "이 기록 읽는 법"),
+    el("p", "small", "브라우저에 \"인터넷 액세스가 차단되었습니다\"(ERR_NETWORK_ACCESS_DENIED)가 뜨면, 그 시각의 브라우저 줄(msedge.exe·chrome.exe 등)을 찾으세요. 막은 규칙과 그 규칙을 고치는 곳이 나옵니다. 여기에 줄이 없으면 Windows 필터(WFP)가 막은 것이 아닙니다 — 브라우저 설정·확장 프로그램·프록시·백신의 웹 보호일 수 있습니다. 규칙의 주인(Windows 방화벽 등)은 필터에 적힌 공급자로 가립니다. 관리자 권한 프로그램은 다른 공급자를 흉내 낼 수 있습니다."));
   root.append(
-    el("p", "callout small", "브라우저에 \"인터넷 액세스가 차단되었습니다\"(ERR_NETWORK_ACCESS_DENIED)가 뜨면, 그 시각의 브라우저 줄(msedge.exe·chrome.exe 등)을 찾으세요. 막은 규칙과 그 규칙을 고치는 곳이 나옵니다. 여기에 줄이 없으면 Windows 필터(WFP)가 막은 것이 아닙니다 — 브라우저 설정·확장 프로그램·프록시·백신의 웹 보호일 수 있습니다. 규칙의 주인(Windows 방화벽 등)은 필터에 적힌 공급자로 가립니다. 관리자 권한 프로그램은 다른 공급자를 흉내 낼 수 있습니다."),
+    headLine,
+    scopeBox,
+    help,
     el("div", "toolbar", q, " ", pause, " ", status),
     chips,
     rulesBox,
@@ -195,7 +243,22 @@ export function blockedLog(): { root: HTMLElement; stop: () => void } {
       chips.append(c);
     }
     clear(box);
-    const shown = kindFilter(items, kind);
+    // 머리: 찾기 글이 없을 때만 "오늘 차단"(찾은 것 가운데의 수를 전체처럼 보이지 않게)
+    const mid = midnightNow();
+    headLine.textContent = q.value.trim() ? `찾은 기록 가운데 — ${todayHead(items, mid, LIMIT)}` : todayHead(items, mid, LIMIT);
+    clear(scopeBox);
+    if (scope.today) {
+      const c = button("오늘만 ×", () => { scope = { ...scope, today: false }; void refresh(); }, "filter-chip on");
+      c.setAttribute("aria-label", "오늘만 보기 해제");
+      scopeBox.append(c);
+    }
+    if (scope.policyId !== undefined) {
+      const nm = sanitize(scope.policyName ?? "", 80).text;
+      const c = button(`정책 ${nm ? `'${nm}'` : `#${scope.policyId}`} 으로 막힌 것만 ×`, () => { scope = { today: scope.today }; void refresh(); }, "filter-chip on");
+      c.setAttribute("aria-label", "정책 거르기 해제");
+      scopeBox.append(" ", c);
+    }
+    const shown = kindFilter(scopeFilter(items, scope, mid), kind);
     if (!shown.length) {
       box.append(el("p", "muted", total ? "조건에 맞는 차단 기록이 없습니다." : "서비스가 켜진 뒤(그리고 그 전 하루) 막힌 연결이 없습니다."));
       return;
@@ -237,7 +300,7 @@ export function blockedLog(): { root: HTMLElement; stop: () => void } {
   const refresh = async () => {
     const my = ++gen;
     if (!box.firstChild) box.append(loadingBox({ word: false })); // 말씀 규칙 3: 기록 화면
-    const r = await rpc<{ items: BlockedItem[]; kinds: Partial<Record<RuleKind, number>>; total: number; oldest?: number | null; rules?: RuleSum[]; rules_total?: number; evicted?: number; rules_overflow?: number }>("blocked.recent", { limit: 500, q: q.value.slice(0, 128) });
+    const r = await rpc<{ items: BlockedItem[]; kinds: Partial<Record<RuleKind, number>>; total: number; oldest?: number | null; rules?: RuleSum[]; rules_total?: number; evicted?: number; rules_overflow?: number }>("blocked.recent", { limit: LIMIT, q: q.value.slice(0, 128) });
     if (my !== gen) return;
     if (!r.ok) {
       clear(box);

@@ -154,6 +154,11 @@ pub struct World<'a> {
     pub dev_health: Option<serde_json::Value>,
     /// 개발 서버(svc-dev --force empty|error) 전용: D013 목록 상태 캡처용으로 목록 조회를 빈 응답·오류로
     pub dev_force: Option<String>,
+    /// 지금 열린 연결의 "열린 지"(UI 명세 4판 3-4): 연결 열쇠 → (이 서비스가 처음 본 시각 unix 초, 처음 볼 때 이미 열려 있었는가).
+    /// connections.open 조회 때만 고친다(메모리만, DB 를 읽거나 쓰지 않는다). 닫힌 연결은 다음 조회에서 지운다
+    pub open_seen: HashMap<String, (i64, bool)>,
+    /// 위 표를 한 번이라도 채웠는가 — 첫 조회에서 본 연결은 "언제 열렸는지 모름(그때 이미 열려 있었음)"으로 표시한다
+    pub open_seen_init: bool,
     /// 엔진에서 직접 처리할 때의 읽기 캐시(오늘 한 일·"오늘 처음"). 작업자가 있으면 작업자 쪽 캐시를 쓴다
     pub read: crate::reads::ReadState,
     /// 읽기 캐시 세대 — 올리면 작업자도 오늘 한 일 캐시를 버린다
@@ -353,6 +358,8 @@ impl Runtime {
                     judged_prev: None,
                     dev_health: None,
                     dev_force: None,
+                    open_seen: HashMap::new(),
+                    open_seen_init: false,
                     first_run_pending: Vec::new(),
                     decoys_retired: Vec::new(),
                     decoys_seen: None,

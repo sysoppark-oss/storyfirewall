@@ -2662,7 +2662,16 @@ fn open_connections_json(
     let scope = caller.scope();
     let judged = judged_stories(world, 0).ok();
     let mut items = Vec::new();
+    // "열린 지": 이 조회가 처음 본 시각을 메모리에 적어 둔다. 첫 조회에서 본 것은 그 전부터 열려 있던 것(since_before)
+    // 표시용 시각이라 벽시계를 바로 읽는다(엔진 시각은 사건이 들어올 때만 나아간다)
+    let now_unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let first_fill = !world.open_seen_init;
+    world.open_seen_init = true;
+    let mut alive: std::collections::HashSet<String> = std::collections::HashSet::new();
     for c in cs.into_iter().filter(|c| is_external_remote(&c.raddr)) {
+        let key = format!("{}|{}|{}|{}|{}", c.pid, c.laddr, c.lport, c.raddr, c.rport);
+        let (first_seen, since_before) = *world.open_seen.entry(key.clone()).or_insert((now_unix, first_fill));
+        alive.insert(key);
         let node = world
             .graph
             .latest_process_by_pid(c.pid, now_ft)
@@ -2690,9 +2699,12 @@ fn open_connections_json(
             "state": tcp_state_word(c.state), "pid": c.pid, "process_id": node, "image": image,
             "where": wh, "v4": c.raddr.parse::<std::net::Ipv4Addr>().is_ok(),
             "story_root": story.as_ref().map(|x| x.0), "story_level": story.as_ref().map(|x| x.1.clone()),
+            "first_seen_ts": first_seen, "since_before": since_before,
         }));
     }
-    Ok(serde_json::json!({ "items": items }))
+    // 닫힌 연결(이번 표에 없는 것)은 지운다 — 표가 끝없이 자라지 않게. 일반 사용자에게 가려진 연결도 열쇠는 남긴다(다음 관리자 조회의 시각이 맞게)
+    world.open_seen.retain(|k, _| alive.contains(k));
+    Ok(serde_json::json!({ "items": items, "now_ts": now_unix }))
 }
 
 #[cfg(test)]

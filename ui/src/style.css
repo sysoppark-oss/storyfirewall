@@ -765,3 +765,11 @@ table.grid.blocked .c-rule { min-width: 280px; }
 .word-verse-text { color: var(--fg); font-size: 15px; line-height: 1.7; word-break: keep-all; }
 .word-verse-ref { color: var(--brand-strong); font-size: 12.5px; margin-top: 4px; }
 .start-view { padding: 8px 0; }
+
+/* UI 명세 5판 5장 7항: 차단 기록 첫 화면 머리와 접힌 설명 */
+.blocked-head { margin: 4px 0 6px; font-size: 16px; }
+.scope-chips { margin: 0 0 6px; }
+.scope-chips:empty { display: none; }
+.blocked-help { margin: 0 0 10px; }
+.blocked-help > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.blocked-help > p { margin: 6px 0 0; }
