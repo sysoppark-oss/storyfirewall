@@ -125,10 +125,21 @@ export function policy(args: Record<string, unknown> = {}): HTMLElement {
   // ACL 표(위): 처음 목록을 받을 때 한 번만 지금 걸린 ACL 을 읽는다(편집 중인 표를 새로 고침이 덮지 않게)
   const acl = aclEditor((y) => void apply(y).then((ok) => { if (ok) acl.markApplied(y); }), (y) => void validate(y));
   let aclLoaded = false;
+  // 정책 목록을 못 받았을 때의 안내 자리(화면 맨 위). ACL 표는 처음 받을 때까지 숨긴다 — 빈 상자를 그리지 않는다
+  const listNote = el("div", "list-note");
+  acl.root.hidden = true;
   const refreshList = async () => {
     const r = await rpc<{ items: PolicyRow[]; address_blocks?: number; address_block_items?: AddressBlock[] }>("policy.list", {});
+    clear(listNote);
+    if (!r.ok) {
+      // UI 명세 5판 2장: 못 받았다는 안내는 화면 맨 위에(전에는 "정책 변경 이력" 제목 아래라 이력 조회가 실패한 것처럼 읽혔다).
+      // 이미 그린 목록·ACL 표는 지우지 않는다. 처음부터 못 받았으면 빈 ACL 상자 대신 이 안내만, 이력 자리에는 "—"
+      listNote.append(failBox(r.error, () => void refreshList(), "활성 정책"));
+      if (!aclLoaded) list.replaceChildren(el("p", "muted", "— 정책 목록을 받으면 여기에 나옵니다."));
+      return;
+    }
     clear(list);
-    if (!r.ok) return list.append(failBox(r.error, () => void refreshList(), "활성 정책"));
+    acl.root.hidden = false;
     // 지금 걸린 ACL = 적용(확인 대기)·확인됨 상태만. 되돌림·일시 중지·만료는 걸려 있지 않다
     const live = r.result.items.find((x) => x.acl_yaml && (x.state === "Applied" || x.state === "Confirmed"));
     if (!aclLoaded) {
@@ -230,7 +241,7 @@ export function policy(args: Record<string, unknown> = {}): HTMLElement {
     el("summary", undefined, "고급 — 정책 DSL(YAML) 편집"),
     el("div", "editor", ta, el("div", "actions", button("구문 검증", () => void validate()), button("적용", () => void apply(), "btn primary"))),
   );
-  root.append(acl.root, out, pending, el("h2", undefined, "정책 변경 이력"), list, adv);
+  root.append(listNote, acl.root, out, pending, el("h2", undefined, "정책 변경 이력"), list, adv);
   void refreshList();
   state.onNotify(root, (n) => {
     const k = String(n.params["kind"] ?? "");
