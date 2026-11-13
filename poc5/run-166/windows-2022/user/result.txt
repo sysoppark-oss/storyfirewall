@@ -1,7 +1,0 @@
-PASS attached to WebView2 over CDP
-PASS found app page (http://tauri.localhost/)
-PASS UI runs non-elevated (view mode) as standard user (elevated=false)
-PASS connected to service
-PASS dashboard shows suspicious count
-FAIL story card for payload.exe
-FAIL scenario threw: TimeoutError: locator.click: Timeout 30000ms exceeded. | console: 
