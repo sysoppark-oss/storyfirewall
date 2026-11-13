@@ -1,0 +1,27 @@
+PASS attached to WebView2 over CDP
+PASS found app page (http://tauri.localhost/)
+PASS connected to service
+PASS dashboard shows suspicious count
+PASS story card for payload.exe
+PASS mindmap canvas rendered
+PASS flow rail has 5 steps
+PASS flow lines drawn
+PASS flow tail rendered
+PASS flow did-column has no duplicate boxes (0)
+PASS cut dialog lists payload.exe
+PASS cut dialog separates injected browser
+PASS cut dialog lists precise addresses (ip:port/proto)
+PASS cut countdown within 60s (saw "60초")
+PASS cut policy confirmed
+PASS connections show c2 domain (UTC window)
+PASS process detail opens from connection row
+PASS process detail closes with Esc
+PASS policy needs_ack round-trip then countdown
+PASS approval helper exit 0 ({"code":0,"res":{"id":117,"jsonrpc":"2.0","result":{"policies":[{"policy_id":3,"state":"Confirmed"}],"result":{"confirm_deadline_ts":1794601457,"filters":2,"policy_id":3,"version":1,"warnings":[]},"state":"done"}}})
+PASS helper committed and confirmed (change.result)
+PASS helper showed service-computed summary
+PASS helper logged exit 0
+PASS helper recorded pipe server session (pid 3324 session 2)
+PASS no CSP violations ()
+PASS no page errors ()
+PASS only app/ipc origins (http://tauri.localhost, http://ipc.localhost)
