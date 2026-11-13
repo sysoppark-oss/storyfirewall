@@ -4,11 +4,14 @@ PASS  ui exe in Program Files
 PASS  svc exe in Program Files
 PASS  geo data installed
 PASS  service running after install (Running)
-status: state=4 published=\\.\pipe\story-firewall-d9561fb816fa4b04b53c5d11733d4c21 wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
+status: state=4 published=\\.\pipe\story-firewall-71f617844235472db10b006e586588f7 wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
 
 PASS  pipe name published
 PASS  data dir owner trusted
 PASS  HKLM Run --tray ("C:\Program Files\Story Firewall\story-firewall-ui.exe" --tray)
+PASS  rack Exe = service exe (C:\Program Files\Story Firewall\story-firewall-svc.exe)
+PASS  rack ClientExe = ui exe (C:\Program Files\Story Firewall\story-firewall-ui.exe)
+PASS  rack Kind/Api (service 1.0)
 PASS  users cannot write install dir
 PASS  start mode auto (Auto)
 PASS  service path in Program Files ("C:\Program Files\Story Firewall\story-firewall-svc.exe" run)
@@ -21,11 +24,11 @@ apply: policy_id=1 version=1 filters=2 confirm=ok
 PASS  policy applied and confirmed before upgrade
 PASS  WFP filters present before upgrade (2)
 reinstall exit=0
-during upgrade: samples=36 min=2
+during upgrade: samples=38 min=2
 PASS  filters never dropped during upgrade (min=2, before=2)
 PASS  service running after reinstall
-service pid before=1312 after=7064 (restarted = files replaced)
-status: state=4 published=\\.\pipe\story-firewall-5fcbca979d2c4f63bbe4ca1d11e5509d wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
+service pid before=3400 after=8172 (restarted = files replaced)
+status: state=4 published=\\.\pipe\story-firewall-5117777f6b6a416faf3e8fd4b66d9bc0 wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
 
 PASS  same filter count after upgrade + restart reconcile
 uninstall exit=0
@@ -37,4 +40,5 @@ status: state=(OpenServiceW 실패 0x424) published=- wfp_filters=0 data_dir=C:\
 PASS  pipe name unpublished
 PASS  no WFP filters left
 PASS  data kept on silent uninstall
+PASS  rack registry entry removed on uninstall
 assert: 0 failed
