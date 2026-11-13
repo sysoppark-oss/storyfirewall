@@ -515,3 +515,64 @@ fn story_with_unverifiable_edge_is_hidden_from_users() {
     drop(tx);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// 50차 Q3(Gemini 수용): 무거운 DB 조회 줄이 가득 차 있어도(아무도 꺼내지 않음) 이야기 목록은 전용 작업자가 답한다.
+/// 전용 작업자가 없으면 함께 쓰는 줄로 간다
+#[test]
+fn story_lane_answers_while_db_lane_is_full() {
+    use svc::reads::{Direct, Gate, MAX_PENDING_READS};
+    let now_ft = svc::runtime::unix_to_filetime(NOW);
+    let (dir, w, inc, stories) = judged_db("lane", svc::demo::demo_events(now_ft));
+    let gate = Gate::default();
+    // DB 조회 줄: 채널만 있고 꺼내는 쪽이 없다(넓은 범위 조회에 묶인 작업자를 흉내)
+    let (stuck_tx, _stuck_rx) = mpsc::channel::<ReadJob>();
+    gate.open(stuck_tx, NOW);
+    let job = |m: api::Method, reply: mpsc::Sender<api::Response>| ReadJob {
+        id: api::rpc::Id::Num(3),
+        method: m,
+        params: serde_json::json!({}),
+        caller: caller(),
+        now: NOW,
+        reply,
+        enqueued: std::time::Instant::now(),
+    };
+    let (dump, _dump_rx) = mpsc::channel();
+    for _ in 0..MAX_PENDING_READS {
+        assert!(matches!(
+            gate.submit(job(api::Method::ConnectionsList, dump.clone())),
+            Direct::Sent
+        ));
+    }
+    assert!(matches!(
+        gate.submit(job(api::Method::ConnectionsList, dump.clone())),
+        Direct::Full(_)
+    ));
+    // 전용 작업자가 없을 때: 이야기 목록도 같은 줄 → 가득 참
+    assert!(matches!(
+        gate.submit(job(api::Method::StoryEvents, dump.clone())),
+        Direct::Full(_)
+    ));
+    // 전용 작업자를 띄우면 따로 답한다
+    let st =
+        reads::spawn_story(&w.path(), Arc::new(AtomicU64::new(0)), &gate).expect("전용 작업자");
+    gate.open_story(st);
+    gate.publish(Arc::new(svc::events::StorySnap::build(
+        1,
+        NOW,
+        stories,
+        inc.view(),
+        None,
+    )));
+    let (rtx, rrx) = mpsc::channel();
+    assert!(matches!(
+        gate.submit(job(api::Method::StoryEvents, rtx)),
+        Direct::Sent
+    ));
+    let r = serde_json::to_value(
+        rrx.recv_timeout(Duration::from_secs(10))
+            .expect("이야기 목록 응답"),
+    )
+    .unwrap();
+    assert!(r["result"]["items"].is_array(), "{r}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

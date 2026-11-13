@@ -47,6 +47,11 @@ pub struct Gate(Arc<GateInner>);
 #[derive(Default)]
 struct GateInner {
     tx: std::sync::Mutex<Option<Sender<ReadJob>>>,
+    /// 50차 Q3(Gemini 수용): 이야기 목록(스냅숏) 전용 작업자 — 넓은 범위 연결 목록 같은 무거운 DB 조회가 줄을 잡아도 인시던트 목록은 따로 답한다.
+    /// None 이면 위 작업자가 함께 맡는다
+    tx_story: std::sync::Mutex<Option<Sender<ReadJob>>>,
+    /// 이야기 목록 작업자 줄에 들어가 아직 꺼내지 않은 조회 수
+    pending_story: Arc<std::sync::atomic::AtomicUsize>,
     /// 엔진 시계의 벽시각(unix 초) — 엔진이 한 바퀴 돌 때마다 맞춘다. 엔진이 바쁜 동안은 그만큼 늦다(범위가 조금 앞에서 시작할 뿐)
     now: std::sync::atomic::AtomicI64,
     /// 작업자 대기열에 들어가 아직 꺼내지 않은 조회 수
@@ -81,6 +86,12 @@ impl Gate {
     pub fn open(&self, tx: Sender<ReadJob>, now: i64) {
         self.set_now(now);
         if let Ok(mut g) = self.0.tx.lock() {
+            *g = Some(tx);
+        }
+    }
+    /// 엔진 스레드: 이야기 목록 전용 작업자를 띄운 뒤 그 길을 연다
+    pub fn open_story(&self, tx: Sender<ReadJob>) {
+        if let Ok(mut g) = self.0.tx_story.lock() {
             *g = Some(tx);
         }
     }
@@ -135,24 +146,63 @@ impl Gate {
         if self.0.forced.load(Ordering::SeqCst) {
             return Direct::Closed(job);
         }
-        let Ok(g) = self.0.tx.lock() else {
-            return Direct::Closed(job);
-        };
-        let Some(tx) = g.as_ref() else {
-            return Direct::Closed(job);
-        };
-        if self.0.pending.load(Ordering::SeqCst) >= MAX_PENDING_READS {
-            self.record("작업자: (가득 차 busy)", std::time::Duration::ZERO);
-            return Direct::Full(job);
+        // 이야기 목록은 전용 작업자가 있으면 그쪽으로(줄·상한도 따로)
+        if job.method == Method::StoryEvents {
+            match Self::send(&self.0.tx_story, &self.0.pending_story, job) {
+                Ok(d) => {
+                    if matches!(d, Direct::Full(_)) {
+                        self.record("작업자: (가득 차 busy)", std::time::Duration::ZERO);
+                    }
+                    return d;
+                }
+                // 전용 작업자가 없거나 죽었다 → 함께 쓰는 작업자로
+                Err(job) => {
+                    if let Ok(mut g) = self.0.tx_story.lock() {
+                        *g = None;
+                    }
+                    return self.submit_shared(job);
+                }
+            }
         }
-        self.0.pending.fetch_add(1, Ordering::SeqCst);
-        match tx.send(job) {
-            Ok(()) => Direct::Sent,
-            Err(mpsc::SendError(job)) => {
-                dec(&self.0.pending);
-                drop(g);
+        self.submit_shared(job)
+    }
+
+    fn submit_shared(&self, job: ReadJob) -> Direct {
+        match Self::send(&self.0.tx, &self.0.pending, job) {
+            Ok(d) => {
+                if matches!(d, Direct::Full(_)) {
+                    self.record("작업자: (가득 차 busy)", std::time::Duration::ZERO);
+                }
+                d
+            }
+            Err(job) => {
                 self.close();
                 Direct::Closed(job)
+            }
+        }
+    }
+
+    /// 한 줄에 넣는다. Err = 그 줄이 없거나 받는 쪽이 죽었다
+    fn send(
+        slot: &std::sync::Mutex<Option<Sender<ReadJob>>>,
+        pending: &std::sync::atomic::AtomicUsize,
+        job: ReadJob,
+    ) -> Result<Direct, ReadJob> {
+        let Ok(g) = slot.lock() else {
+            return Err(job);
+        };
+        let Some(tx) = g.as_ref() else {
+            return Err(job);
+        };
+        if pending.load(Ordering::SeqCst) >= MAX_PENDING_READS {
+            return Ok(Direct::Full(job));
+        }
+        pending.fetch_add(1, Ordering::SeqCst);
+        match tx.send(job) {
+            Ok(()) => Ok(Direct::Sent),
+            Err(mpsc::SendError(job)) => {
+                dec(pending);
+                Err(job)
             }
         }
     }
@@ -187,9 +237,26 @@ pub fn spawn_counted(path: &str, gen: Arc<AtomicU64>, gate: &Gate) -> Option<Sen
     }
     let store = Store::open_read_only(path).ok()?;
     let (tx, rx) = mpsc::channel::<ReadJob>();
+    let pending = gate.0.pending.clone();
     std::thread::Builder::new()
         .name("reader".into())
-        .spawn(move || run(store, rx, gen, gate))
+        .spawn(move || run(store, rx, gen, gate, pending))
+        .ok()?;
+    Some(tx)
+}
+
+/// 이야기 목록 전용 작업자(읽기 전용 연결을 따로 가진다). 띄우지 못하면 None — 함께 쓰는 작업자가 맡는다
+pub fn spawn_story(path: &str, gen: Arc<AtomicU64>, gate: &Gate) -> Option<Sender<ReadJob>> {
+    let gate = gate.clone();
+    if path.is_empty() || path == ":memory:" {
+        return None;
+    }
+    let store = Store::open_read_only(path).ok()?;
+    let (tx, rx) = mpsc::channel::<ReadJob>();
+    let pending = gate.0.pending_story.clone();
+    std::thread::Builder::new()
+        .name("reader-story".into())
+        .spawn(move || run(store, rx, gen, gate, pending))
         .ok()?;
     Some(tx)
 }
@@ -199,7 +266,13 @@ pub const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(8);
 /// 27차 Gemini Q5: 읽기 질의 하나가 이보다 오래 걸리면 끊는다(긴 읽기 트랜잭션이 WAL 체크포인트를 막지 않게)
 pub const QUERY_LIMIT: std::time::Duration = std::time::Duration::from_secs(6);
 
-fn run(store: Store, rx: Receiver<ReadJob>, gen: Arc<AtomicU64>, gate: Gate) {
+fn run(
+    store: Store,
+    rx: Receiver<ReadJob>,
+    gen: Arc<AtomicU64>,
+    gate: Gate,
+    pending: Arc<std::sync::atomic::AtomicUsize>,
+) {
     let mut rs = ReadState::default();
     // 감시 스레드: 질의 마감(t0 기준 ms, 0 = 없음)이 지나면 sqlite3_interrupt — hooks 기능 없이 InterruptHandle 로
     let deadline = Arc::new(AtomicU64::new(0));
@@ -219,7 +292,7 @@ fn run(store: Store, rx: Receiver<ReadJob>, gen: Arc<AtomicU64>, gate: Gate) {
             });
     }
     for job in rx {
-        dec(&gate.0.pending);
+        dec(&pending);
         gate.record("작업자: (대기열)", job.enqueued.elapsed());
         if job.enqueued.elapsed() > STALE_AFTER {
             gate.record("작업자: (낡은 조회 건너뜀)", job.enqueued.elapsed());

@@ -347,9 +347,16 @@ impl Runtime {
                     read: Default::default(),
                     read_gen: read_gen.clone(),
                     reader: {
-                        let rd = crate::reads::spawn_counted(&db_path, read_gen, &gate_thread);
+                        let rd =
+                            crate::reads::spawn_counted(&db_path, read_gen.clone(), &gate_thread);
                         if let Some(rd) = &rd {
                             gate_thread.open(rd.clone(), clock.wall());
+                            // 50차 Q3: 이야기 목록은 전용 작업자로(못 띄우면 위 작업자가 함께 맡는다)
+                            if let Some(st) =
+                                crate::reads::spawn_story(&db_path, read_gen, &gate_thread)
+                            {
+                                gate_thread.open_story(st);
+                            }
                         }
                         rd
                     },
