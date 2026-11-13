@@ -278,3 +278,193 @@ fn demo_with_session_is_visible_to_that_session() {
     );
     assert_eq!(other, 0, "다른 세션에는 안 보인다");
 }
+
+/// 50차 2단계 시험 준비: 파일 DB 에 시연 기록을 넣고 증분 판정으로 사건과 판정 그래프를 얻는다
+fn judged_db(
+    tag: &str,
+    events: Vec<graph::event::Event>,
+) -> (
+    std::path::PathBuf,
+    Store,
+    judge::Incremental,
+    Arc<Vec<judge::Story>>,
+) {
+    let dir = std::env::temp_dir().join(format!("sf-snap-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let w = Store::open(dir.join("graph.db")).unwrap();
+    Ingester::new(&w).ingest_all(&events).unwrap();
+    let now_ft = svc::runtime::unix_to_filetime(NOW);
+    let base = judge::Baseline::open(&w, now_ft).unwrap();
+    let mut inc = judge::Incremental::new();
+    let (stories, _) = inc.run(&w, 0, i64::MAX, &base).unwrap();
+    assert!(!stories.is_empty(), "시연 기록에서 사건이 나와야 한다");
+    (dir, w, inc, Arc::new(stories))
+}
+
+fn user(session: u32) -> Caller {
+    Caller {
+        pid: 1,
+        image: "ui.exe".into(),
+        is_admin: false,
+        session: Some(session),
+    }
+}
+
+fn events_via_reader(
+    gate: &reads::Gate,
+    tx: &mpsc::Sender<ReadJob>,
+    caller: Caller,
+    params: serde_json::Value,
+) -> serde_json::Value {
+    let _ = gate;
+    let (rtx, rrx) = mpsc::channel();
+    tx.send(ReadJob {
+        id: api::rpc::Id::Num(9),
+        method: api::Method::StoryEvents,
+        params,
+        caller,
+        now: NOW,
+        reply: rtx,
+        enqueued: std::time::Instant::now(),
+    })
+    .unwrap();
+    serde_json::to_value(
+        rrx.recv_timeout(Duration::from_secs(10))
+            .expect("작업자 응답"),
+    )
+    .unwrap()
+}
+
+/// 50차 2단계: 작업자의 story.events 가 같은 스냅숏으로 기록자 연결에서 직접 부른 것과 같고,
+/// 스냅숏이 없으면(첫 판정 전) busy, 구간 지정(since_ts ≠ 0)은 작업자 몫이 아니다
+#[test]
+fn reader_story_events_matches_direct_and_needs_snapshot() {
+    let now_ft = svc::runtime::unix_to_filetime(NOW);
+    let (dir, w, inc, stories) = judged_db(
+        "same",
+        svc::demo::with_session(svc::demo::demo_events(now_ft), 2),
+    );
+    let gate = reads::Gate::default();
+    let tx = reads::spawn_counted(&w.path(), Arc::new(AtomicU64::new(0)), &gate).expect("작업자");
+    let p =
+        serde_json::json!({ "level_min": "normal", "triage": "all", "cursor": { "limit": 50 } });
+
+    // 첫 판정 전: busy(-32004)
+    let r = events_via_reader(&gate, &tx, caller(), p.clone());
+    assert_eq!(r["error"]["code"], serde_json::json!(-32004), "{r}");
+
+    let snap = svc::events::StorySnap::build(1, NOW, stories.clone(), inc.view(), None);
+    gate.publish(Arc::new(snap));
+    for c in [caller(), user(2), user(3)] {
+        let via = events_via_reader(&gate, &tx, c.clone(), p.clone());
+        let snap = gate.snapshot().unwrap();
+        let mut tl = Vec::new();
+        let (direct, _) = svc::events::story_events(
+            &w,
+            Some(&snap),
+            &gate.narr_cache(),
+            NOW,
+            p.clone(),
+            &c,
+            &mut tl,
+        )
+        .unwrap();
+        assert_eq!(
+            via["result"], direct,
+            "작업자와 직접 호출이 달라짐({:?})",
+            c.session
+        );
+    }
+    // 관리자는 다 보고, 세션 2 사용자도 자기 시연 사건을 보며, 세션 3 사용자에게는 세션 2 프로세스 사건이 안 보인다
+    let n = |c: Caller| {
+        events_via_reader(&gate, &tx, c, p.clone())["result"]["items"]
+            .as_array()
+            .map_or(0, |a| a.len())
+    };
+    let (all, mine, other) = (n(caller()), n(user(2)), n(user(3)));
+    assert!(all > 0 && mine > 0, "all={all} mine={mine}");
+    assert!(
+        other < mine,
+        "다른 세션 사건이 보임: other={other} mine={mine}"
+    );
+
+    // 구간 지정은 엔진 몫 — 작업자가 받으면 오류(handler 는 애초에 넘기지 않는다)
+    assert!(!reads::is_heavy_read(
+        api::Method::StoryEvents,
+        &serde_json::json!({ "since_ts": 5 })
+    ));
+    assert!(reads::is_heavy_read(
+        api::Method::StoryEvents,
+        &serde_json::json!({})
+    ));
+    assert!(reads::is_heavy_read(
+        api::Method::StoryEvents,
+        &serde_json::json!({ "since_ts": 0 })
+    ));
+    // 처리 시간이 작업자 이름으로 남는다
+    let names: Vec<&str> = gate.stats().iter().map(|(k, _)| *k).collect();
+    assert!(names.contains(&"작업자: story.events"), "{names:?}");
+    assert!(
+        names.contains(&"작업자: 이야기 목록: 보임 가리기"),
+        "{names:?}"
+    );
+    drop(tx);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 49차 덧붙임·50차 Q1(보안 경계): 판정 때 세션을 몰랐던 프로세스는 스냅숏에 "보임"으로 굳지 않는다.
+/// 판정 뒤 세션 기록이 다른 사용자로 들어오면, 새 판정을 기다리지 않고 그 사용자 사건은 바로 숨는다.
+/// 거꾸로 자기 세션으로 들어오면 그때부터 보인다(스냅숏을 다시 만들지 않아도)
+#[test]
+fn stale_snapshot_with_unknown_session_never_shows_other_users_story() {
+    let now_ft = svc::runtime::unix_to_filetime(NOW);
+    let plain = svc::demo::demo_events(now_ft);
+    let sess_only = |s: u32| -> Vec<graph::event::Event> {
+        svc::demo::with_session(plain.clone(), s)
+            .into_iter()
+            .filter(|e| matches!(e.kind, graph::event::EventKind::ProcessSession { .. }))
+            .collect()
+    };
+    let p =
+        serde_json::json!({ "level_min": "normal", "triage": "all", "cursor": { "limit": 50 } });
+    let count = |gate: &reads::Gate, tx: &mpsc::Sender<ReadJob>, c: Caller| {
+        let v = events_via_reader(gate, tx, c, p.clone());
+        assert!(v.get("error").is_none(), "{v}");
+        v["result"]["items"].as_array().map_or(0, |a| a.len())
+    };
+
+    for (tag, late) in [("other", 3u32), ("mine", 2u32)] {
+        let (dir, w, inc, stories) = judged_db(tag, plain.clone());
+        let gate = reads::Gate::default();
+        let tx =
+            reads::spawn_counted(&w.path(), Arc::new(AtomicU64::new(0)), &gate).expect("작업자");
+        // 판정 때는 세션을 모른다 → 일반 사용자에게 프로세스 사건은 안 보인다(모르면 숨김)
+        gate.publish(Arc::new(svc::events::StorySnap::build(
+            1,
+            NOW,
+            stories,
+            inc.view(),
+            None,
+        )));
+        let before = count(&gate, &tx, user(2));
+        let admin = count(&gate, &tx, caller());
+        assert!(
+            admin > before,
+            "관리자는 다 본다: admin={admin} before={before}"
+        );
+        // 판정 뒤에 세션 기록이 들어온다(스냅숏은 그대로)
+        Ingester::new(&w).ingest_all(&sess_only(late)).unwrap();
+        let after = count(&gate, &tx, user(2));
+        if late == 2 {
+            assert!(
+                after > before,
+                "자기 세션 기록이 들어오면 보여야 한다: {before} → {after}"
+            );
+        } else {
+            assert_eq!(after, before, "다른 사용자 세션 사건이 보였다");
+        }
+        drop(tx);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

@@ -59,6 +59,9 @@ pub struct SigInfo {
     pub signer: Option<String>,
 }
 
+/// (PID, 생성 시각, 처음 본 시각) → 살아 있으면 (실행 파일 경로, 생성 시각). `Host::live_image` 와 같은 뜻
+pub type LiveProbe = fn(u32, i64, i64) -> Option<(String, i64)>;
+
 pub trait Host: Send {
     /// 네트워크 인터페이스 목록. 지원하지 않는 환경이면 Err
     fn interfaces(&self) -> Result<Vec<NetIf>, String> {
@@ -99,6 +102,11 @@ pub trait Host: Send {
     /// 지금 살아 있는 그 PID 의 프로세스가 우리가 처음 본 시각(seen_ft) 이전에 생겼을 때(살아 있는 프로세스끼리는 PID 가 겹치지 않으므로
     /// 그때 본 것이 이 프로세스다). 2026-11-06 노트북: 수집 전부터 돌던 프로세스는 생성 시각 기록이 어긋나 경로를 못 채웠다
     fn live_image(&self, _pid: u32, _create_ft: i64, _seen_ft: i64) -> Option<(String, i64)> {
+        None
+    }
+    /// 50차 2단계: 조회 작업자(엔진 밖 스레드)가 부를 수 있는 live_image. 상태 없는 함수만 내놓는다.
+    /// None 이면 작업자는 "실행 중 아님"으로 본다(NoHost 의 live_image 와 같음) — live_image 를 바꾼 호스트는 이것도 함께 내놓을 것
+    fn live_probe(&self) -> Option<LiveProbe> {
         None
     }
     /// 35차 Q4: 실행 파일의 버전 리소스 원래 이름(OriginalFileName, 소문자). 모르면 None

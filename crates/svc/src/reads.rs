@@ -55,6 +55,12 @@ struct GateInner {
     forced: std::sync::atomic::AtomicBool,
     /// 작업자 길의 처리 시간(진단 "처리 시간" 표에 엔진 것과 함께 나간다) — 엔진을 거치지 않아 엔진 표에는 안 남는다
     stats: std::sync::Mutex<crate::runtime::Timings>,
+    /// 50차 2단계: 엔진이 판정 결과가 바뀔 때 내놓는 조회용 스냅숏(분당 몇 번 바뀜 — 잠깐 잠그고 Arc 만 복제)
+    snap: std::sync::Mutex<Option<Arc<crate::events::StorySnap>>>,
+    /// 문장 캐시(엔진·문장 스레드·작업자가 함께 쓴다). 엔진의 World 가 이것을 그대로 쓴다
+    narr: crate::events::NarrCache,
+    /// 작업자가 문장을 못 만든 사건을 만났다 — 엔진이 다음 정리에서 미리 만들기를 하도록
+    warm_wanted: std::sync::atomic::AtomicBool,
 }
 
 /// 작업자 대기열 상한(50차 Q3): 일반 사용자 조회 홍수가 작업자 줄을 끝없이 늘리지 않게 — 넘으면 바로 busy
@@ -106,6 +112,24 @@ impl Gate {
             .map(|t| t.0.iter().map(|(k, v)| (*k, *v)).collect())
             .unwrap_or_default()
     }
+    /// 엔진: 새 조회용 스냅숏을 바꿔 끼운다
+    pub fn publish(&self, snap: Arc<crate::events::StorySnap>) {
+        if let Ok(mut g) = self.0.snap.lock() {
+            *g = Some(snap);
+        }
+    }
+    /// 작업자: 지금 스냅숏(없으면 None — 첫 판정 전)
+    pub fn snapshot(&self) -> Option<Arc<crate::events::StorySnap>> {
+        self.0.snap.lock().ok().and_then(|g| g.clone())
+    }
+    /// 함께 쓰는 문장 캐시
+    pub fn narr_cache(&self) -> crate::events::NarrCache {
+        self.0.narr.clone()
+    }
+    /// 엔진: 작업자가 미리 만들기를 부탁했는가(읽으면 내린다)
+    pub fn take_warm(&self) -> bool {
+        self.0.warm_wanted.swap(false, Ordering::SeqCst)
+    }
     /// handler: 조회를 작업자에게 직접 넘긴다
     pub fn submit(&self, job: ReadJob) -> Direct {
         if self.0.forced.load(Ordering::SeqCst) {
@@ -139,9 +163,15 @@ fn dec(n: &std::sync::atomic::AtomicUsize) {
     crate::runtime::dec_saturating(n);
 }
 
-/// 작업자가 맡는 메서드
-pub fn is_heavy_read(m: Method) -> bool {
-    matches!(m, Method::StoryToday | Method::ConnectionsList)
+/// 작업자가 맡는 조회. story.events 는 전체 구간(since_ts 없음·0)만 — 구간 지정 판정은 엔진이 한다(50차 2-8)
+pub fn is_heavy_read(m: Method, params: &serde_json::Value) -> bool {
+    match m {
+        Method::StoryToday | Method::ConnectionsList => true,
+        Method::StoryEvents => params
+            .get("since_ts")
+            .is_none_or(|v| v.is_null() || v.as_i64() == Some(0)),
+        _ => false,
+    }
 }
 
 /// 읽기 작업자를 띄운다. 파일 DB 가 아니거나 열기에 실패하면 None (엔진이 직접 처리)
@@ -214,6 +244,29 @@ fn run(store: Store, rx: Receiver<ReadJob>, gen: Arc<AtomicU64>, gate: Gate) {
             Method::ConnectionsList => {
                 connections_list(&store, &mut rs, job.now, job.params, &job.caller)
             }
+            Method::StoryEvents => {
+                let mut tl = Vec::new();
+                let snap = gate.snapshot();
+                let cache = gate.narr_cache();
+                let r = crate::events::story_events(
+                    &store,
+                    snap.as_deref(),
+                    &cache,
+                    job.now,
+                    job.params,
+                    &job.caller,
+                    &mut tl,
+                );
+                for (stage, d) in tl {
+                    gate.record(crate::events::reader_stage_name(stage), d);
+                }
+                r.map(|(v, pending)| {
+                    if pending > 0 {
+                        gate.0.warm_wanted.store(true, Ordering::SeqCst);
+                    }
+                    v
+                })
+            }
             _ => Err(RpcError::with(
                 ErrorCode::Internal,
                 "읽기 작업자가 맡지 않는 메서드",
@@ -224,6 +277,7 @@ fn run(store: Store, rx: Receiver<ReadJob>, gen: Arc<AtomicU64>, gate: Gate) {
             match job.method {
                 Method::StoryToday => "작업자: story.today",
                 Method::ConnectionsList => "작업자: connections.list",
+                Method::StoryEvents => "작업자: story.events",
                 _ => "작업자: 기타",
             },
             tw.elapsed(),

@@ -21,6 +21,7 @@ pub mod demo;
 pub mod dev;
 pub mod dispatch;
 pub mod emergency;
+pub mod events;
 /// 첫 실행 관찰실 (기획서 17판 23-2 ①)
 pub mod first_run;
 pub mod handler;

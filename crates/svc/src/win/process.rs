@@ -83,6 +83,23 @@ pub fn terminate(pid: u32, expected_create: Option<i64>) -> Kill {
     }
 }
 
+/// 지금 그 PID 로 살아 있는 프로세스가 기록의 그 프로세스이면 (실행 파일 경로, 실제 생성 시각).
+/// 상태가 없는 함수라 조회 작업자(50차 2단계)도 같은 것을 부른다
+pub fn live_image(pid: u32, create_ft: i64, seen_ft: i64) -> Option<(String, i64)> {
+    // 같은 프로세스일 때만(PID 재사용 방지): 생성 시각이 기록과 같거나, 처음 본 시각 전에 생겼다
+    let same = |ct: i64| ct == create_ft || (seen_ft > 0 && ct > 0 && ct <= seen_ft);
+    if pid == 0 {
+        return None;
+    }
+    let ct = create_time(pid)?;
+    if !same(ct) {
+        return None;
+    }
+    let img = super::authn::image_of_pid(pid)?;
+    // 읽는 사이 PID 가 바뀌지 않았는지 한 번 더
+    (create_time(pid)? == ct).then_some((img, ct))
+}
+
 /// Windows 호스트: 리스닝 포트(GetExtendedTcpTable/UdpTable), 종료(생성 시각 대조)
 pub struct WinHost;
 impl crate::host::Host for WinHost {
@@ -130,18 +147,10 @@ impl crate::host::Host for WinHost {
             .map_err(|e| format!("SetTcpEntry 실패 (Win32 오류 {e})"))
     }
     fn live_image(&self, pid: u32, create_ft: i64, seen_ft: i64) -> Option<(String, i64)> {
-        // 같은 프로세스일 때만(PID 재사용 방지): 생성 시각이 기록과 같거나, 처음 본 시각 전에 생겼다
-        let same = |ct: i64| ct == create_ft || (seen_ft > 0 && ct > 0 && ct <= seen_ft);
-        if pid == 0 {
-            return None;
-        }
-        let ct = create_time(pid)?;
-        if !same(ct) {
-            return None;
-        }
-        let img = super::authn::image_of_pid(pid)?;
-        // 읽는 사이 PID 가 바뀌지 않았는지 한 번 더
-        (create_time(pid)? == ct).then_some((img, ct))
+        live_image(pid, create_ft, seen_ft)
+    }
+    fn live_probe(&self) -> Option<crate::host::LiveProbe> {
+        Some(live_image)
     }
     fn interfaces(&self) -> Result<Vec<crate::host::NetIf>, String> {
         super::netif::interfaces()

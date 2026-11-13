@@ -195,7 +195,7 @@ pub fn serve_direct(
         // 27차 Gemini Q1: 연결 중 rpc.hello 도 엔진 밖에서 — UI 가 주기적으로 불러 엔진이 한 일에 묶여 있는지(engine_busy_ms) 본다
         let resp = if method == Method::RpcHello {
             hello_reply(id, params)
-        } else if crate::reads::is_heavy_read(method) {
+        } else if crate::reads::is_heavy_read(method, &params) {
             ask_reader(reads, engine, id, method, params, &caller)
         } else {
             ask(engine, id, method, params, &caller)

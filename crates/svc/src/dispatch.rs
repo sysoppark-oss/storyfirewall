@@ -92,13 +92,38 @@ impl StoryVisibility {
     /// 선을 못 찾으면 보임(edges_visible 과 같음), 노드를 못 찾으면 안 보임(process_visible 과 같음).
     /// 선 전부를 보는 것은 등급 `min` 이상 사건만(목록에 실릴 수 있는 것) — 낮은 사건은 뿌리만 본다(hidden_low 셈)
     pub(crate) fn compute(world: &World, scope: Scope, stories: &[judge::Story], min: u8) -> Self {
+        let view = world.judge_inc.view();
+        Self::compute_with(
+            &world.graph,
+            scope,
+            stories,
+            min,
+            &|e| view.and_then(|v| v.by_id.get(&e).map(|&i| (v.edges[i].src, v.edges[i].dst))),
+            &|id| {
+                view.and_then(|v| v.nodes.get(&id))
+                    .map(crate::events::NodeSeen::of)
+            },
+        )
+    }
+
+    /// 50차 2단계: 메모리 쪽 찾기(판정 그래프 또는 조회용 스냅숏)를 바꿔 끼울 수 있게 뗀 본체.
+    /// `edge_end`: 선 → 양 끝(모르면 None → DB 묶음 조회). `node_seen`: 노드 → 종류·세션(모르면 None → DB).
+    /// 세션을 모르는 프로세스(`Process(None)`)는 메모리 값을 믿지 않고 DB 의 지금 값으로 다시 본다(세션 기록은 시작 기록 뒤에 온다)
+    pub(crate) fn compute_with(
+        store: &graph::Store,
+        scope: Scope,
+        stories: &[judge::Story],
+        min: u8,
+        edge_end: &dyn Fn(i64) -> Option<(i64, i64)>,
+        node_seen: &dyn Fn(i64) -> Option<crate::events::NodeSeen>,
+    ) -> Self {
+        use crate::events::NodeSeen;
         let Scope::Session(me) = scope else {
             return Self {
                 all: true,
                 each: Vec::new(),
             };
         };
-        let view = world.judge_inc.view();
         // 1) 선 → 양 끝
         let mut ends: HashMap<i64, (i64, i64)> = HashMap::new();
         let mut missing_edges: Vec<i64> = Vec::new();
@@ -107,9 +132,9 @@ impl StoryVisibility {
                 if ends.contains_key(e) {
                     continue;
                 }
-                match view.and_then(|v| v.by_id.get(e).map(|&i| &v.edges[i])) {
-                    Some(ed) => {
-                        ends.insert(*e, (ed.src, ed.dst));
+                match edge_end(*e) {
+                    Some(ab) => {
+                        ends.insert(*e, ab);
                     }
                     None => missing_edges.push(*e),
                 }
@@ -118,7 +143,7 @@ impl StoryVisibility {
         if !missing_edges.is_empty() {
             missing_edges.sort_unstable();
             missing_edges.dedup();
-            if let Ok(m) = graph::query::edges_by_ids(&world.graph, &missing_edges) {
+            if let Ok(m) = graph::query::edges_by_ids(store, &missing_edges) {
                 for (id, ed) in m {
                     ends.insert(id, (ed.src, ed.dst));
                 }
@@ -130,37 +155,29 @@ impl StoryVisibility {
             need.insert(*a);
             need.insert(*b);
         }
-        let visible_node = |n: &graph::Node| -> bool {
-            if n.kind != graph::NodeKind::Process.as_str() {
-                return true;
-            }
-            match n.attr("session").and_then(|v| v.as_u64()) {
-                None => false,
-                Some(s) => s == 0 || s == me as u64,
+        let visible = |n: NodeSeen| -> bool {
+            match n {
+                NodeSeen::Other => true,
+                NodeSeen::Process(None) => false,
+                NodeSeen::Process(Some(s)) => s == 0 || s == me as u64,
             }
         };
         let mut node_ok: HashMap<i64, bool> = HashMap::with_capacity(need.len());
         let mut missing_nodes: Vec<i64> = Vec::new();
         for id in need {
-            match view.and_then(|v| v.nodes.get(&id)) {
-                // 세션을 아직 모르는 프로세스는 메모리 그래프를 믿지 않는다: 세션 기록은 시작 기록 뒤에 따로 오므로
-                // 그 사이에 판정이 돌았으면 다음 판정(1분)까지 "세션 모름 = 보임"으로 남는다 → DB 의 지금 값으로 다시 본다
-                Some(n)
-                    if n.kind == graph::NodeKind::Process.as_str()
-                        && n.attr("session").is_none() =>
-                {
-                    missing_nodes.push(id)
-                }
+            match node_seen(id) {
+                // 세션을 아직 모르는 프로세스는 메모리 값을 믿지 않는다: 세션 기록은 시작 기록 뒤에 따로 오므로
+                // 그 사이에 판정이 돌았으면 다음 판정까지 "세션 모름"으로 남는다 → DB 의 지금 값으로 다시 본다
+                Some(NodeSeen::Process(None)) | None => missing_nodes.push(id),
                 Some(n) => {
-                    node_ok.insert(id, visible_node(n));
+                    node_ok.insert(id, visible(n));
                 }
-                None => missing_nodes.push(id),
             }
         }
         if !missing_nodes.is_empty() {
-            if let Ok(m) = graph::query::nodes_by_ids(&world.graph, &missing_nodes) {
+            if let Ok(m) = graph::query::nodes_by_ids(store, &missing_nodes) {
                 for (id, n) in m {
-                    node_ok.insert(id, visible_node(&n));
+                    node_ok.insert(id, visible(NodeSeen::of(&n)));
                 }
             }
         }
@@ -692,21 +709,69 @@ pub fn dispatch(
     }
 }
 
+/// 50차 2단계: 엔진이 직접 답할 때(메모리 DB 시험·구간 지정·작업자 없음)의 이야기 목록 출처
+struct EngineSource<'a, 'w> {
+    world: &'a mut World<'w>,
+    gen: u64,
+    since: i64,
+}
+
+impl crate::events::Source for EngineSource<'_, '_> {
+    fn store(&self) -> &graph::Store {
+        &self.world.graph
+    }
+    fn visibility(&self, scope: Scope, stories: &[judge::Story], min: u8) -> StoryVisibility {
+        StoryVisibility::compute(self.world, scope, stories, min)
+    }
+    fn peek(&self, voice: &str, s: &judge::Story) -> Option<story::events::Narrative> {
+        narrative_peek(self.world, voice, s)
+    }
+    fn make_now(
+        &mut self,
+        voice: &str,
+        s: &judge::Story,
+    ) -> Option<Result<story::events::Narrative, RpcError>> {
+        // diag-186: 파일 DB 에서는 조회 안에서 문장을 만들지 않는다. 메모리 DB(시험)만 그 자리에서
+        if !graph_is_memory(self.world) {
+            return None;
+        }
+        Some(narrative_cached(self.world, self.gen, self.since, voice, s))
+    }
+    fn chain_unit(&self, s: &judge::Story) -> Option<(bool, String)> {
+        if !matches!(
+            s.root_kind,
+            judge::RootKind::IsolatedSvchost
+                | judge::RootKind::LolbinFromDocApp
+                | judge::RootKind::RecoveryInhibit
+        ) {
+            return None;
+        }
+        self.world
+            .judge_inc
+            .view()
+            .and_then(|vw| vw.chain_unit(s.root))
+            .map(|u| (u.parent.is_some(), u.label()))
+    }
+    fn live(&self, d: &graph::views::ProcessDetail) -> serde_json::Value {
+        live_state(self.world, d)
+    }
+    fn record(&mut self, stage: &'static str, d: std::time::Duration) {
+        self.world
+            .timings
+            .record(crate::events::engine_stage_name(stage), d);
+    }
+}
+
 /// 실시간 1(사용자 "실시간으로 문제를 찾아야 바로 해결가능함" 2026-11-07): 이야기 카드의 주인공 프로세스가 지금도 실행 중인가.
 /// 끝남 기록이 있으면 끝남. 없으면 지금 그 PID 로 살아 있는 프로세스가 같은 것(생성 시각 일치 또는 처음 본 시각 이전 생성)인지 조회한다.
 /// 읽기 경로라 DB 에 쓰지 않는다. 조회는 카드 한 쪽(보이는 것)만 — OpenProcess 한 번씩
 fn live_state(world: &World, d: &graph::views::ProcessDetail) -> serde_json::Value {
-    let running = !d.ended
-        && world
-            .host
-            .live_image(d.pid, d.create_ts, d.node.first_ts)
-            .is_some();
-    serde_json::json!({ "running": running, "pid": d.pid, "ended": d.ended })
+    crate::events::live_json(d, &|p, c, f| world.host.live_image(p, c, f))
 }
 
 /// 카드 제목 사슬(UI 3판 초안, 사용자 "좋음" 2026-11-07): 부모 → 주인공 → 실행한 프로그램(최대 6개 + 전체 수).
 /// 그래프에서 읽기만. 이름은 노드 표시 이름(파일 이름)
-fn chain_line(g: &graph::Store, proc_id: i64) -> serde_json::Value {
+pub(crate) fn chain_line(g: &graph::Store, proc_id: i64) -> serde_json::Value {
     let parent: Option<String> = g
         .conn()
         .query_row(
@@ -948,110 +1013,15 @@ fn handle(
             world
                 .timings
                 .record("이야기 목록: 판정 결과", t_judge.elapsed());
-            let t_filter = std::time::Instant::now();
-            // 등급으로 거른다(점수가 아니라): 5장 심각은 점수 70~89 라도 심각이다
-            let min = judge::Level::parse(&v.level_min)
-                .unwrap_or(judge::Level::Suspicious)
-                .rank();
-            let scope = caller.scope();
-            // 사건 추적: 처리 상태는 한 번에 읽고(사건마다 묻지 않는다), 수준·범위를 거른 뒤 상태별 개수를 센 다음 필터를 건다
-            let triage_all = crate::triage::all(&world.graph);
-            let triage_filter =
-                crate::triage::Filter::parse(&v.triage).unwrap_or(crate::triage::Filter::Open);
-            let mut counts = crate::triage::Counts::default();
-            // diag-191: 일반 사용자 세션이면 사건마다 선 전부(큰 사건은 3만 개)·양 끝 노드를 하나씩 DB 에서 읽어
-            // 재시작 직후 "문장" 단계가 15~22초였다 — 판정이 메모리에 든 그래프에서 한 번에 가린다(없는 것만 묶음 조회)
-            let t_vis = std::time::Instant::now();
-            let vis = StoryVisibility::compute(world, scope, &stories[..], min);
-            world
-                .timings
-                .record("이야기 목록: 보임 가리기", t_vis.elapsed());
-            // 개편안 2판 2-2(낮음 요약 칩): 등급 필터에 걸려 숨긴 미조치 사건 수 — 숨겨도 존재는 알린다
-            let hidden_low = stories
-                .iter()
-                .enumerate()
-                .filter(|(i, s)| {
-                    s.level.rank() < min
-                        && vis.root_ok(*i)
-                        && triage_filter.keeps(
-                            triage_all
-                                .get(&s.root)
-                                .map_or(crate::triage::State::New, |r| r.state),
-                        )
-                })
-                .count();
-            // A30: 다른 사용자 세션의 프로세스가 든 이야기는 통째로 숨긴다
-            let kept: Vec<judge::Story> = stories
-                .iter()
-                .enumerate()
-                .filter(|(i, s)| s.level.rank() >= min && vis.all_ok(*i))
-                .map(|(_, s)| s)
-                .filter(|s| {
-                    let st = triage_all
-                        .get(&s.root)
-                        .map_or(crate::triage::State::New, |r| r.state);
-                    counts.add(st);
-                    triage_filter.keeps(st)
-                })
-                .cloned()
-                .collect();
-            let cur = v.cursor.normalized();
-            let start = cur
-                .after
-                .as_deref()
-                .and_then(|a| a.parse::<usize>().ok())
-                .unwrap_or(0);
-            // L043·L044(대시보드 7~10초): 전에는 해당 수준 사건 전부를 매 호출 문장으로 만들었다. 이제 이 쪽에 보일 것만,
-            // 같은 판정 결과(Arc)·같은 화법이면 만든 문장을 다시 쓴다(판정은 1분마다 바뀐다)
-            let page_stories: Vec<judge::Story> = kept
-                .iter()
-                .skip(start)
-                .take(cur.limit + 1)
-                .cloned()
-                .collect();
             let gen = if v.since_ts == 0 {
                 world.judged_gen
             } else {
                 world.judge_cache_gen
             };
-            world
-                .timings
-                .record("이야기 목록: 거르기", t_filter.elapsed());
-            // 문장 단계 시간은 여기부터(거르기·보임 가리기는 따로 잰다)
-            let t_narr = std::time::Instant::now();
-            let mut nar: Vec<story::events::Narrative> = Vec::with_capacity(page_stories.len());
-            // diag-170: 서비스 재시작 직후(문장 캐시가 빔) 61건을 이 조회 안에서 만들며 엔진을 31초 잡았다 →
-            // 화면은 5초에 포기하고 다시 불러 대기열 평균 40초. 조회 안에서 새로 만드는 문장은 NARR_QUERY_BUDGET 까지만,
-            // 그 뒤로는 캐시에 있는 것만 담고 나머지는 "pending"(아직 문장을 만드는 중)으로 알린다 — 판정 뒤 정리가 이어서 만든다
-            // diag-184: 재시작 직후 큰 사건(선 3만) 하나의 문장이 조회 안에서 8초 이상 — 첫 사건은 예산과 상관없이 만들어 조회가 34초.
-            // 이제 조회 안에서는 ① 캐시에 있으면 그것 ② 예산 안이고 작은 사건이면 만들기 ③ 아니면 선을 훑지 않는 한 줄(OneLine: 제목·수준)로
-            // 대신 담고 partial 표시 — 목록의 사건 수는 늘 완전하고(숫자가 맞음) 설명만 판정 뒤 정리가 이어서 채운다
-            let mut pending = 0usize;
-            let mut partial_roots: std::collections::HashSet<i64> =
-                std::collections::HashSet::new();
-            for s in &page_stories {
-                if let Some(n) = narrative_peek(world, &v.voice, s) {
-                    nar.push(n);
-                    continue;
-                }
-                // diag-186: 재시작 직후(디스크 캐시가 빔) 선 수백 개짜리 사건 하나의 문장도 원시 기록 임의 읽기로 26초 →
-                // 파일 DB 에서는 조회 안에서 문장을 만들지 않는다(미리 만들기가 별도 스레드에서 채움). 메모리 DB(시험)만 그 자리에서
-                if graph_is_memory(world)
-                    && t_narr.elapsed() < NARR_QUERY_BUDGET
-                    && s.edges.len() < BIG_STORY_EDGES
-                {
-                    nar.push(narrative_cached(world, gen, v.since_ts, &v.voice, s)?);
-                    continue;
-                }
-                pending += 1;
-                partial_roots.insert(s.root);
-                let n =
-                    story::narrate(&world.graph, std::slice::from_ref(s), story::Voice::OneLine)
-                        .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?
-                        .pop()
-                        .ok_or_else(|| RpcError::with(ErrorCode::Internal, "narrate"))?;
-                nar.push(n);
-            }
+            // 50차 2단계: 본체는 조회 작업자와 같은 함수(events::page) — 엔진 쪽은 판정 그래프·엔진 문장 캐시·호스트로
+            let since = v.since_ts;
+            let mut src = EngineSource { world, gen, since };
+            let (out, pending) = crate::events::page(&mut src, &stories[..], &v, caller)?;
             if pending > 0 {
                 // 미리 만들기가 기본 화법이 아니어도 다음 정리에서 이어 만들도록
                 world.warm_due = true;
@@ -1059,109 +1029,7 @@ fn handle(
                     .housekeeping_due
                     .get_or_insert_with(std::time::Instant::now);
             }
-            world.timings.record("이야기 목록: 문장", t_narr.elapsed());
-            let t_extra = std::time::Instant::now();
-            let slice: Vec<serde_json::Value> = nar
-                .iter()
-                .map(|n| {
-                    let mut v = serde_json::to_value(n).unwrap();
-                    if partial_roots.contains(&n.root) {
-                        // 설명을 아직 만드는 중(한 줄 요약만) — 화면은 "설명 준비 중"으로
-                        v["partial"] = serde_json::json!(true);
-                    }
-                    // D020-1: 뿌리가 Windows 핵심 프로세스면 화면이 "끊기" 대신 "이 접속지만 차단"을 보이고 서명·위치를 밝힌다.
-                    // (끊기 계획도 이미 핵심 프로세스는 막거나 끝내지 않는다 — cut.rs)
-                    let root_kind = world.graph.node(n.root).map(|x| x.kind).unwrap_or_default();
-                    // 정상 처리(judge.feedback_normal)는 파일 뿌리만 된다 — 화면이 단추를 숨긴다
-                    // L063: 금고 경비 사건(프로세스 뿌리)도 정상 처리 가능(그 판정에 한정)
-                    let vault = page_stories.iter().any(|s| s.root == n.root && s.root_kind == judge::RootKind::VaultAccess);
-                    // 프로세스 뿌리 (다)·(라)·(바): 정상 처리 단위 = 부모 → 도구 → 띄운 프로그램. 화면이 확인 창에 그 조합을 보인다
-                    let chain_unit = page_stories
-                        .iter()
-                        .find(|s| s.root == n.root && matches!(s.root_kind, judge::RootKind::IsolatedSvchost | judge::RootKind::LolbinFromDocApp | judge::RootKind::RecoveryInhibit))
-                        .and_then(|_| world.judge_inc.view().and_then(|vw| vw.chain_unit(n.root)).map(|u| (u.parent.is_some(), u.label())));
-                    // 39차 Q1②: 부모를 모르면 단추를 숨기고 이유를 보인다
-                    let chain_ok = chain_unit.as_ref().is_some_and(|(has_parent, _)| *has_parent);
-                    v["feedback_ok"] = serde_json::json!(root_kind == "file" || vault || chain_ok);
-                    match chain_unit {
-                        Some((true, u)) => v["feedback_unit"] = serde_json::json!(u),
-                        Some((false, _)) => v["feedback_note"] = serde_json::json!("이 도구를 실행한 프로그램을 알 수 없어(수집 전부터 실행 중) '정상'으로 표시할 수 없습니다."),
-                        None => {}
-                    }
-                    // 사건 추적: 처리 상태(없으면 새 사건)
-                    v["triage"] = serde_json::to_value(triage_all.get(&n.root).cloned().unwrap_or_else(crate::triage::Rec::new_default)).unwrap_or_default();
-                    // 프로세스 뿌리만 process_detail(파일 노드에도 Ok 를 돌려주지만 경로가 빈다 — L046 "위치 줄 없음")
-                    let pd = if root_kind == "process" { graph::views::process_detail(&world.graph, n.root, 0).ok() } else { None };
-                    if let Some(d) = pd {
-                        v["root_chain"] = chain_line(&world.graph, n.root);
-                        v["root_live"] = live_state(world, &d);
-                        v["root_core"] = serde_json::json!(graph::views::is_system_image(&d.image));
-                        v["root_image"] = serde_json::json!(d.image);
-                        v["root_signature"] = d.signature.clone().unwrap_or(serde_json::Value::Null);
-                    } else if let Ok(f) = world.graph.node(n.root) {
-                        // D039-2: 뿌리가 파일(서명 없는 실행 파일 등)이면 경로·서명은 파일 노드에, 이름 단추는 그 파일로 실행된 가장 최근 프로세스로
-                        if f.kind == "file" {
-                            v["root_image"] = serde_json::json!(f.key);
-                            v["root_signature"] = serde_json::json!({ "signer": f.attr("signer"), "sig_status": f.attr("sig_status"), "issuer": f.attr("issuer") });
-                            let ex: Option<(i64, i64, i64, i64)> = world
-                                .graph
-                                .conn()
-                                .query_row(
-                                    "SELECT COUNT(*), MIN(ts), MAX(ts), (SELECT dst FROM edges WHERE src = ?1 AND rel = 'executed_as' ORDER BY ts DESC LIMIT 1) FROM edges WHERE src = ?1 AND rel = 'executed_as'",
-                                    [f.id],
-                                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-                                )
-                                .ok();
-                            if let Some((c, first, last, latest)) = ex {
-                                if let Some(d) = graph::views::process_detail(&world.graph, latest, 0).ok().filter(|_| latest > 0) {
-                                    v["root_live"] = live_state(world, &d);
-                                    v["root_chain"] = chain_line(&world.graph, latest);
-                                }
-                                v["root_exec"] = serde_json::json!({ "count": c, "first_ts": first, "last_ts": last, "latest_proc": latest });
-                            }
-                        }
-                    }
-                    // 첫 실행 관찰실(17판 23-2 ①): 뿌리 실행 파일을 관찰한 기록이 있으면 카드에 사실 한 줄
-                    if let Some(w) = v["root_image"]
-                        .as_str()
-                        .and_then(|path| crate::first_run::watch_of(&world.graph, path))
-                    {
-                        v["first_run_watch"] = serde_json::to_value(w).unwrap_or_default();
-                    }
-                    // D022-4: 접속지의 등록 국가(발생 시각 목록 줄)
-                    let egress_ip = n
-                        .egress_node
-                        .and_then(|id| world.graph.node(id).ok())
-                        .and_then(|nd| nd.attr("ip").and_then(|ip| ip.as_str().map(|s| s.to_string())));
-                    if let Some(w) = egress_ip.as_deref().and_then(|ip| geo::global().lookup_str(ip)) {
-                        v["egress_where"] = serde_json::to_value(w).unwrap_or_default();
-                    }
-                    // 안디옥 인계(변경 제안 2판, 기획자 허락 2026-11-12): 접속지 이름에 짝지어진 숫자 주소 — 화면이 NetX 로 넘길 때
-                    // 이름을 다시 조회하지 않게 한다. 조회 응답에 한 칸을 더할 뿐이다(주소로 해석되는 값만)
-                    if let Some(ip) = egress_ip.filter(|ip| ip.parse::<std::net::IpAddr>().is_ok()) {
-                        v["egress_ip"] = serde_json::json!(ip);
-                    }
-                    v
-                })
-                .collect();
-            let page = Page::from_overfetch(
-                slice.into_iter().enumerate().collect::<Vec<_>>(),
-                cur.limit,
-                |(i, _)| (start + i + 1).to_string(),
-            );
-            world
-                .timings
-                .record("이야기 목록: 부가 정보", t_extra.elapsed());
-            // 저장 실패로 버린 구간 (17차 Q3): 이야기 위에 "기록 일부 누락" 표시
-            let t_gaps = std::time::Instant::now();
-            let gaps =
-                graph::views::gaps_between(&world.graph, v.since_ts, i64::MAX).unwrap_or_default();
-            world
-                .timings
-                .record("이야기 목록: 기록 없는 구간", t_gaps.elapsed());
-            j(
-                serde_json::json!({ "items": page.items.into_iter().map(|(_, v)| v).collect::<Vec<_>>(), "next": page.next, "gaps": gaps, "counts": counts, "hidden_low": hidden_low, "pending": pending }),
-            )
+            j(out)
         }
         Method::StoryTriage => {
             let v: TriageParams = serde_json::from_value(p)
@@ -2306,25 +2174,14 @@ fn narrative_cached(
 ) -> Result<story::events::Narrative, RpcError> {
     let key = narr_key(s, voice);
     let now = world.engine_wall();
-    if let Some((t, n)) = world.narr_cache.get(&key) {
-        if now - *t < NARR_TTL_SECS && now >= *t {
-            return Ok(n.clone());
-        }
+    if let Some(n) = crate::events::cache_peek(&world.narr_cache, &key, now) {
+        return Ok(n);
     }
     let n = story::narrate(&world.graph, std::slice::from_ref(s), voice_of(voice))
         .map_err(|e| RpcError::with(ErrorCode::Internal, e.to_string()))?
         .pop()
         .ok_or_else(|| RpcError::with(ErrorCode::Internal, "narrate"))?;
-    // 오래된 칸은 버리고, 그래도 많으면(사건이 아주 많은 PC) 통째로 비운다 — 메모리 상한
-    if world.narr_cache.len() >= NARR_CAP {
-        world
-            .narr_cache
-            .retain(|_, (t, _)| now - *t < NARR_TTL_SECS && now >= *t);
-        if world.narr_cache.len() >= NARR_CAP {
-            world.narr_cache.clear();
-        }
-    }
-    world.narr_cache.insert(key, (now, n.clone()));
+    crate::events::cache_put(&world.narr_cache, now, vec![(key, n.clone())]);
     Ok(n)
 }
 
@@ -2332,7 +2189,7 @@ fn narrative_cached(
 /// diag-182: 선이 3만 개인 사건(sh.exe·claude.exe)은 접속이 하나 늘 때마다 키가 바뀌어 판정마다 문장을 다시 만들었다(각 3~4초).
 /// 큰 사건(선 BIG_STORY_EDGES 이상)은 선 목록 대신 (수준·점수·장·이유·선 수 BIG_STORY_STEP 단위)로 — 선이 그만큼 늘거나
 /// 캐시 유효 시간(NARR_TTL_SECS)이 지나면 다시 만든다. 그 사이 문장 속 마지막 시각·횟수는 그만큼 늦을 수 있다
-fn narr_key(s: &judge::Story, voice: &str) -> (i64, String, u64) {
+pub(crate) fn narr_key(s: &judge::Story, voice: &str) -> (i64, String, u64) {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     if s.edges.len() >= BIG_STORY_EDGES {
@@ -2351,7 +2208,7 @@ fn narr_key(s: &judge::Story, voice: &str) -> (i64, String, u64) {
     }
     (s.root, voice.to_string(), h.finish())
 }
-const BIG_STORY_EDGES: usize = 1000;
+use crate::events::BIG_STORY_EDGES;
 const BIG_STORY_STEP: usize = 500;
 
 /// 메모리 DB(시험)인가 — 별도 스레드가 같은 DB 를 열 수 없으므로 그 자리에서 만든다
@@ -2365,21 +2222,8 @@ fn narrative_peek(
     voice: &str,
     s: &judge::Story,
 ) -> Option<story::events::Narrative> {
-    let key = narr_key(s, voice);
-    let now = world.engine_wall();
-    world
-        .narr_cache
-        .get(&key)
-        .filter(|(t, _)| now - *t < NARR_TTL_SECS && now >= *t)
-        .map(|(_, n)| n.clone())
+    crate::events::cache_peek(&world.narr_cache, &narr_key(s, voice), world.engine_wall())
 }
-
-/// 조회 한 번 안에서 새 문장을 만드는 데 쓰는 최대 시간(엔진을 오래 잡지 않게)
-const NARR_QUERY_BUDGET: std::time::Duration = std::time::Duration::from_millis(1000);
-
-/// 문장 캐시: 10분 지나면 다시 만든다(실행 횟수 등 사건 밖 숫자), 최대 칸 수
-const NARR_TTL_SECS: i64 = 600;
-const NARR_CAP: usize = 4096;
 
 /// L052: 주기 판정 직후 대시보드·이야기 목록 첫 쪽(주의 이상, 기본 화법 plain, 21건)의 문장을 미리 만든다.
 /// 조회는 캐시만 읽어 2초 안에 끝난다(CLAUDE.md: 무거운 계산은 조회 때가 아니라 주기 작업으로)
@@ -2389,10 +2233,7 @@ pub fn collect_narr_job(world: &mut World) {
         match rx.try_recv() {
             Ok(done) => {
                 world.narr_job = None;
-                let now = world.engine_wall();
-                for (k, n) in done {
-                    world.narr_cache.insert(k, (now, n));
-                }
+                crate::events::cache_put(&world.narr_cache, world.engine_wall(), done);
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
             Err(std::sync::mpsc::TryRecvError::Disconnected) => world.narr_job = None,
@@ -2664,13 +2505,19 @@ fn open_connections_json(
     let mut items = Vec::new();
     // "열린 지": 이 조회가 처음 본 시각을 메모리에 적어 둔다. 첫 조회에서 본 것은 그 전부터 열려 있던 것(since_before)
     // 표시용 시각이라 벽시계를 바로 읽는다(엔진 시각은 사건이 들어올 때만 나아간다)
-    let now_unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let now_unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
     let first_fill = !world.open_seen_init;
     world.open_seen_init = true;
     let mut alive: std::collections::HashSet<String> = std::collections::HashSet::new();
     for c in cs.into_iter().filter(|c| is_external_remote(&c.raddr)) {
         let key = format!("{}|{}|{}|{}|{}", c.pid, c.laddr, c.lport, c.raddr, c.rport);
-        let (first_seen, since_before) = *world.open_seen.entry(key.clone()).or_insert((now_unix, first_fill));
+        let (first_seen, since_before) = *world
+            .open_seen
+            .entry(key.clone())
+            .or_insert((now_unix, first_fill));
         alive.insert(key);
         let node = world
             .graph

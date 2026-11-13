@@ -184,7 +184,8 @@ pub struct World<'a> {
     /// story.events 문장 캐시: (뿌리, 화법, 사건 내용 해시) → (만든 시각 wall, 문장).
     /// L052: 판정 결과 세대로 열쇠를 삼으면 이야기 화면의 30초 판정 캐시가 바뀔 때마다 모든 문장을 다시 만들었다(노트북 평균 2.5초).
     /// 사건 내용(선·점수·이유)이 같으면 같은 문장이다 — 내용으로 열쇠를 삼고, 실행 횟수처럼 사건 밖에서 변하는 숫자를 위해 10분이 지나면 다시 만든다
-    pub narr_cache: std::collections::HashMap<(i64, String, u64), (i64, story::events::Narrative)>,
+    /// 50차 2단계: 조회 작업자도 읽는다(Arc<Mutex>) — 넣고 꺼낼 때만 잠그고, 문장을 만드는 동안은 쥐지 않는다
+    pub narr_cache: crate::events::NarrCache,
     /// diag-184: 큰 사건(선 수천~수만)의 문장은 별도 스레드(읽기 전용 연결)에서 만들고 결과만 받는다. Some = 만드는 중
     pub narr_job:
         Option<std::sync::mpsc::Receiver<Vec<((i64, String, u64), story::events::Narrative)>>>,
@@ -321,7 +322,7 @@ impl Runtime {
                     last_retention_wall: 0,
                     last_install_wall: 0,
                     timings: Timings::default(),
-                    narr_cache: std::collections::HashMap::new(),
+                    narr_cache: gate_thread.narr_cache(),
                     narr_job: None,
                     judge_gen: 0,
                     judged_gen: 0,
@@ -425,6 +426,13 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
         // 기준선 시계를 엔진 시계에 맞춘다 (judge 는 FILETIME)
         world.baseline.now_ts = unix_to_filetime(clock.wall());
         world.read_gate.set_now(clock.wall());
+        // 50차 2단계: 작업자가 문장을 못 만든 사건을 만났으면 다음 정리에서 미리 만들기
+        if world.read_gate.take_warm() {
+            world.warm_due = true;
+            world
+                .housekeeping_due
+                .get_or_insert_with(std::time::Instant::now);
+        }
         // 하루 1회 기준선 학습 (판정 전에)
         if clock.wall() - world.last_learn_wall >= 86_400 {
             let t = std::time::Instant::now();
@@ -648,7 +656,7 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                 }
                 // 구조 개선 C: 무거운 읽기는 작업자로 넘기고 기다리지 않는다(응답은 작업자가 reply 로).
                 // 개발 서버 강제 모드(dev_force)는 엔진의 dispatch 가 처리하므로 넘기지 않는다
-                if crate::reads::is_heavy_read(method) && world.dev_force.is_none() {
+                if crate::reads::is_heavy_read(method, &params) && world.dev_force.is_none() {
                     if let Some(rd) = &world.reader {
                         let job = crate::reads::ReadJob {
                             id,
@@ -1059,6 +1067,27 @@ fn write_timings_file(world: &World) {
     }
 }
 
+/// 50차 2단계: 주기 판정 결과로 조회용 스냅숏을 만들어 작업자에게 내놓는다(작업자가 있을 때만).
+/// 판정 결과를 버릴 때(judged = None)는 내리지 않는다 — 작업자는 새 판정까지 직전 것을 쓴다(judged_prev 와 같은 뜻)
+pub fn publish_snapshot(world: &mut World) {
+    if world.reader.is_none() {
+        return;
+    }
+    let Some((at, stories)) = world.judged.clone() else {
+        return;
+    };
+    let t = std::time::Instant::now();
+    let snap = crate::events::StorySnap::build(
+        world.judged_gen,
+        at,
+        stories,
+        world.judge_inc.view(),
+        world.host.live_probe(),
+    );
+    world.read_gate.publish(std::sync::Arc::new(snap));
+    world.timings.record("엔진: 조회용 스냅숏", t.elapsed());
+}
+
 pub fn judge_and_notify(world: &mut World) {
     let from = world.last_judge_ts;
     let t0 = std::time::Instant::now();
@@ -1092,6 +1121,7 @@ pub fn judge_and_notify(world: &mut World) {
         world.judged_gen = world.judge_gen;
         // 문장 미리 만들기는 판정 뒤 정리(run_housekeeping)에서 — 대기 중인 화면 요청을 먼저 처리한다
         world.warm_due = true;
+        publish_snapshot(world);
     }
     // 사건 추적: 조치함·닫힘인 사건은 알리지 않는다. 다만 조치 때보다 높은 장까지 이어졌으면(재발) 새 사건으로 되돌리고 알린다
     let triage = crate::triage::all(&world.graph);
