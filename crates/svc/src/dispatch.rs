@@ -1802,7 +1802,7 @@ fn handle(
         Method::BlockedRecent => {
             let v: api::methods::BlockedRecentParams = serde_json::from_value(p)
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
-            j(blocked_recent_json(world, v.limit as usize, &v.q))
+            j(blocked_recent_json(world, v.limit as usize, &v))
         }
         Method::ProcessFind => {
             let v: api::methods::ProcessFindParams = serde_json::from_value(p)
@@ -2393,8 +2393,16 @@ pub fn rule_kind(info: Option<&policy::FilterInfo>, ours_at: bool) -> &'static s
 }
 
 /// blocked.recent: 최근 차단 기록(새것부터) + 막은 규칙 + 종류별 수. 읽기만(메모리 기록 + 엔진 DB 조회)
-pub fn blocked_recent_json(world: &World, limit: usize, q: &str) -> serde_json::Value {
-    let q = q.trim().to_lowercase();
+/// 차단 기록. 종류·시각·정책 거르기는 고리 전체에서 한 뒤 limit 만큼 — 화면이 최근 limit 건 안에서만 거르면
+/// Windows 방화벽 차단이 몰릴 때 우리 정책 차단이 limit 밖으로 밀려 KPI → 차단 기록에서 안 보였다(UI 명세 5판 6항 실기 검수).
+/// 칩 숫자(kinds)·total 은 지금처럼 고리 전체(거르기와 상관없음). matched = 거르기에 맞은 전체 수(limit 넘는 것 포함)
+pub fn blocked_recent_json(
+    world: &World,
+    limit: usize,
+    v: &api::methods::BlockedRecentParams,
+) -> serde_json::Value {
+    let q = v.q.trim().to_lowercase();
+    let mut matched = 0usize;
     let g = match world.blocked_recent.lock() {
         Ok(g) => g,
         Err(_) => return serde_json::json!({ "items": [], "kinds": {}, "total": 0 }),
@@ -2407,7 +2415,11 @@ pub fn blocked_recent_json(world: &World, limit: usize, q: &str) -> serde_json::
         let info = g.filters.get(&r.filter_id).and_then(|x| x.as_ref());
         let kind = rule_kind(info, r.ours_at);
         *kinds.entry(kind).or_default() += 1;
-        if items.len() >= limit {
+        if v.kind.as_deref().is_some_and(|k| k != kind) || v.since.is_some_and(|t| r.ts < t) {
+            continue;
+        }
+        // 정책 거르기는 우리 정책 줄만 맞을 수 있다
+        if v.policy_id.is_some() && kind != "ours" {
             continue;
         }
         let pol = if kind == "ours" {
@@ -2435,6 +2447,15 @@ pub fn blocked_recent_json(world: &World, limit: usize, q: &str) -> serde_json::
             if !hay.contains(&q) {
                 continue;
             }
+        }
+        if v.policy_id
+            .is_some_and(|want| pol.as_ref().map(|p| p.0) != Some(want))
+        {
+            continue;
+        }
+        matched += 1;
+        if items.len() >= limit {
+            continue;
         }
         items.push(serde_json::json!({
             "ts": r.ts, "app": r.app, "dir": r.dir, "proto": r.proto, "remote": r.remote, "rport": r.rport, "lport": r.lport,
@@ -2470,7 +2491,7 @@ pub fn blocked_recent_json(world: &World, limit: usize, q: &str) -> serde_json::
             })
         })
         .collect();
-    serde_json::json!({ "items": items, "kinds": kinds, "total": total, "oldest": oldest, "dup_skipped": g.dup_skipped,
+    serde_json::json!({ "items": items, "kinds": kinds, "total": total, "matched": matched, "oldest": oldest, "dup_skipped": g.dup_skipped,
         "rules": rules, "rules_total": g.rules.len(), "rules_overflow": g.rules_overflow, "evicted": g.evicted })
 }
 

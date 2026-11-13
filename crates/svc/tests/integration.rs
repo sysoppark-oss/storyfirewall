@@ -2639,3 +2639,85 @@ fn demo_with_session_shows_payload_story_to_standard_user() {
         "일반 사용자(세션 2)가 payload 이야기를 봐야 한다: {v}"
     );
 }
+
+/// 차단 기록 서버 쪽 거르기(UI 명세 5판 6항 실기 검수 뒤): Windows 방화벽 차단이 몰려 우리 정책 차단이 최근 limit 건 밖으로
+/// 밀려도, kind="ours" 로 물으면 고리 전체에서 찾아 준다. 칩 숫자(kinds·total)는 거르기와 상관없이 고리 전체
+#[test]
+fn blocked_recent_filters_whole_ring_before_limit() {
+    let (rt, _, _) = boot();
+    let t0 = svc::runtime::unix_to_filetime(T0 - 3600);
+    {
+        let mut g = rt.blocked_recent.lock().unwrap();
+        for i in 0..5u16 {
+            g.push(
+                &svc::blocked::Drop {
+                    ts_ft: t0 + i as i64 * 10_000_000,
+                    filter_id: 10,
+                    app: r"C:\x\a.exe".into(),
+                    remote: "203.0.113.9".into(),
+                    rport: 443 + i,
+                    ..Default::default()
+                },
+                true,
+            );
+        }
+        // 그 뒤 다른 규칙 차단 600건(1분 뒤부터)
+        for i in 0..600i64 {
+            g.push(
+                &svc::blocked::Drop {
+                    ts_ft: t0 + (60 + i) * 10_000_000,
+                    filter_id: 99,
+                    app: r"C:\x\b.exe".into(),
+                    remote: "198.51.100.7".into(),
+                    rport: (1000 + i) as u16,
+                    ..Default::default()
+                },
+                false,
+            );
+        }
+    }
+    let mut c = Client::connect(&rt, 100, 1);
+    c.hello();
+    let all = c.call("blocked.recent", serde_json::json!({ "limit": 500 }));
+    let items = all["result"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 500);
+    assert!(
+        items.iter().all(|x| x["rule"]["kind"] != "ours"),
+        "최근 500건 안에는 우리 정책 차단이 없다"
+    );
+    assert_eq!(all["result"]["kinds"]["ours"], serde_json::json!(5));
+    assert_eq!(all["result"]["matched"], serde_json::json!(605));
+    let ours = c.call(
+        "blocked.recent",
+        serde_json::json!({ "limit": 500, "kind": "ours" }),
+    );
+    let items = ours["result"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 5, "{ours}");
+    assert_eq!(ours["result"]["matched"], serde_json::json!(5));
+    assert_eq!(
+        ours["result"]["total"],
+        serde_json::json!(605),
+        "total 은 고리 전체"
+    );
+    // 시각 거르기: 우리 정책 차단 뒤부터
+    let since = c.call(
+        "blocked.recent",
+        serde_json::json!({ "limit": 1000, "since": T0 - 3600 + 60 }),
+    );
+    assert_eq!(
+        since["result"]["matched"],
+        serde_json::json!(600),
+        "{}",
+        since["result"]["matched"]
+    );
+    // 정책 거르기: 우리 정책 줄만 맞을 수 있고, 정책 기록이 없는 필터는 맞지 않는다
+    let pol = c.call(
+        "blocked.recent",
+        serde_json::json!({ "limit": 500, "policy_id": 1 }),
+    );
+    assert_eq!(pol["result"]["matched"], serde_json::json!(0), "{pol}");
+    // 모르는 종류는 거절
+    let bad = c.call("blocked.recent", serde_json::json!({ "kind": "nope" }));
+    assert_eq!(bad["error"]["code"], serde_json::json!(-32602), "{bad}");
+    rt.shutdown();
+}

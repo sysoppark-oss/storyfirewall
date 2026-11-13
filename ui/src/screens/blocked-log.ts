@@ -173,6 +173,16 @@ export function countByPolicy(rules: RuleSum[]): Map<number, number> {
 }
 
 const LIMIT = 500;
+
+/// blocked.recent 요청 매개변수(순수 함수). 종류·오늘만·정책은 서비스가 고리 전체(최근 3,000건)에서 거른 뒤 LIMIT 건을 준다 —
+/// 화면이 받은 500건 안에서만 거르면 Windows 방화벽 차단이 몰릴 때 우리 정책 차단이 밀려 안 보였다. 화면 쪽 거르기는 그대로 둔다(같은 결과)
+export function blockedParams(limit: number, q: string, kind: RuleKind | null, scope: BlockedScope, midnight: number): Record<string, unknown> {
+  const p: Record<string, unknown> = { limit, q: q.slice(0, 128) };
+  if (kind) p["kind"] = kind;
+  if (scope.today) p["since"] = midnight;
+  if (scope.policyId !== undefined) p["policy_id"] = scope.policyId;
+  return p;
+}
 const midnightNow = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return Math.floor(d.getTime() / 1000); };
 
 export function blockedLog(initial: BlockedScope = {}): { root: HTMLElement; stop: () => void } {
@@ -312,7 +322,7 @@ export function blockedLog(initial: BlockedScope = {}): { root: HTMLElement; sto
   const refresh = async () => {
     const my = ++gen;
     if (!box.firstChild) box.append(loadingBox({ word: false })); // 말씀 규칙 3: 기록 화면
-    const r = await rpc<{ items: BlockedItem[]; kinds: Partial<Record<RuleKind, number>>; total: number; oldest?: number | null; rules?: RuleSum[]; rules_total?: number; evicted?: number; rules_overflow?: number }>("blocked.recent", { limit: LIMIT, q: q.value.slice(0, 128) });
+    const r = await rpc<{ items: BlockedItem[]; kinds: Partial<Record<RuleKind, number>>; total: number; oldest?: number | null; rules?: RuleSum[]; rules_total?: number; evicted?: number; rules_overflow?: number }>("blocked.recent", blockedParams(LIMIT, q.value, kind, scope, midnightNow()));
     if (my !== gen) return;
     if (!r.ok) {
       clear(box);

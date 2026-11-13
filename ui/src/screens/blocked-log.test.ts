@@ -44,7 +44,7 @@ describe("차단 기록 묶기", () => {
   });
 });
 
-import { scopeArg, scopeFilter, todayHead, cutToday, countByPolicy, type RuleSum as RS, type BlockedItem as BI } from "./blocked-log";
+import { blockedParams, scopeArg, scopeFilter, todayHead, cutToday, countByPolicy, type RuleSum as RS, type BlockedItem as BI } from "./blocked-log";
 describe("차단 기록 첫 화면·거르기(UI 명세 5판 1장, 5장 6·7항)", () => {
   const item = (ts: number, policy_id: number | null = null): BI => ({ ts, app: "a.exe", dir: "out", proto: 6, remote: "1.2.3.4", rport: 443, lport: 0, loopback: false, filter_id: 1,
     rule: { kind: policy_id ? "ours" : "windows_firewall", name: "r", description: "", provider: "", gone: false, policy_id } });
@@ -79,5 +79,14 @@ describe("차단 기록 첫 화면·거르기(UI 명세 5판 1장, 5장 6·7항)
     const r = (n: number, kind: RS["rule"]["kind"], policy_id: number | null): RS => ({ filter_id: 1, app: "", n, first: 0, last: 0, remote: "", rport: 0, dir: "out", loopback: false, rule: { kind, name: "", provider: "", policy_id } });
     const m = countByPolicy([r(3, "ours", 7), r(4, "ours", 7), r(9, "windows_firewall", null), r(2, "ours", 8), r(5, "ours", null)]);
     expect([...m.entries()]).toEqual([[7, 7], [8, 2]]);
+  });
+});
+
+describe("blockedParams(서비스 쪽 거르기)", () => {
+  it("종류·오늘만·정책을 서비스에 보낸다", () => {
+    expect(blockedParams(500, "edge", "ours", { today: true, policyId: 7 }, 1000)).toEqual({ limit: 500, q: "edge", kind: "ours", since: 1000, policy_id: 7 });
+  });
+  it("거르기가 없으면 limit·q 만", () => {
+    expect(blockedParams(500, "x".repeat(200), null, {}, 1000)).toEqual({ limit: 500, q: "x".repeat(128) });
   });
 });

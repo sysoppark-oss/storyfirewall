@@ -363,7 +363,28 @@ pub struct BlockedRecentParams {
     /// 프로그램·주소·포트·규칙 이름 글자 거르기(대소문자 무시)
     #[serde(default)]
     pub q: String,
+    /// 막은 규칙 종류만("ours"·"windows_firewall" …). 서비스가 고리 전체(최근 3,000건)에서 거른 뒤 limit 만큼 준다
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// 이 시각(unix 초) 이후만 — 화면의 "오늘만"
+    #[serde(default)]
+    pub since: Option<i64>,
+    /// 이 정책으로 막힌 것만
+    #[serde(default)]
+    pub policy_id: Option<i64>,
 }
+/// blocked.recent 의 kind 로 받는 값(svc::dispatch::rule_kind 와 같은 낱말)
+pub const BLOCKED_KINDS: &[&str] = &[
+    "ours",
+    "ours_unknown",
+    "windows_firewall",
+    "windows_service_hardening",
+    "windows_app_isolation",
+    "windows_other",
+    "system",
+    "other",
+    "unknown",
+];
 impl BlockedRecentParams {
     fn default_limit() -> u32 {
         300
@@ -628,6 +649,12 @@ pub fn validate_params(
                 .map_err(|e| RpcError::with(ErrorCode::InvalidParams, e.to_string()))?;
             check((1..=1000).contains(&v.limit), "limit 은 1~1000")?;
             check(v.q.chars().count() <= 128, "q 는 128자 이하")?;
+            check(
+                v.kind.as_deref().is_none_or(|k| BLOCKED_KINDS.contains(&k)),
+                "kind 는 알려진 규칙 종류",
+            )?;
+            check(v.since.is_none_or(|t| t >= 0), "since 는 0 이상")?;
+            check(v.policy_id.is_none_or(|p| p > 0), "policy_id 는 1 이상")?;
         }
         Method::ProcessFind => {
             let v: ProcessFindParams = serde_json::from_value(p.clone())
