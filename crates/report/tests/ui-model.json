@@ -1,0 +1,300 @@
+{
+ "program": "storyfirewall",
+ "program_title": "Story Firewall",
+ "version": "0.1.6-dev.test",
+ "generated_at": "T",
+ "period_from": "T",
+ "period_to": "T",
+ "masked": true,
+ "source_url": "https://github.com/sysoppark-oss/storyfirewall",
+ "sections": [
+  {
+   "id": "incidents",
+   "title": "인시던트",
+   "count": 1,
+   "shown": 1,
+   "notes": [
+    "기간 안에 마지막 활동이 있는 사건입니다(처리 상태와 관계없이 모두). 심각도 높은 순, 같은 심각도는 최신 순.",
+    "문장은 화면에 보이는 문장 그대로이며, 이 PC가 기록한 사실입니다. 접속지의 나라·조직은 PC 안의 오프라인 주소 자료 기준이라 실제 위치와 다를 수 있습니다."
+   ],
+   "blocks": [
+    {
+     "kind": "heading",
+     "text": "<img src=x onerror=1>.exe"
+    },
+    {
+     "kind": "facts",
+     "rows": [
+      [
+       "심각도",
+       "높음"
+      ],
+      [
+       "처리 상태",
+       "신규"
+      ],
+      [
+       "마지막 활동",
+       "T"
+      ],
+      [
+       "시작 프로그램",
+       "C:\\Users\\pjg\\Downloads\\a.exe"
+      ],
+      [
+       "가장 늦은 외부 접속지",
+       "evil.example:443 (203.0.113.7)"
+      ],
+      [
+       "내 주소",
+       "192.168.0.7"
+      ]
+     ]
+    },
+    {
+     "kind": "table",
+     "headers": [
+      "근거 사건 시각",
+      "이야기 문장",
+      "근거"
+     ],
+     "rows": [
+      [
+       "T",
+       "app7.exe 가 203.0.113.7:443 에 접속했습니다",
+       "실시간 기록 2"
+      ]
+     ]
+    }
+   ],
+   "items": [
+    {
+     "root": 7,
+     "title": "<img src=x onerror=1>.exe",
+     "level": "suspicious",
+     "score": null,
+     "reached": [],
+     "triage": "new",
+     "action": null,
+     "last_activity": "T",
+     "root_image": "C:\\Users\\pjg\\Downloads\\a.exe",
+     "egress": "evil.example:443",
+     "egress_ip": "203.0.113.7",
+     "sentences": [
+      {
+       "at": "T",
+       "text": "app7.exe 가 203.0.113.7:443 에 접속했습니다"
+      }
+     ],
+     "facts": [
+      {
+       "label": "내 주소",
+       "value": "192.168.0.7"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "blocked",
+   "title": "차단 기록",
+   "count": 2,
+   "shown": 2,
+   "notes": [
+    "기준: 서비스가 메모리에 둔 최근 차단 기록(지금 2건, 가장 오래된 것 T) 가운데 기간 안의 것을 셌습니다. 그보다 오래된 차단은 들어 있지 않습니다.",
+    "Windows 방화벽·다른 보안 프로그램이 막은 것도 함께 셉니다(규칙 종류로 구별)."
+   ],
+   "blocks": [
+    {
+     "kind": "heading",
+     "text": "규칙별 차단 건수"
+    },
+    {
+     "kind": "table",
+     "headers": [
+      "건수",
+      "막은 규칙",
+      "처음",
+      "마지막"
+     ],
+     "rows": [
+      [
+       "1",
+       "Story Firewall 정책 'block-x'",
+       "T",
+       "T"
+      ],
+      [
+       "1",
+       "Windows 방화벽 규칙 'Default Inbound'",
+       "T",
+       "T"
+      ]
+     ]
+    },
+    {
+     "kind": "heading",
+     "text": "상위 차단 목적지"
+    },
+    {
+     "kind": "table",
+     "headers": [
+      "건수",
+      "방향",
+      "상대",
+      "프로그램",
+      "마지막"
+     ],
+     "rows": [
+      [
+       "1",
+       "나감",
+       "203.0.113.7:443",
+       "C:\\Users\\pjg\\a.exe",
+       "T"
+      ],
+      [
+       "1",
+       "들어옴",
+       "192.168.0.7:51000 → 내 포트 3389",
+       "(프로그램 모름)",
+       "T"
+      ]
+     ]
+    },
+    {
+     "kind": "heading",
+     "text": "차단 기록(최신 순)"
+    },
+    {
+     "kind": "table",
+     "headers": [
+      "시각",
+      "방향",
+      "상대",
+      "프로그램",
+      "막은 규칙"
+     ],
+     "rows": [
+      [
+       "T",
+       "나감",
+       "203.0.113.7:443",
+       "C:\\Users\\pjg\\a.exe",
+       "Story Firewall 정책 'block-x'"
+      ],
+      [
+       "T",
+       "들어옴",
+       "192.168.0.7:51000 → 내 포트 3389",
+       "(프로그램 모름)",
+       "Windows 방화벽 규칙 'Default Inbound'"
+      ]
+     ]
+    }
+   ],
+   "items": [
+    {
+     "at": "T",
+     "dir": "out",
+     "proto": 6,
+     "remote": "203.0.113.7",
+     "rport": 443,
+     "lport": 50000,
+     "loopback": false,
+     "app": "C:\\Users\\pjg\\a.exe",
+     "rule_kind": "ours",
+     "rule": "block-x",
+     "policy_id": 3
+    },
+    {
+     "at": "T",
+     "dir": "in",
+     "proto": 6,
+     "remote": "192.168.0.7",
+     "rport": 51000,
+     "lport": 3389,
+     "loopback": false,
+     "app": "",
+     "rule_kind": "windows_firewall",
+     "rule": "Default Inbound",
+     "policy_id": null
+    }
+   ]
+  },
+  {
+   "id": "policy",
+   "title": "정책",
+   "count": 1,
+   "shown": 1,
+   "notes": [
+    "지금 적용된 규칙은 보고서를 만든 시각(T) 기준입니다. 변경 이력만 기간으로 걸렀습니다."
+   ],
+   "blocks": [
+    {
+     "kind": "heading",
+     "text": "지금 적용된 규칙 1건"
+    },
+    {
+     "kind": "table",
+     "headers": [
+      "상태",
+      "이름",
+      "내용",
+      "만료",
+      "만든 곳",
+      "판",
+      "만든 시각"
+     ],
+     "rows": [
+      [
+       "적용 중",
+       "block-x",
+       "",
+       "기한 없음",
+       "직접 작성",
+       "판 1",
+       "T"
+      ]
+     ]
+    },
+    {
+     "kind": "heading",
+     "text": "기간 안 변경 이력"
+    },
+    {
+     "kind": "table",
+     "headers": [
+      "시각",
+      "정책",
+      "한 일",
+      "결과",
+      "누가"
+     ],
+     "rows": [
+      [
+       "T",
+       "block-x",
+       "apply",
+       "ok",
+       "pjg"
+      ]
+     ]
+    }
+   ],
+   "items": [
+    {
+     "id": 1,
+     "name": "block-x",
+     "state": "Confirmed",
+     "live": true,
+     "version": 1,
+     "summary": null,
+     "expires": null,
+     "origin": "manual",
+     "created_at": "T"
+    }
+   ]
+  }
+ ]
+}

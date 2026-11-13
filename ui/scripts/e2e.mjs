@@ -72,6 +72,7 @@ async function helperEmu(changeId) {
   return 0;
 }
 
+let reportN = 0;
 // --- HTTP: dist 정적 파일 + /bridge
 const server = http.createServer(async (req, res) => {
   if (req.url === "/bridge" && req.method === "POST") {
@@ -88,6 +89,13 @@ const server = http.createServer(async (req, res) => {
     // 안디옥 첫 연동 캡처(shots:netx): NetX 가 등록돼 있고 인계를 받는 것으로 흉내 낸다. 그 밖의 모드에서는 등록 안 됨(단추 없음)
     else if (cmd === "netx_registered") out = mode === "shots:netx";
     else if (cmd === "netx_diagnose") out = { accepted: true, opened: true, name_sent: !!args.name };
+    // 상세 보고서 캡처(shots:report): 코어의 저장을 흉내 낸다 — 받은 모형을 out-dir 에 남긴다(cargo run -p report --example render 로 실제 HTML 을 만든다)
+    else if (cmd === "report_save") {
+      const body = JSON.stringify(args.model);
+      fs.writeFileSync(path.join(outDir, `report-model-${++reportN}.json`), body);
+      out = { saved: true, path: `C:\\Users\\pjg\\Documents\\storyfirewall-report-${args.stamp}.html`, bytes: body.length };
+    }
+    else if (cmd === "report_open") out = null;
     else out = null;
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify(out));
@@ -295,6 +303,28 @@ if (mode.startsWith("shots:")) {
     await page.locator(".new-pill").waitFor({ timeout: 15000 }).catch(() => {});
     console.log(`shots live: pill=${await page.locator(".new-pill").count()}`);
     await page.screenshot({ path: path.join(outDir, `${label}-new-pill.png`) });
+  }
+  if (label === "report") {
+    // 상세 보고서 1판 1장: 보고서 만들기 화면(구역·기간·가리기) → 만들기 → 저장 결과, 가리기 끌 때 확인, 사건 카드의 [이 건 보고서]
+    await page.click("button.nav-btn[data-key=report]");
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(outDir, `${label}-screen.png`), fullPage: true });
+    await page.click(".report-make .actions .btn.primary");
+    await page.locator(".report-out .ok").waitFor({ timeout: 30000 }).catch(() => {});
+    console.log(`shots report: out=${(await page.locator(".report-out").innerText().catch(() => "(없음)")).replace(/\n/g, " | ")}`);
+    await page.screenshot({ path: path.join(outDir, `${label}-saved.png`), fullPage: true });
+    await page.locator(".report-make fieldset >> nth=2").locator("input[type=checkbox]").uncheck();
+    await page.click(".report-make .actions .btn.primary");
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(outDir, `${label}-unmask-confirm.png`) });
+    await page.click("dialog.ack .btn >> text=돌아가기").catch(() => {});
+    await page.click("button.nav-btn[data-key=story]");
+    const card = page.locator(".card.event").first();
+    await card.waitFor({ timeout: 20000 }).catch(() => {});
+    await card.locator("button", { hasText: "이 건 보고서" }).click().catch(() => {});
+    await page.waitForTimeout(1500);
+    console.log(`shots report card: ${(await card.locator(".report-result").innerText().catch(() => "(없음)")).replace(/\n/g, " ")}`);
+    await card.screenshot({ path: path.join(outDir, `${label}-card.png`) });
   }
   if (label === "netx") {
     // 통합 설계 0.15판 8.1 "첫 연동": 사건 카드의 [NetX로 정밀 진단] — 주소인 접속지(바로 인계)와 도메인인 접속지(주소 고르기)

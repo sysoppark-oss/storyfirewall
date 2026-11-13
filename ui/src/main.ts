@@ -9,6 +9,7 @@ import { installs } from "./screens/installs";
 import { agents } from "./screens/agents";
 import { policy } from "./screens/policy";
 import { settings } from "./screens/settings";
+import { reportScreen } from "./screens/report";
 import { engineStuckText, state } from "./state";
 import { applyTheme } from "./theme";
 import { autoCheck, checkUpdate, updateBanner, updaterEnabled, storyToast, setStoryToast } from "./update";
@@ -40,6 +41,7 @@ const SCREENS = {
   installs: { label: SCREEN_LABEL.installs, make: () => installs() },
   agents: { label: SCREEN_LABEL.agents, make: () => agents() },
   policy: { label: "정책", make: (a?: Record<string, unknown>) => policy(a) },
+  report: { label: "보고서", make: () => reportScreen() },
   settings: { label: "설정", make: (a?: Record<string, unknown>) => settings(a) },
 } as const;
 type Key = keyof typeof SCREENS;

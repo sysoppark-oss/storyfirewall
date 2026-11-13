@@ -13,6 +13,8 @@ import { el, ext, button, clear, fmtTs, fmtShort, fmtShortSec, fmtRange, filetim
 import { loadingBox, failBox, isBusy, noDataBox, collectionStalled, type HealthLike } from "../list-state";
 import { state } from "../state";
 import { appendEmptyVerse } from "../word";
+import { singleIncidentReport, saveReport, type REvent } from "../report";
+import { savedLine } from "./report";
 import { netxRegistered, netxDiagnose, targetOf, uniqueEndpoints, endpointText, diagnoseText, type Endpoint } from "../netx";
 
 export interface Sentence {
@@ -752,6 +754,22 @@ export function story(args: Record<string, unknown> = {}): HTMLElement {
       if (st !== "closed") actions.append(closeBtn);
       if (normalBtn) actions.append(normalBtn);
       actions.append(cutBtn);
+      // 상세 보고서 1판 1장 5번: 이 사건 한 건만 담은 보고서(가리기 켬). 저장 위치는 저장 대화상자에서 고른다 — 어디로도 보내지 않는다
+      {
+        const out = el("p", "muted small report-result");
+        out.setAttribute("role", "status");
+        const rep = button("이 건 보고서", () => {
+          rep.disabled = true;
+          const now = Math.floor(Date.now() / 1000);
+          void saveReport(singleIncidentReport(ev as REvent, now, state.serverVersion || "판 모름", true), now).then((r) => {
+            rep.disabled = false;
+            out.textContent = !r.ok ? `보고서를 만들지 못했습니다: ${r.message}` : r.saved ? savedLine(r.path) : "저장을 취소했습니다. 파일은 만들지 않았습니다.";
+            if (!out.isConnected) card.append(out);
+          });
+        }, "btn");
+        rep.title = "이 사건 한 건의 이야기 문장과 근거를 HTML 파일로 저장합니다(내부 주소·PC 이름은 가립니다)";
+        actions.append(rep);
+      }
       // 안디옥 첫 연동(통합 설계 0.15판 8.1): NetX 가 등록돼 있을 때만 [NetX로 정밀 진단]. 접속지 주소·포트만 넘긴다.
       // 이 단추로는 아무것도 실행·차단되지 않는다 — NetX 가 입력칸을 채우고, 실행은 사용자가 NetX 에서 누른다
       if (ev.egress) void netxRegistered().then((on) => {

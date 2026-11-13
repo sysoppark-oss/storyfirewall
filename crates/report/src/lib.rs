@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 mod mask;
+pub mod out;
 pub use mask::{Masker, Who};
 
 /// 구역 하나의 표 행 상한(2.7)
@@ -46,6 +47,9 @@ pub struct Section {
     pub title: String,
     /// 기간 안 전체 건수
     pub count: u64,
+    /// 보고서에 실은 건수. 없으면 가장 큰 표의 행 수로 센다(사건마다 표가 따로인 구역은 부른 쪽이 적는다)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shown: Option<u64>,
     /// 구역 설명 한두 줄(기준 등). 없어도 된다
     #[serde(default)]
     pub notes: Vec<String>,
@@ -146,6 +150,9 @@ pub fn masked_copy(r: &Report, who: &Who) -> Report {
 
 /// 구역에 실은 건수(가장 큰 표의 행 수, 표가 없으면 count)
 fn shown_of(s: &Section) -> u64 {
+    if let Some(n) = s.shown {
+        return n.min(s.count);
+    }
     s.blocks
         .iter()
         .filter_map(|b| match b {
@@ -301,6 +308,7 @@ mod tests {
                 id: "incidents".into(),
                 title: format!("인시던트{evil}"),
                 count: 3,
+                shown: None,
                 notes: vec![evil.into()],
                 blocks: vec![
                     Block::Heading { text: evil.into() },
@@ -412,5 +420,39 @@ mod tests {
             "storyfirewall-report-20261114-051200.html"
         );
         assert_eq!(file_name("a/../b", "2026..\\x"), "ab-report-2026.html");
+    }
+}
+
+#[cfg(test)]
+mod shown_tests {
+    use super::*;
+
+    /// 사건마다 표가 따로인 구역: 부른 쪽이 적은 "실은 건수"가 HTML·JSON 에 그대로 나온다
+    #[test]
+    fn explicit_shown_wins_over_table_rows() {
+        let r = Report {
+            program: "storyfirewall".into(),
+            program_title: "Story Firewall".into(),
+            version: "0.1.6".into(),
+            generated_at: "2026-11-14T08:00:00+09:00".into(),
+            period_from: "a".into(),
+            period_to: "b".into(),
+            masked: false,
+            source_url: String::new(),
+            sections: vec![Section {
+                id: "incidents".into(),
+                title: "인시던트".into(),
+                count: 300,
+                shown: Some(200),
+                notes: vec![],
+                blocks: vec![Block::Table {
+                    headers: vec!["시각".into()],
+                    rows: vec![vec!["x".into()]],
+                }],
+                items: vec![],
+            }],
+        };
+        assert!(render_html(&r).contains("전체 300건 중 상위 200건"));
+        assert_eq!(render_json(&r)["sections"][0]["shown"], 200);
     }
 }
