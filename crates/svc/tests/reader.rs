@@ -468,3 +468,50 @@ fn stale_snapshot_with_unknown_session_never_shows_other_users_story() {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+/// 52차 Q2(Gemini): 사건에 든 선이 스냅숏에도 DB 에도 없으면(보관 정리) 일반 사용자에게 그 사건을 보이지 않는다.
+/// 지워진 선의 끝이 다른 사용자 프로세스였을 수 있다 — 확인할 수 없으면 숨긴다. 관리자는 그대로 본다
+#[test]
+fn story_with_unverifiable_edge_is_hidden_from_users() {
+    let now_ft = svc::runtime::unix_to_filetime(NOW);
+    let (dir, w, _inc, stories) = judged_db(
+        "gone",
+        svc::demo::with_session(svc::demo::demo_events(now_ft), 2),
+    );
+    let gate = reads::Gate::default();
+    let tx = reads::spawn_counted(&w.path(), Arc::new(AtomicU64::new(0)), &gate).expect("작업자");
+    // 판정 그래프 없이 만든 스냅숏: 선의 양 끝은 모두 DB 에서 찾는다
+    gate.publish(Arc::new(svc::events::StorySnap::build(
+        1,
+        NOW,
+        stories.clone(),
+        None,
+        None,
+    )));
+    let p =
+        serde_json::json!({ "level_min": "normal", "triage": "all", "cursor": { "limit": 50 } });
+    let roots = |c: Caller| -> Vec<i64> {
+        events_via_reader(&gate, &tx, c, p.clone())["result"]["items"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|x| x["root"].as_i64()).collect())
+            .unwrap_or_default()
+    };
+    let before = roots(user(2));
+    let victim = stories
+        .iter()
+        .find(|s| before.contains(&s.root) && !s.edges.is_empty())
+        .expect("세션 2 사용자에게 보이는, 선이 있는 사건");
+    w.conn()
+        .execute("DELETE FROM edges WHERE id = ?1", [victim.edges[0]])
+        .unwrap();
+    assert!(
+        !roots(user(2)).contains(&victim.root),
+        "근거 선을 확인할 수 없는 사건이 일반 사용자에게 보였다"
+    );
+    assert!(
+        roots(caller()).contains(&victim.root),
+        "관리자는 그대로 본다"
+    );
+    drop(tx);
+    let _ = std::fs::remove_dir_all(&dir);
+}

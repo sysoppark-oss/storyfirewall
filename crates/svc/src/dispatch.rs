@@ -64,9 +64,10 @@ impl Scope {
         if self == Scope::All {
             return true;
         }
+        // 52차 Q2(Gemini): 선을 못 찾으면(보관 정리로 지워짐) 확인할 수 없으므로 숨긴다 — 지워진 선의 끝이 다른 사용자 프로세스였을 수 있다
         edges.iter().all(|e| match g.edge(*e) {
             Ok(ed) => self.process_visible(g, ed.src) && self.process_visible(g, ed.dst),
-            Err(_) => true,
+            Err(_) => false,
         })
     }
 }
@@ -89,7 +90,7 @@ impl StoryVisibility {
 
     /// `Scope::process_visible`·`edges_visible` 과 같은 결과를 사건 하나씩 DB 를 묻지 않고 낸다.
     /// 선·노드는 판정이 들고 있는 그래프(메모리)에서 먼저 찾고, 없는 것만 묶음으로 읽는다.
-    /// 선을 못 찾으면 보임(edges_visible 과 같음), 노드를 못 찾으면 안 보임(process_visible 과 같음).
+    /// 선을 못 찾으면 안 보임(edges_visible 과 같음, 52차 Q2), 노드를 못 찾으면 안 보임(process_visible 과 같음).
     /// 선 전부를 보는 것은 등급 `min` 이상 사건만(목록에 실릴 수 있는 것) — 낮은 사건은 뿌리만 본다(hidden_low 셈)
     pub(crate) fn compute(world: &World, scope: Scope, stories: &[judge::Story], min: u8) -> Self {
         let view = world.judge_inc.view();
@@ -190,7 +191,8 @@ impl StoryVisibility {
                 && (s.level.rank() < min
                     || s.edges.iter().all(|e| match ends.get(e) {
                         Some((a, b)) => ok(*a) && ok(*b),
-                        None => true,
+                        // 52차 Q2: 메모리에도 DB 에도 없는 선 → 숨김(확인할 수 없으면 보이지 않는다). 다음 판정이 사건을 다시 만든다
+                        None => false,
                     }));
             each.push((r, full));
         }

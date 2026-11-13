@@ -349,7 +349,8 @@ pub fn story_today(
         }
         let edges_ok = st.edge_ids.iter().all(|e| match g.edge(*e) {
             Ok(ed) => node_ok(ed.src) && node_ok(ed.dst),
-            Err(_) => true,
+            // 52차 Q2: 근거 선을 못 찾으면 숨긴다
+            Err(_) => false,
         });
         if node_ok(st.actor_id) && edges_ok {
             sentences.push(st);
