@@ -1,4 +1,4 @@
-"But you will receive power when the Holy Spirit has come upon you. You will be witnesses to me in Jerusalem, in all Judea and Samaria, and to the uttermost parts of the earth.”"
+"But you will receive power when the Holy Spirit has come upon you. You will be witnesses to me in Jerusalem, in all Judea and Samaria, and to the uttermost parts of the earth."
 — Acts 1:8 (World English Bible)
 
 This program was made by Living Waters Church in Pyeongchang, Korea (Korea Baptist Convention), and is given freely to everyone.
