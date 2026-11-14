@@ -1,0 +1,724 @@
+{
+ "lang": "en",
+ "version": "World English Bible",
+ "status": "확정 2026-11-14 (기획자: Yahweh 그대로, 교단 표기 Korea Baptist Convention, 따옴표 그대로)",
+ "license": "Public Domain — eBible.org 저작권 안내: 'The World English Bible is in the Public Domain.' 'World English Bible'은 eBible.org의 상표이며, 본문을 고치면 이 이름을 쓸 수 없다 (2026-11-12 열람).",
+ "source": "github.com/TehShrike/world-english-bible json/ (68669ba, eBible.org HTML에서 만든 자료) 에서 프로그램으로 추출. 다른 자료와의 대조는 하지 않았다.",
+ "notes": [
+  "구약의 하나님 이름은 'Yahweh'로 적는다(기획자 확정 2026-11-14, 100곳 중 21곳). 'LORD' 표기판으로 바꾸지 않는다.",
+  "한 절만 떼어 낸 곳은 따옴표가 한쪽만 남을 수 있다(예: act.1.8 끝의 닫는 따옴표). 본문을 고치지 않으려고 그대로 둔다(기획자 확정).",
+  "long 은 영어 본문 300자 초과로 정한다."
+ ],
+ "groups": {
+  "gospel": "복음의 핵심",
+  "call": "부르심과 초대",
+  "guard": "지키시는 하나님",
+  "comfort": "위로와 평안",
+  "word": "말씀과 진리",
+  "wisdom": "지혜와 일",
+  "nations": "열방과 선교",
+  "hope": "새 생명과 소망"
+ },
+ "verses": [
+  {
+   "id": "jhn.3.16",
+   "ref": "John 3:16",
+   "group": "gospel",
+   "long": false,
+   "text": "For God so loved the world, that he gave his one and only Son, that whoever believes in him should not perish, but have eternal life."
+  },
+  {
+   "id": "rom.3.23-24",
+   "ref": "Romans 3:23-24",
+   "group": "gospel",
+   "long": false,
+   "text": "for all have sinned, and fall short of the glory of God; being justified freely by his grace through the redemption that is in Christ Jesus;"
+  },
+  {
+   "id": "rom.5.8",
+   "ref": "Romans 5:8",
+   "group": "gospel",
+   "long": false,
+   "text": "But God commends his own love toward us, in that while we were yet sinners, Christ died for us."
+  },
+  {
+   "id": "rom.6.23",
+   "ref": "Romans 6:23",
+   "group": "gospel",
+   "long": false,
+   "text": "For the wages of sin is death, but the free gift of God is eternal life in Christ Jesus our Lord."
+  },
+  {
+   "id": "isa.53.5-6",
+   "ref": "Isaiah 53:5-6",
+   "group": "gospel",
+   "long": false,
+   "text": "But he was pierced for our transgressions. He was crushed for our iniquities. The punishment that brought our peace was on him; and by his wounds we are healed. All we like sheep have gone astray. Everyone has turned to his own way; and Yahweh has laid on him the iniquity of us all."
+  },
+  {
+   "id": "jhn.1.12",
+   "ref": "John 1:12",
+   "group": "gospel",
+   "long": false,
+   "text": "But as many as received him, to them he gave the right to become God’s children, to those who believe in his name:"
+  },
+  {
+   "id": "jhn.14.6",
+   "ref": "John 14:6",
+   "group": "gospel",
+   "long": false,
+   "text": "Jesus said to him, “I am the way, the truth, and the life. No one comes to the Father, except through me."
+  },
+  {
+   "id": "act.4.12",
+   "ref": "Acts 4:12",
+   "group": "gospel",
+   "long": false,
+   "text": "There is salvation in no one else, for there is no other name under heaven that is given among men, by which we must be saved!”"
+  },
+  {
+   "id": "eph.2.8-9",
+   "ref": "Ephesians 2:8-9",
+   "group": "gospel",
+   "long": false,
+   "text": "for by grace you have been saved through faith, and that not of yourselves; it is the gift of God, not of works, that no one would boast."
+  },
+  {
+   "id": "rom.10.9-10",
+   "ref": "Romans 10:9-10",
+   "group": "gospel",
+   "long": false,
+   "text": "that if you will confess with your mouth that Jesus is Lord, and believe in your heart that God raised him from the dead, you will be saved. For with the heart, one believes resulting in righteousness; and with the mouth confession is made resulting in salvation."
+  },
+  {
+   "id": "2co.5.21",
+   "ref": "2 Corinthians 5:21",
+   "group": "gospel",
+   "long": false,
+   "text": "For him who knew no sin he made to be sin on our behalf; so that in him we might become the righteousness of God."
+  },
+  {
+   "id": "1pe.2.24",
+   "ref": "1 Peter 2:24",
+   "group": "gospel",
+   "long": false,
+   "text": "He himself bore our sins in his body on the tree, that we, having died to sins, might live to righteousness. You were healed by his wounds."
+  },
+  {
+   "id": "1ti.1.15",
+   "ref": "1 Timothy 1:15",
+   "group": "gospel",
+   "long": false,
+   "text": "The saying is faithful and worthy of all acceptance, that Christ Jesus came into the world to save sinners, of whom I am chief."
+  },
+  {
+   "id": "mrk.10.45",
+   "ref": "Mark 10:45",
+   "group": "gospel",
+   "long": false,
+   "text": "For the Son of Man also came not to be served, but to serve, and to give his life as a ransom for many.”"
+  },
+  {
+   "id": "luk.19.10",
+   "ref": "Luke 19:10",
+   "group": "gospel",
+   "long": false,
+   "text": "For the Son of Man came to seek and to save that which was lost.”"
+  },
+  {
+   "id": "jhn.5.24",
+   "ref": "John 5:24",
+   "group": "gospel",
+   "long": false,
+   "text": "“Most certainly I tell you, he who hears my word and believes him who sent me has eternal life, and doesn’t come into judgment, but has passed out of death into life."
+  },
+  {
+   "id": "jhn.11.25-26",
+   "ref": "John 11:25-26",
+   "group": "gospel",
+   "long": false,
+   "text": "Jesus said to her, “I am the resurrection and the life. He who believes in me will still live, even if he dies. Whoever lives and believes in me will never die. Do you believe this?”"
+  },
+  {
+   "id": "1jn.4.9-10",
+   "ref": "1 John 4:9-10",
+   "group": "gospel",
+   "long": false,
+   "text": "By this God’s love was revealed in us, that God has sent his one and only Son into the world that we might live through him. In this is love, not that we loved God, but that he loved us, and sent his Son as the atoning sacrifice for our sins."
+  },
+  {
+   "id": "tit.3.5",
+   "ref": "Titus 3:5",
+   "group": "gospel",
+   "long": false,
+   "text": "not by works of righteousness which we did ourselves, but according to his mercy, he saved us through the washing of regeneration and renewing by the Holy Spirit,"
+  },
+  {
+   "id": "1jn.1.9",
+   "ref": "1 John 1:9",
+   "group": "gospel",
+   "long": false,
+   "text": "If we confess our sins, he is faithful and righteous to forgive us the sins, and to cleanse us from all unrighteousness."
+  },
+  {
+   "id": "mat.11.28-30",
+   "ref": "Matthew 11:28-30",
+   "group": "call",
+   "long": false,
+   "text": "“Come to me, all you who labor and are heavily burdened, and I will give you rest. Take my yoke upon you, and learn from me, for I am gentle and humble in heart; and you will find rest for your souls. For my yoke is easy, and my burden is light.”"
+  },
+  {
+   "id": "rev.3.20",
+   "ref": "Revelation 3:20",
+   "group": "call",
+   "long": false,
+   "text": "Behold, I stand at the door and knock. If anyone hears my voice and opens the door, then I will come in to him, and will dine with him, and he with me."
+  },
+  {
+   "id": "isa.55.1",
+   "ref": "Isaiah 55:1",
+   "group": "call",
+   "long": false,
+   "text": "“Hey! Come, everyone who thirsts, to the waters! Come, he who has no money, buy, and eat! Yes, come, buy wine and milk without money and without price."
+  },
+  {
+   "id": "isa.55.6-7",
+   "ref": "Isaiah 55:6-7",
+   "group": "call",
+   "long": false,
+   "text": "Seek Yahweh while he may be found. Call on him while he is near. Let the wicked forsake his way, and the unrighteous man his thoughts. Let him return to Yahweh, and he will have mercy on him, to our God, for he will freely pardon."
+  },
+  {
+   "id": "jhn.6.35",
+   "ref": "John 6:35",
+   "group": "call",
+   "long": false,
+   "text": "Jesus said to them, “I am the bread of life. Whoever comes to me will not be hungry, and whoever believes in me will never be thirsty."
+  },
+  {
+   "id": "jhn.7.37-38",
+   "ref": "John 7:37-38",
+   "group": "call",
+   "long": false,
+   "text": "Now on the last and greatest day of the feast, Jesus stood and cried out, “If anyone is thirsty, let him come to me and drink! He who believes in me, as the Scripture has said, from within him will flow rivers of living water.”"
+  },
+  {
+   "id": "jhn.8.12",
+   "ref": "John 8:12",
+   "group": "call",
+   "long": false,
+   "text": "Again, therefore, Jesus spoke to them, saying, “I am the light of the world. He who follows me will not walk in the darkness, but will have the light of life.”"
+  },
+  {
+   "id": "jhn.10.9-11",
+   "ref": "John 10:9-11",
+   "group": "call",
+   "long": false,
+   "text": "I am the door. If anyone enters in by me, he will be saved, and will go in and go out, and will find pasture. The thief only comes to steal, kill, and destroy. I came that they may have life, and may have it abundantly. I am the good shepherd. The good shepherd lays down his life for the sheep."
+  },
+  {
+   "id": "mat.7.7-8",
+   "ref": "Matthew 7:7-8",
+   "group": "call",
+   "long": false,
+   "text": "“Ask, and it will be given you. Seek, and you will find. Knock, and it will be opened for you. For everyone who asks receives. He who seeks finds. To him who knocks it will be opened."
+  },
+  {
+   "id": "jer.29.13",
+   "ref": "Jeremiah 29:13",
+   "group": "call",
+   "long": false,
+   "text": "You shall seek me, and find me, when you search for me with all your heart."
+  },
+  {
+   "id": "psa.127.1",
+   "ref": "Psalm 127:1",
+   "group": "guard",
+   "long": false,
+   "text": "Unless Yahweh builds the house, they who build it labor in vain. Unless Yahweh watches over the city, the watchman guards it in vain."
+  },
+  {
+   "id": "psa.121.7-8",
+   "ref": "Psalm 121:7-8",
+   "group": "guard",
+   "long": false,
+   "text": "Yahweh will keep you from all evil. He will keep your soul. Yahweh will keep your going out and your coming in, from this time forward, and forever more."
+  },
+  {
+   "id": "pro.4.23",
+   "ref": "Proverbs 4:23",
+   "group": "guard",
+   "long": false,
+   "text": "Keep your heart with all diligence, for out of it is the wellspring of life."
+  },
+  {
+   "id": "pro.18.10",
+   "ref": "Proverbs 18:10",
+   "group": "guard",
+   "long": false,
+   "text": "Yahweh’s name is a strong tower: the righteous run to him, and are safe."
+  },
+  {
+   "id": "pro.25.28",
+   "ref": "Proverbs 25:28",
+   "group": "guard",
+   "long": false,
+   "text": "Like a city that is broken down and without walls is a man whose spirit is without restraint."
+  },
+  {
+   "id": "psa.18.2",
+   "ref": "Psalm 18:2",
+   "group": "guard",
+   "long": false,
+   "text": "Yahweh is my rock, my fortress, and my deliverer; my God, my rock, in whom I take refuge; my shield, and the horn of my salvation, my high tower."
+  },
+  {
+   "id": "psa.91.1-2",
+   "ref": "Psalm 91:1-2",
+   "group": "guard",
+   "long": false,
+   "text": "He who dwells in the secret place of the Most High will rest in the shadow of the Almighty. I will say of Yahweh, “He is my refuge and my fortress; my God, in whom I trust.”"
+  },
+  {
+   "id": "psa.141.3",
+   "ref": "Psalm 141:3",
+   "group": "guard",
+   "long": false,
+   "text": "Set a watch, Yahweh, before my mouth. Keep the door of my lips."
+  },
+  {
+   "id": "neh.4.9",
+   "ref": "Nehemiah 4:9",
+   "group": "guard",
+   "long": false,
+   "text": "But we made our prayer to our God, and set a watch against them day and night because of them."
+  },
+  {
+   "id": "isa.26.3",
+   "ref": "Isaiah 26:3",
+   "group": "guard",
+   "long": false,
+   "text": "You will keep whoever’s mind is steadfast in perfect peace, because he trusts in you."
+  },
+  {
+   "id": "2th.3.3",
+   "ref": "2 Thessalonians 3:3",
+   "group": "guard",
+   "long": false,
+   "text": "But the Lord is faithful, who will establish you and guard you from the evil one."
+  },
+  {
+   "id": "jhn.10.28-29",
+   "ref": "John 10:28-29",
+   "group": "guard",
+   "long": false,
+   "text": "I give eternal life to them. They will never perish, and no one will snatch them out of my hand. My Father who has given them to me is greater than all. No one is able to snatch them out of my Father’s hand."
+  },
+  {
+   "id": "1pe.1.5",
+   "ref": "1 Peter 1:5",
+   "group": "guard",
+   "long": false,
+   "text": "who by the power of God are guarded through faith for a salvation ready to be revealed in the last time."
+  },
+  {
+   "id": "jud.1.24-25",
+   "ref": "Jude 1:24-25",
+   "group": "guard",
+   "long": false,
+   "text": "Now to him who is able to keep them from stumbling, and to present you faultless before the presence of his glory in great joy, to God our Savior, who alone is wise, be glory and majesty, dominion and power, both now and forever. Amen."
+  },
+  {
+   "id": "hab.2.1",
+   "ref": "Habakkuk 2:1",
+   "group": "guard",
+   "long": false,
+   "text": "I will stand at my watch, and set myself on the ramparts, and will look out to see what he will say to me, and what I will answer concerning my complaint."
+  },
+  {
+   "id": "psa.23.1-4",
+   "ref": "Psalm 23:1-4",
+   "group": "comfort",
+   "long": true,
+   "text": "Yahweh is my shepherd: I shall lack nothing. He makes me lie down in green pastures. He leads me beside still waters. He restores my soul. He guides me in the paths of righteousness for his name’s sake. Even though I walk through the valley of the shadow of death, I will fear no evil, for you are with me. Your rod and your staff, they comfort me."
+  },
+  {
+   "id": "psa.46.1",
+   "ref": "Psalm 46:1",
+   "group": "comfort",
+   "long": false,
+   "text": "God is our refuge and strength, a very present help in trouble."
+  },
+  {
+   "id": "psa.34.18",
+   "ref": "Psalm 34:18",
+   "group": "comfort",
+   "long": false,
+   "text": "Yahweh is near to those who have a broken heart, and saves those who have a crushed spirit."
+  },
+  {
+   "id": "psa.121.1-2",
+   "ref": "Psalm 121:1-2",
+   "group": "comfort",
+   "long": false,
+   "text": "I will lift up my eyes to the hills. Where does my help come from? My help comes from Yahweh, who made heaven and earth."
+  },
+  {
+   "id": "isa.41.10",
+   "ref": "Isaiah 41:10",
+   "group": "comfort",
+   "long": false,
+   "text": "Don’t you be afraid, for I am with you. Don’t be dismayed, for I am your God. I will strengthen you. Yes, I will help you. Yes, I will uphold you with the right hand of my righteousness."
+  },
+  {
+   "id": "jos.1.9",
+   "ref": "Joshua 1:9",
+   "group": "comfort",
+   "long": false,
+   "text": "Haven’t I commanded you? Be strong and courageous. Don’t be afraid. Don’t be dismayed, for Yahweh your God is with you wherever you go.”"
+  },
+  {
+   "id": "lam.3.22-23",
+   "ref": "Lamentations 3:22-23",
+   "group": "comfort",
+   "long": false,
+   "text": "It is because of Yahweh’s loving kindnesses that we are not consumed, because his compassion doesn’t fail. They are new every morning. Great is your faithfulness."
+  },
+  {
+   "id": "nam.1.7",
+   "ref": "Nahum 1:7",
+   "group": "comfort",
+   "long": false,
+   "text": "Yahweh is good, a stronghold in the day of trouble; and he knows those who take refuge in him."
+  },
+  {
+   "id": "zep.3.17",
+   "ref": "Zephaniah 3:17",
+   "group": "comfort",
+   "long": false,
+   "text": "Yahweh, your God, is among you, a mighty one who will save. He will rejoice over you with joy. He will calm you in his love. He will rejoice over you with singing."
+  },
+  {
+   "id": "jhn.14.27",
+   "ref": "John 14:27",
+   "group": "comfort",
+   "long": false,
+   "text": "Peace I leave with you. My peace I give to you; not as the world gives, I give to you. Don’t let your heart be troubled, neither let it be fearful."
+  },
+  {
+   "id": "php.4.6-7",
+   "ref": "Philippians 4:6-7",
+   "group": "comfort",
+   "long": false,
+   "text": "In nothing be anxious, but in everything, by prayer and petition with thanksgiving, let your requests be made known to God. And the peace of God, which surpasses all understanding, will guard your hearts and your thoughts in Christ Jesus."
+  },
+  {
+   "id": "1pe.5.7",
+   "ref": "1 Peter 5:7",
+   "group": "comfort",
+   "long": false,
+   "text": "casting all your worries on him, because he cares for you."
+  },
+  {
+   "id": "rom.8.28",
+   "ref": "Romans 8:28",
+   "group": "comfort",
+   "long": false,
+   "text": "We know that all things work together for good for those who love God, for those who are called according to his purpose."
+  },
+  {
+   "id": "rom.8.38-39",
+   "ref": "Romans 8:38-39",
+   "group": "comfort",
+   "long": false,
+   "text": "For I am persuaded that neither death, nor life, nor angels, nor principalities, nor things present, nor things to come, nor powers, nor height, nor depth, nor any other created thing will be able to separate us from God’s love which is in Christ Jesus our Lord."
+  },
+  {
+   "id": "psa.119.105",
+   "ref": "Psalm 119:105",
+   "group": "word",
+   "long": false,
+   "text": "Your word is a lamp to my feet, and a light for my path."
+  },
+  {
+   "id": "psa.19.7-8",
+   "ref": "Psalm 19:7-8",
+   "group": "word",
+   "long": false,
+   "text": "Yahweh’s law is perfect, restoring the soul. Yahweh’s covenant is sure, making wise the simple. Yahweh’s precepts are right, rejoicing the heart. Yahweh’s commandment is pure, enlightening the eyes."
+  },
+  {
+   "id": "isa.40.8",
+   "ref": "Isaiah 40:8",
+   "group": "word",
+   "long": false,
+   "text": "The grass withers, the flower fades; but the word of our God stands forever.”"
+  },
+  {
+   "id": "mat.4.4",
+   "ref": "Matthew 4:4",
+   "group": "word",
+   "long": false,
+   "text": "But he answered, “It is written, ‘Man shall not live by bread alone, but by every word that proceeds out of God’s mouth.’ ”"
+  },
+  {
+   "id": "jhn.1.1-5",
+   "ref": "John 1:1-5",
+   "group": "word",
+   "long": true,
+   "text": "In the beginning was the Word, and the Word was with God, and the Word was God. The same was in the beginning with God. All things were made through him. Without him, nothing was made that has been made. In him was life, and the life was the light of men. The light shines in the darkness, and the darkness hasn’t overcome it."
+  },
+  {
+   "id": "jhn.1.14",
+   "ref": "John 1:14",
+   "group": "word",
+   "long": false,
+   "text": "The Word became flesh, and lived among us. We saw his glory, such glory as of the one and only Son of the Father, full of grace and truth."
+  },
+  {
+   "id": "jhn.8.31-32",
+   "ref": "John 8:31-32",
+   "group": "word",
+   "long": false,
+   "text": "Jesus therefore said to those Jews who had believed him, “If you remain in my word, then you are truly my disciples. You will know the truth, and the truth will make you free.”"
+  },
+  {
+   "id": "jhn.17.17",
+   "ref": "John 17:17",
+   "group": "word",
+   "long": false,
+   "text": "Sanctify them in your truth. Your word is truth."
+  },
+  {
+   "id": "heb.4.12",
+   "ref": "Hebrews 4:12",
+   "group": "word",
+   "long": false,
+   "text": "For the word of God is living and active, and sharper than any two-edged sword, piercing even to the dividing of soul and spirit, of both joints and marrow, and is able to discern the thoughts and intentions of the heart."
+  },
+  {
+   "id": "2ti.3.16-17",
+   "ref": "2 Timothy 3:16-17",
+   "group": "word",
+   "long": false,
+   "text": "Every Scripture is God-breathed and profitable for teaching, for reproof, for correction, and for instruction in righteousness, that each person who belongs to God may be complete, thoroughly equipped for every good work."
+  },
+  {
+   "id": "pro.3.5-6",
+   "ref": "Proverbs 3:5-6",
+   "group": "wisdom",
+   "long": false,
+   "text": "Trust in Yahweh with all your heart, and don’t lean on your own understanding. In all your ways acknowledge him, and he will make your paths straight."
+  },
+  {
+   "id": "pro.9.10",
+   "ref": "Proverbs 9:10",
+   "group": "wisdom",
+   "long": false,
+   "text": "The fear of Yahweh is the beginning of wisdom. The knowledge of the Holy One is understanding."
+  },
+  {
+   "id": "pro.16.3",
+   "ref": "Proverbs 16:3",
+   "group": "wisdom",
+   "long": false,
+   "text": "Commit your deeds to Yahweh, and your plans shall succeed."
+  },
+  {
+   "id": "psa.90.12",
+   "ref": "Psalm 90:12",
+   "group": "wisdom",
+   "long": false,
+   "text": "So teach us to count our days, that we may gain a heart of wisdom."
+  },
+  {
+   "id": "ecc.12.13",
+   "ref": "Ecclesiastes 12:13",
+   "group": "wisdom",
+   "long": false,
+   "text": "This is the end of the matter. All has been heard. Fear God and keep his commandments; for this is the whole duty of man."
+  },
+  {
+   "id": "mic.6.8",
+   "ref": "Micah 6:8",
+   "group": "wisdom",
+   "long": false,
+   "text": "He has shown you, O man, what is good. What does Yahweh require of you, but to act justly, to love mercy, and to walk humbly with your God?"
+  },
+  {
+   "id": "mat.6.33",
+   "ref": "Matthew 6:33",
+   "group": "wisdom",
+   "long": false,
+   "text": "But seek first God’s Kingdom, and his righteousness; and all these things will be given to you as well."
+  },
+  {
+   "id": "1co.10.31",
+   "ref": "1 Corinthians 10:31",
+   "group": "wisdom",
+   "long": false,
+   "text": "Whether therefore you eat, or drink, or whatever you do, do all to the glory of God."
+  },
+  {
+   "id": "col.3.23",
+   "ref": "Colossians 3:23",
+   "group": "wisdom",
+   "long": false,
+   "text": "And whatever you do, work heartily, as for the Lord, and not for men,"
+  },
+  {
+   "id": "jas.1.5",
+   "ref": "James 1:5",
+   "group": "wisdom",
+   "long": false,
+   "text": "But if any of you lacks wisdom, let him ask of God, who gives to all liberally and without reproach, and it will be given to him."
+  },
+  {
+   "id": "mat.28.18-20",
+   "ref": "Matthew 28:18-20",
+   "group": "nations",
+   "long": true,
+   "text": "Jesus came to them and spoke to them, saying, “All authority has been given to me in heaven and on earth. Go and make disciples of all nations, baptizing them in the name of the Father and of the Son and of the Holy Spirit, teaching them to observe all things that I commanded you. Behold, I am with you always, even to the end of the age.” Amen."
+  },
+  {
+   "id": "act.1.8",
+   "ref": "Acts 1:8",
+   "group": "nations",
+   "long": false,
+   "text": "But you will receive power when the Holy Spirit has come upon you. You will be witnesses to me in Jerusalem, in all Judea and Samaria, and to the uttermost parts of the earth.”"
+  },
+  {
+   "id": "act.13.47",
+   "ref": "Acts 13:47",
+   "group": "nations",
+   "long": false,
+   "text": "For so has the Lord commanded us, saying, ‘I have set you as a light for the Gentiles, that you should bring salvation to the uttermost parts of the earth.’ ”"
+  },
+  {
+   "id": "psa.67.1-2",
+   "ref": "Psalm 67:1-2",
+   "group": "nations",
+   "long": false,
+   "text": "May God be merciful to us, bless us, and cause his face to shine on us. That your way may be known on earth, and your salvation among all nations,"
+  },
+  {
+   "id": "psa.96.3",
+   "ref": "Psalm 96:3",
+   "group": "nations",
+   "long": false,
+   "text": "Declare his glory among the nations, his marvelous works among all the peoples."
+  },
+  {
+   "id": "isa.49.6",
+   "ref": "Isaiah 49:6",
+   "group": "nations",
+   "long": false,
+   "text": "Indeed, he says, “It is too light a thing that you should be my servant to raise up the tribes of Jacob, and to restore the preserved of Israel. I will also give you as a light to the nations, that you may be my salvation to the end of the earth.”"
+  },
+  {
+   "id": "hab.2.14",
+   "ref": "Habakkuk 2:14",
+   "group": "nations",
+   "long": false,
+   "text": "For the earth will be filled with the knowledge of Yahweh’s glory, as the waters cover the sea."
+  },
+  {
+   "id": "mat.24.14",
+   "ref": "Matthew 24:14",
+   "group": "nations",
+   "long": false,
+   "text": "This Good News of the Kingdom will be preached in the whole world for a testimony to all the nations, and then the end will come."
+  },
+  {
+   "id": "rom.10.14-15",
+   "ref": "Romans 10:14-15",
+   "group": "nations",
+   "long": true,
+   "text": "How then will they call on him in whom they have not believed? How will they believe in him whom they have not heard? How will they hear without a preacher? And how will they preach unless they are sent? As it is written: “How beautiful are the feet of those who preach the Good News of peace, who bring glad tidings of good things!”"
+  },
+  {
+   "id": "rev.7.9-10",
+   "ref": "Revelation 7:9-10",
+   "group": "nations",
+   "long": true,
+   "text": "After these things I looked, and behold, a great multitude, which no man could count, out of every nation and of all tribes, peoples, and languages, standing before the throne and before the Lamb, dressed in white robes, with palm branches in their hands. They cried with a loud voice, saying, “Salvation be to our God, who sits on the throne, and to the Lamb!”"
+  },
+  {
+   "id": "2co.5.17",
+   "ref": "2 Corinthians 5:17",
+   "group": "hope",
+   "long": false,
+   "text": "Therefore if anyone is in Christ, he is a new creation. The old things have passed away. Behold, all things have become new."
+  },
+  {
+   "id": "gal.2.20",
+   "ref": "Galatians 2:20",
+   "group": "hope",
+   "long": false,
+   "text": "I have been crucified with Christ, and it is no longer I who live, but Christ lives in me. That life which I now live in the flesh, I live by faith in the Son of God, who loved me, and gave himself up for me."
+  },
+  {
+   "id": "php.1.6",
+   "ref": "Philippians 1:6",
+   "group": "hope",
+   "long": false,
+   "text": "being confident of this very thing, that he who began a good work in you will complete it until the day of Jesus Christ."
+  },
+  {
+   "id": "rom.12.1-2",
+   "ref": "Romans 12:1-2",
+   "group": "hope",
+   "long": true,
+   "text": "Therefore I urge you, brothers, by the mercies of God, to present your bodies a living sacrifice, holy, acceptable to God, which is your spiritual service. Don’t be conformed to this world, but be transformed by the renewing of your mind, so that you may prove what is the good, well-pleasing, and perfect will of God."
+  },
+  {
+   "id": "jhn.15.5",
+   "ref": "John 15:5",
+   "group": "hope",
+   "long": false,
+   "text": "I am the vine. You are the branches. He who remains in me and I in him bears much fruit, for apart from me you can do nothing."
+  },
+  {
+   "id": "1pe.1.3",
+   "ref": "1 Peter 1:3",
+   "group": "hope",
+   "long": false,
+   "text": "Blessed be the God and Father of our Lord Jesus Christ, who according to his great mercy caused us to be born again to a living hope through the resurrection of Jesus Christ from the dead,"
+  },
+  {
+   "id": "rom.15.13",
+   "ref": "Romans 15:13",
+   "group": "hope",
+   "long": false,
+   "text": "Now may the God of hope fill you with all joy and peace in believing, that you may abound in hope, in the power of the Holy Spirit."
+  },
+  {
+   "id": "heb.13.8",
+   "ref": "Hebrews 13:8",
+   "group": "hope",
+   "long": false,
+   "text": "Jesus Christ is the same yesterday, today, and forever."
+  },
+  {
+   "id": "1jn.5.11-12",
+   "ref": "1 John 5:11-12",
+   "group": "hope",
+   "long": false,
+   "text": "The testimony is this, that God gave to us eternal life, and this life is in his Son. He who has the Son has the life. He who doesn’t have God’s Son doesn’t have the life."
+  },
+  {
+   "id": "rev.21.3-4",
+   "ref": "Revelation 21:3-4",
+   "group": "hope",
+   "long": true,
+   "text": "I heard a loud voice out of heaven saying, “Behold, God’s dwelling is with people, and he will dwell with them, and they will be his people, and God himself will be with them as their God. He will wipe away every tear from their eyes. Death will be no more; neither will there be mourning, nor crying, nor pain, any more. The first things have passed away.”"
+  },
+  {
+   "id": "jhn.20.31",
+   "ref": "John 20:31",
+   "group": "hope",
+   "long": false,
+   "text": "but these are written, that you may believe that Jesus is the Christ, the Son of God, and that believing you may have life in his name."
+  }
+ ]
+}
