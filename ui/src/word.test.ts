@@ -110,6 +110,9 @@ describe("말씀 언어(README 언어 선택)", () => {
     expect(pack().version).toContain("개역한글판");
     expect(dedicationText()).toBe(file("dedication.ko.md").replace(/\s+$/, ""));
   });
+  it("영어 본문에 짝 없는 둥근 따옴표가 없다(절 경계에 걸린 것은 뗐다 — 기획자 확인 2026-11-15)", () => {
+    for (const v of pack("en").verses) expect([v.id, (v.text.match(/“/g) ?? []).length]).toEqual([v.id, (v.text.match(/”/g) ?? []).length]);
+  });
   it("화면의 언어 목록 = 코어의 목록", () => {
     // @ts-ignore — node 내장 모듈
     const rs = readFileSync(new URL("../src-tauri/src/wordlang.rs", import.meta.url), "utf8") as string;
