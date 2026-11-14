@@ -1,5 +1,5 @@
 import { mutation, rpc } from "../rpc";
-import { churchBlock, dedicationBlock } from "../word";
+import { churchBlock, dedicationBlock, WORD_LANGS, wordLang, saveWordLang, type WordLang } from "../word";
 import { el, ext, button, errorBox, clear, term } from "../ui";
 import { state } from "../state";
 import { loadTheme, setTheme, type Theme } from "../theme";
@@ -246,7 +246,37 @@ export function settings(args: Record<string, unknown> = {}): HTMLElement {
   }, "btn small");
   churchBtn.setAttribute("aria-expanded", "false");
   churchBtn.setAttribute("aria-controls", "word-church");
-  const about = el("section", "card word-about", el("h3", undefined, "정보"), dedicationBlock(), el("div", "word-actions", churchBtn), church);
+  // 말씀 언어(README "언어 선택"): 바꾸는 설정이다 — 끄는 항목은 없다. 목록에는 말씀 자료가 내장된 언어만. 고르면 HKCU 에 써서 다른 안디옥 프로그램도 함께 읽는다
+  const langSel = el("select");
+  langSel.id = "word-lang";
+  for (const l of WORD_LANGS) {
+    const o = el("option", undefined, l.name);
+    o.value = l.id;
+    o.selected = l.id === wordLang();
+    langSel.append(o);
+  }
+  const langNote = el("span", "muted small");
+  langNote.setAttribute("role", "status");
+  let dedication = dedicationBlock();
+  langSel.addEventListener("change", () => {
+    const before = wordLang();
+    void saveWordLang(langSel.value as WordLang).then((err) => {
+      if (err) {
+        langSel.value = before;
+        langNote.textContent = ` 바꾸지 못했습니다: ${err}`;
+        return;
+      }
+      langNote.textContent = "";
+      // 헌정 문구와 교회 안내를 고른 언어의 파일로 다시 넣는다(구절은 다음 화면부터 그 언어)
+      const next = dedicationBlock();
+      dedication.replaceWith(next);
+      dedication = next;
+      church.replaceChildren();
+      if (!church.hidden) church.append(churchBlock());
+    });
+  });
+  const langRow = el("label", "word-lang-row", "말씀 언어 · Scripture language ", langSel, langNote);
+  const about = el("section", "card word-about", el("h3", undefined, "정보"), langRow, dedication, el("div", "word-actions", churchBtn), church);
   const updateTab = el("div", "form",
     el("p", undefined, `보호 서비스 ${state.serverVersion || "—"}판`),
     upLine,

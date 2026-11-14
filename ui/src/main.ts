@@ -15,7 +15,7 @@ import { applyTheme } from "./theme";
 import { autoCheck, checkUpdate, updateBanner, updaterEnabled, storyToast, setStoryToast } from "./update";
 applyTheme();
 import { el, button, clear } from "./ui";
-import { emptyVerse } from "./word";
+import { emptyVerse, initWordLang } from "./word";
 import { isElevated, setUnauthorizedHandler } from "./rpc";
 import { listen } from "@tauri-apps/api/event";
 
@@ -126,6 +126,8 @@ function startView(): HTMLElement {
 
 async function boot() {
   clear(main);
+  // 말씀 언어(README "언어 선택")는 첫 구절을 그리기 전에 정한다
+  await initWordLang();
   main.append(startView());
   await state.start();
   const ok = await state.connect();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 // @ts-ignore — node 내장 모듈(@types/node 없이 시험에서만 씀). ?raw 가 빈 문자열이 되는 경우(tokens.test 참고)를 잡으려고 파일을 직접 읽어 비교
 import { readFileSync } from "node:fs";
-import { CHURCH, DEDICATION, VERSES, W, churchText, dedicationText, localDay, splitEmail, todayVerse, waitStep, waitVerse, ROTATE_MS } from "./word";
+import { CHURCH, DEDICATION, VERSES, W, churchText, dedicationText, localDay, splitEmail, todayVerse, waitStep, waitVerse, ROTATE_MS, WORD_LANGS, pack, pickWordLang, setWordLangLocal } from "./word";
 
 const file = (n: string): string => readFileSync(new URL(`../../docs/proposals/word/${n}`, import.meta.url), "utf8");
 
@@ -71,5 +71,49 @@ describe("말씀 표시 — 넣지 않는 자리·바꾸는 간격", () => {
     expect(waitStep(new Date(2026, 10, 11, 0, 0, 14))).toBe(0);
     expect(waitStep(new Date(2026, 10, 11, 0, 0, 15))).toBe(1);
     expect(waitVerse(20768, waitStep(new Date(2026, 10, 11, 0, 0, 1))).id).toBe(W[20768 % W.length]!.id);
+  });
+});
+
+describe("말씀 언어(README 언어 선택)", () => {
+  it("영어 자료는 파일 그대로 — 다시 타이핑하지 않는다", () => {
+    expect(pack("en").dedication).toBe(file("dedication.en.md"));
+    expect(pack("en").church).toBe(file("church.en.md"));
+    const en = JSON.parse(file("en.json")) as { version: string; verses: { id: string; text: string; long: boolean }[] };
+    expect(pack("en").version).toBe(en.version);
+    expect(pack("en").verses.map((v) => v.text)).toEqual(en.verses.map((v) => v.text));
+  });
+  it("언어 파일은 같은 id 100곳을 같은 순서로 — 어느 언어에서나 같은 날 같은 곳", () => {
+    expect(pack("en").verses.map((v) => v.id)).toEqual(VERSES.map((v) => v.id));
+    expect(pack("en").verses.map((v) => v.group)).toEqual(VERSES.map((v) => v.group));
+    for (const day of [20768, 20769, 20770, 20771, 20812, 20819, 21243]) expect(todayVerse(day, "en").id).toBe(todayVerse(day, "ko").id);
+  });
+  it("긴 구절(long=true)은 기다리는·빈·시작 화면에 쓰지 않는다 — long 은 언어마다 다르다", () => {
+    const long = pack("en").verses.filter((v) => v.long).map((v) => v.id);
+    expect(long.length).toBeGreaterThan(0);
+    expect(pack("en").W.length).toBe(100 - long.length);
+    for (let step = 0; step < 300; step++) expect(long).not.toContain(waitVerse(20771, step, "en").id);
+  });
+  it("읽는 순서: HKCU → HKLM → Windows 표시 언어 → en. 목록에 없는 값은 넘어간다", () => {
+    expect(pickWordLang("en", "ko", "ko-KR")).toBe("en");
+    expect(pickWordLang(null, "en", "ko-KR")).toBe("en");
+    expect(pickWordLang("fr", "..\\x", "ko-KR")).toBe("ko");
+    expect(pickWordLang(null, null, "en-US")).toBe("en");
+    expect(pickWordLang(undefined, 7, "ja-JP")).toBe("en");
+    expect(pickWordLang("KO", null, "")).toBe("en");
+  });
+  it("고른 언어의 본문·장절·번역본 이름·문안을 쓴다", () => {
+    setWordLangLocal("en");
+    expect(`${todayVerse(20769).ref} · ${pack().version}`).toBe("Romans 6:23 · World English Bible");
+    expect(dedicationText()).toContain("Living Waters Church");
+    expect(churchText()).toBe(file("church.en.md").replace(/\s+$/, ""));
+    setWordLangLocal("ko");
+    expect(pack().version).toContain("개역한글판");
+    expect(dedicationText()).toBe(file("dedication.ko.md").replace(/\s+$/, ""));
+  });
+  it("화면의 언어 목록 = 코어의 목록", () => {
+    // @ts-ignore — node 내장 모듈
+    const rs = readFileSync(new URL("../src-tauri/src/wordlang.rs", import.meta.url), "utf8") as string;
+    const m = /WORD_LANGS: &\[&str\] = &\[([^\]]*)\]/.exec(rs)!;
+    expect(m[1]!.split(",").map((x) => x.trim().replace(/"/g, ""))).toEqual(WORD_LANGS.map((l) => l.id));
   });
 });

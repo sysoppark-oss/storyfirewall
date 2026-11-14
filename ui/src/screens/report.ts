@@ -147,6 +147,8 @@ export function reportScreen(): HTMLElement {
         el("div", "actions", button("열기", () => open("file"), "btn primary"), button("폴더 열기", () => open("folder"), "btn")),
         note,
       );
+      // 실기 확인(install-218): 결과가 화면 아래에 생겨 스크롤해야 보였다 — 결과 줄로 옮겨 보인다
+      out.scrollIntoView({ block: "nearest" });
     } catch (e) {
       if (e instanceof Cancelled) say("취소했습니다. 파일은 만들지 않았습니다.");
       else say(`보고서를 만들지 못했습니다: ${String(e).slice(0, 200)}`, "error");

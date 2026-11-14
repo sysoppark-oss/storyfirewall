@@ -505,6 +505,8 @@ details.where-panel { border-radius: 16px; }
 /* 말씀 표시(정보 화면): 한국어 단어 중간에서 끊지 않는다 — 글자는 그대로, 표시만(검수 2026-11-11) */
 .word-dedication, .word-church { word-break: keep-all; overflow-wrap: anywhere; line-height: 1.7; }
 .word-actions { margin-top: 12px; }
+.word-lang-row { display: block; margin-bottom: 12px; }
+.word-lang-row select { margin: 0 8px; }
 .word-church-box { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .dash-row2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 @media (max-width: 1100px) { .dash-row2 { grid-template-columns: minmax(0, 1fr); } }

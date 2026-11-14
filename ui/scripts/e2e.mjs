@@ -326,6 +326,25 @@ if (mode.startsWith("shots:")) {
     console.log(`shots report card: ${(await card.locator(".report-result").innerText().catch(() => "(없음)")).replace(/\n/g, " ")}`);
     await card.screenshot({ path: path.join(outDir, `${label}-card.png`) });
   }
+  if (label === "wordlang") {
+    // 말씀 언어(README "언어 선택"): 설정 › 업데이트·정보의 언어 항목 — 한국어 → English 로 바꿨을 때 헌정 문구·교회 안내·빈 화면 구절
+    await page.click("button.nav-btn[data-key=settings]");
+    await page.click("button.u-tab[data-tab=update]");
+    await page.locator("#word-lang").scrollIntoViewIfNeeded();
+    await page.locator(".word-about").screenshot({ path: path.join(outDir, `${label}-ko.png`) });
+    await page.selectOption("#word-lang", "en");
+    await page.waitForTimeout(300);
+    await page.click(".word-actions button");
+    await page.waitForTimeout(200);
+    await page.locator(".word-about").screenshot({ path: path.join(outDir, `${label}-en.png`) });
+    console.log(`shots wordlang: ${(await page.locator(".word-dedication").innerText()).slice(0, 60).replace(/\n/g, " ")}`);
+    for (const key of ["policy", "story", "installs", "connections"]) {
+      await page.click(`button.nav-btn[data-key=${key}]`);
+      await page.waitForTimeout(1200);
+      const v = page.locator(".word-verse").first();
+      if (await v.count()) { console.log(`shots wordlang verse(${key}): ${(await v.innerText()).replace(/\n/g, " | ")}`); await v.screenshot({ path: path.join(outDir, `${label}-verse.png`) }); break; }
+    }
+  }
   if (label === "netx") {
     // 통합 설계 0.15판 8.1 "첫 연동": 사건 카드의 [NetX로 정밀 진단] — 주소인 접속지(바로 인계)와 도메인인 접속지(주소 고르기)
     await page.click("button.nav-btn[data-key=story]");
