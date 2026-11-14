@@ -101,6 +101,15 @@ describe("차단 기록 구역", () => {
     expect(tables[2]!.rows.length).toBe(3);
     expect(s.notes[0]).toContain("지금 1408건");
   });
+  it("서비스가 가진 기록이 기간을 다 덮지 못하면 맨 위에 주의를 적는다", () => {
+    const week = { from: NOW - 7 * 86400, to: NOW };
+    const s = blockedSection([b(NOW - 1, "ours", "p", "203.0.113.1")], week, { matched: 1, ringTotal: 1, oldest: NOW - 3600 });
+    expect(s.notes[0]).toMatch(/^주의: 이 구역은 기간 전체가 아니라 .* 이후의 차단만/);
+    // 기간을 다 덮으면 주의가 없다
+    expect(blockedSection([b(NOW - 1, "ours", "p", "203.0.113.1")], period, { oldest: NOW - 90000 }).notes[0]).toMatch(/^기준:/);
+    // 기록이 하나도 없을 때(서비스 재시작 직후)
+    expect(blockedSection([], week, { matched: 0, ringTotal: 0, oldest: null }).notes[0]).toMatch(/^주의: 서비스가 가진 차단 기록이 없습니다/);
+  });
   it("기간 안 전체보다 적게 받았으면 그렇게 적는다", () => {
     const s = blockedSection([b(NOW - 1, "ours", "p", "203.0.113.1")], period, { matched: 5000 });
     expect(s.count).toBe(5000);

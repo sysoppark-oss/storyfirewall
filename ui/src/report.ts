@@ -240,6 +240,9 @@ export function blockedSection(items: RBlocked[], period: Period, meta: { matche
   const byDest = tally((b) => `${b.dir}\u0000${blockedTarget(b)}\u0000${b.app}`, (b) => ({ target: blockedTarget(b), dir: b.dir, app: b.app }));
   const notes = [`기준: 서비스가 메모리에 둔 최근 차단 기록${meta.ringTotal !== undefined ? `(지금 ${meta.ringTotal}건` : "("}${meta.oldest ? `, 가장 오래된 것 ${when(meta.oldest)}` : ""}) 가운데 기간 안의 것을 셌습니다. 그보다 오래된 차단은 들어 있지 않습니다.`,
     "Windows 방화벽·다른 보안 프로그램이 막은 것도 함께 셉니다(규칙 종류로 구별)."];
+  // 53차 Q5: 서비스가 가진 기록이 기간을 다 덮지 못하면 구역 맨 위에 눈에 띄게 적는다 — "기간 안 전체"로 읽히면 안 된다
+  if (meta.oldest && meta.oldest > period.from) notes.unshift(`주의: 이 구역은 기간 전체가 아니라 ${when(meta.oldest)} 이후의 차단만 담고 있습니다. 서비스가 가진 가장 오래된 차단 기록이 그 시각이며, 그 전은(서비스가 다시 시작됐거나 오래된 기록이 밀려나) 이 보고서에 없습니다 — 차단이 없었다는 뜻이 아닙니다.`);
+  else if (meta.oldest === null && !rows.length) notes.unshift("주의: 서비스가 가진 차단 기록이 없습니다. 서비스를 다시 시작한 뒤라면 그 전의 차단은 이 보고서에 없습니다(없었다는 뜻이 아닙니다).");
   if (rows.length < count) notes.push(`기간 안 ${count}건 가운데 최근 ${rows.length}건만 받아, 아래 표는 그 ${rows.length}건으로 셌습니다.`);
   const blocks: Block[] = rows.length
     ? [

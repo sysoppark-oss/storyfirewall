@@ -6,7 +6,9 @@ fn main() {
         eprintln!("사용: render <모형.json> <나올.html> [PC이름] [사용자이름]");
         std::process::exit(2);
     }
-    let model: report::Report = serde_json::from_str(&std::fs::read_to_string(&a[1]).expect("모형 읽기")).expect("모형 형식");
+    let model: report::Report =
+        serde_json::from_str(&std::fs::read_to_string(&a[1]).expect("모형 읽기"))
+            .expect("모형 형식");
     let who = report::out::who_from(a.get(3).cloned(), a.get(4).cloned(), vec![], vec![]);
     let html = report::render_html(&report::masked_copy(&model, &who));
     let p = report::out::write_whole(std::path::Path::new(&a[2]), html.as_bytes()).expect("쓰기");

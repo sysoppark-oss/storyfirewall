@@ -168,7 +168,7 @@ const CSS: &str = "body{font-family:'Malgun Gothic','Segoe UI',sans-serif;color:
 h1{font-size:22px;margin:0 0 4px}h2{font-size:18px;border-bottom:2px solid #1f6f5c;padding-bottom:4px;margin-top:28px}\
 h3{font-size:15px;margin:16px 0 6px}table{border-collapse:collapse;width:100%;font-size:12px;margin:8px 0}\
 th,td{border:1px solid #bbb;padding:3px 6px;text-align:left;vertical-align:top;word-break:break-all}th{background:#eee}\
-.meta td:first-child,.facts td:first-child{width:11em;background:#f5f5f5}.note{color:#444;font-size:12px}\
+.meta td:first-child,.facts td:first-child{width:11em;background:#f5f5f5}.note{color:#444;font-size:12px}.warn{color:#000;font-weight:700;border:1px solid #000;padding:4px 8px}\
 .headnote{border-left:4px solid #1f6f5c;padding:6px 10px;background:#f5f5f5;margin:10px 0}footer{margin-top:32px;font-size:11px;color:#444;border-top:1px solid #bbb;padding-top:6px}\
 @media print{section{break-before:page}section:first-of-type{break-before:auto}body{margin:0}}";
 
@@ -223,7 +223,13 @@ pub fn render_html(r: &Report) -> String {
             h.push_str(&format!("<p class=\"note\">{}건</p>\n", s.count));
         }
         for n in &s.notes {
-            h.push_str(&format!("<p class=\"note\">{}</p>\n", esc(n)));
+            // "주의:"로 시작하는 설명은 굵게, 테두리로(색에 기대지 않는다 — 흑백 인쇄에서도 보이게)
+            let cls = if n.starts_with("주의:") {
+                "note warn"
+            } else {
+                "note"
+            };
+            h.push_str(&format!("<p class=\"{cls}\">{}</p>\n", esc(n)));
         }
         for b in &s.blocks {
             match b {
@@ -454,5 +460,39 @@ mod shown_tests {
         };
         assert!(render_html(&r).contains("전체 300건 중 상위 200건"));
         assert_eq!(render_json(&r)["sections"][0]["shown"], 200);
+    }
+}
+
+#[cfg(test)]
+mod file_name_tests {
+    /// 53차 Q1: stamp 에 경로 글자를 넣어도 파일 이름에는 숫자와 - 만 남는다
+    #[test]
+    fn hostile_stamp_cannot_carry_a_path() {
+        assert_eq!(
+            super::file_name("storyfirewall", r"..\\..\\Windows\\x.exe 2026/11:14"),
+            "storyfirewall-report-20261114.html"
+        );
+        assert_eq!(
+            super::file_name("../evil", "20261114-051200"),
+            "evil-report-20261114-051200.html"
+        );
+    }
+}
+
+#[cfg(test)]
+mod warn_note_tests {
+    use super::*;
+
+    /// 53차 Q5: "주의:" 설명은 따로 눈에 띄게 그린다
+    #[test]
+    fn warning_notes_get_their_own_style() {
+        let mut r: Report = serde_json::from_str(include_str!("../tests/ui-model.json")).unwrap();
+        r.sections[1]
+            .notes
+            .insert(0, "주의: 이 구역은 기간 전체가 아닙니다 <b>".into());
+        let h = render_html(&r);
+        assert!(
+            h.contains("<p class=\"note warn\">주의: 이 구역은 기간 전체가 아닙니다 &lt;b&gt;</p>")
+        );
     }
 }

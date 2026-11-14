@@ -30,6 +30,49 @@ fn is_inner_v6(a: Ipv6Addr) -> bool {
     (s & 0xFE00) == 0xFC00 || (s & 0xFFC0) == 0xFE80
 }
 
+/// IPv6 안에 든 IPv4: IPv4-mapped(::ffff:0:0/96), NAT64 잘 알려진 앞머리(64:ff9b::/96)
+fn embedded_v4(a: Ipv6Addr) -> Option<Ipv4Addr> {
+    let s = a.segments();
+    let mapped = s[..5] == [0, 0, 0, 0, 0] && s[5] == 0xFFFF;
+    let nat64 = s[0] == 0x64 && s[1] == 0xFF9B && s[2..6] == [0, 0, 0, 0];
+    (mapped || nat64)
+        .then(|| Ipv4Addr::new((s[6] >> 8) as u8, s[6] as u8, (s[7] >> 8) as u8, s[7] as u8))
+}
+
+/// `\Users\<이름>\` · `/Users/<이름>/` 의 이름 자리를 가린다 — 이 PC 사용자 목록에 없는 이름, 8.3 짧은 이름(`LONGUS~1`)도 가려진다(53차 Q2).
+/// 사용자 폴더가 아닌 것(Public·Default 등)은 그대로 둔다
+fn mask_user_dirs(s: &str) -> String {
+    const KEEP: &[&str] = &["public", "default", "default user", "all users", "사용자"];
+    let lower = s.to_lowercase();
+    // 소문자로 바꾸면 길이가 달라지는 글자가 있으면 자리 계산이 어긋난다 — 그때는 건드리지 않는다
+    if lower.len() != s.len() {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut at = 0;
+    while let Some(k) = ["\\users\\", "/users/"]
+        .iter()
+        .filter_map(|p| lower[at..].find(p).map(|i| (at + i, p.len())))
+        .min()
+    {
+        let start = k.0 + k.1;
+        let end = s[start..]
+            .find(['\\', '/', '"', '\'', '<', '>', '|', '\n'])
+            .map(|i| start + i)
+            .unwrap_or(s.len());
+        out.push_str(&s[at..start]);
+        let name = &s[start..end];
+        if name.is_empty() || KEEP.contains(&name.to_lowercase().as_str()) {
+            out.push_str(name);
+        } else {
+            out.push_str("사용자");
+        }
+        at = end;
+    }
+    out.push_str(&s[at..]);
+    out
+}
+
 fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '-'
 }
@@ -73,6 +116,22 @@ impl Masker {
         {
             return Some("내 공인 IP".into());
         }
+        // IPv4 를 품은 IPv6(::ffff:a.b.c.d, NAT64 64:ff9b::/96)는 안의 IPv4 로 본다 — 같은 주소는 표기가 달라도 같은 번호(53차 Q2)
+        let ip = match ip {
+            IpAddr::V6(a) => match embedded_v4(a) {
+                Some(v4) => IpAddr::V4(v4),
+                None => ip,
+            },
+            v4 => v4,
+        };
+        if self
+            .who
+            .public_ips
+            .iter()
+            .any(|p| p.parse::<IpAddr>().ok() == Some(ip))
+        {
+            return Some("내 공인 IP".into());
+        }
         let inner = match ip {
             IpAddr::V4(a) => is_inner_v4(a),
             IpAddr::V6(a) => is_inner_v6(a),
@@ -94,7 +153,12 @@ impl Masker {
                 continue;
             }
             let mut j = i;
-            while j < chars.len() && addr_ch(chars[j]) {
+            let mut zone = false;
+            // 구역 표시(%) 뒤에는 글자도 온다(fe80::1%eth0)
+            while j < chars.len()
+                && (addr_ch(chars[j]) || (zone && chars[j].is_ascii_alphanumeric()))
+            {
+                zone |= chars[j] == '%';
                 j += 1;
             }
             // 뒤에 글자가 바로 이어지면(낱말의 일부) 주소가 아니다
@@ -123,7 +187,9 @@ impl Masker {
             }
             i = j;
         }
-        // 2) 이름: 낱말 경계에서만(대소문자 무시). 긴 이름부터
+        // 2) 사용자 폴더 경로의 이름 자리
+        out = mask_user_dirs(&out);
+        // 3) 이름: 낱말 경계에서만(대소문자 무시). 긴 이름부터
         let mut names: Vec<(String, &str)> = self
             .who
             .users
@@ -247,5 +313,67 @@ mod tests {
             v,
             serde_json::json!({ "ip": "내부-1", "n": 3, "list": ["내부-2", { "p": r"C:\Users\사용자\x" }] })
         );
+    }
+}
+
+#[cfg(test)]
+mod bypass_tests {
+    use super::*;
+
+    fn m(s: &str) -> String {
+        let who = Who {
+            pc_name: "DESKTOP-PJG".into(),
+            users: vec!["pjg".into()],
+            public_ips: vec!["203.0.113.50".into()],
+        };
+        Masker::new(who).text(s)
+    }
+
+    /// 53차 Q2: 표기를 바꿔도 내부 주소는 가려진다
+    #[test]
+    fn odd_address_forms_are_masked() {
+        for s in [
+            "::ffff:192.168.0.7",
+            "[::ffff:192.168.0.7]:443",
+            "::ffff:c0a8:7",
+            "64:ff9b::c0a8:7",
+            "fe80::1%12",
+            "fe80::1%eth0",
+            "[fe80::1%eth0]:80",
+        ] {
+            let o = m(s);
+            assert!(o.contains("내부-1"), "{s} => {o}");
+            assert!(
+                !o.contains("192.168") && !o.contains("c0a8") && !o.contains("fe80"),
+                "{s} => {o}"
+            );
+        }
+        // 같은 주소는 표기가 달라도 같은 번호
+        let who = Who::default();
+        let mut k = Masker::new(who);
+        assert_eq!(
+            k.text("192.168.0.7 ::ffff:192.168.0.7 10.0.0.1"),
+            "내부-1 내부-1 내부-2"
+        );
+        // 공인 주소를 품은 표기는 바깥 목적지라 그대로, 내 공인 주소는 가린다
+        assert_eq!(m("::ffff:8.8.8.8"), "::ffff:8.8.8.8");
+        assert_eq!(m("::ffff:203.0.113.50"), "내 공인 IP");
+    }
+
+    /// 53차 Q2: 사용자 폴더의 이름 자리는 목록에 없는 이름·짧은 이름도 가린다
+    #[test]
+    fn user_dir_segment_is_masked_whatever_the_name() {
+        assert_eq!(
+            m(r"C:\Users\LONGUS~1\AppData\a.exe"),
+            r"C:\Users\사용자\AppData\a.exe"
+        );
+        assert_eq!(m(r"c:\users\Other Person\x"), r"c:\users\사용자\x");
+        assert_eq!(
+            m("C:/Users/kim/x 와 C:/Users/lee"),
+            "C:/Users/사용자/x 와 C:/Users/사용자"
+        );
+        assert_eq!(m(r"C:\Users\Public\Desktop"), r"C:\Users\Public\Desktop");
+        assert_eq!(m(r"C:\Users\"), r"C:\Users\");
+        assert_eq!(m(r"\\DESKTOP-PJG\Users\pjg\a"), r"\\PC-1\Users\사용자\a");
     }
 }
