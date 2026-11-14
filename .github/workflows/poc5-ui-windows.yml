@@ -7,6 +7,7 @@ on:
   push:
     paths:
       - "ui/**"
+      - "docs/proposals/word/**"
       - "crates/svc/**"
       - ".github/workflows/poc5-ui-windows.yml"
   workflow_dispatch:

@@ -12,6 +12,7 @@ on:
       - ".github/workflows/devbuild-windows.yml"
       - "crates/**"
       - "ui/**"
+      - "docs/proposals/word/**"
       - "third_party/**"
       - "Cargo.toml"
       - "Cargo.lock"
