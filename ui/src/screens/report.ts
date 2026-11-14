@@ -117,6 +117,8 @@ export function reportScreen(): HTMLElement {
     const kind = kinds.find(([k]) => radios.get(k)!.checked)![0];
     const period = periodOf(kind, now, from.value, to.value);
     if (!period) return say("시작 날짜와 끝 날짜를 확인해 주세요(시작이 끝보다 뒤일 수 없습니다).", "warn");
+    // 앞서 만든 결과 줄이 확인 창 뒤에 남아 지금 것처럼 보이지 않게 먼저 지운다
+    clear(out);
     if (!mask.checked && !(await confirmUnmasked())) return;
     const run = (running = { cancelled: false });
     const alive = () => !run.cancelled;

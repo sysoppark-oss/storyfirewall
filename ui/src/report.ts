@@ -140,24 +140,28 @@ const LEVEL_RANK: Record<string, number> = { critical: 3, suspicious: 2, watch: 
 /// 한 사건의 문단들: 제목 → 사실 표 → 이야기 문장 표(시각·문장·근거)
 export function incidentBlocks(ev: REvent): Block[] {
   const facts: [string, string][] = [["심각도", levelKo(ev.level)]];
-  if (ev.reached?.length) facts.push(["이어진 장", ev.reached.map((n) => `${n}장 ${STAGE_NAMES_4[n - 1] ?? ""}`.trim()).join(", ")]);
+  if (ev.reached?.length) facts.push(["이어진 장", ev.reached.map((n) => `${n}장 ${STAGE_NAMES_4[n - 1] ?? (n === 5 ? "파괴 징후" : "")}`.trim()).join(", ")]);
   facts.push(["처리 상태", triageKo(ev.triage)]);
   const t = eventTime(ev);
   if (t) facts.push(["마지막 활동", when(t)]);
   if (ev.root_image) facts.push(["시작 프로그램", ev.root_image]);
-  if (ev.root_signature) {
+  // 카드의 사실 줄(items)에 같은 이름이 있으면 그쪽(화면 말)을 쓴다 — 같은 줄이 두 번 나오지 않게
+  const has = (label: string) => (ev.items ?? []).some((it) => it?.label === label);
+  if (ev.root_signature && !has("서명")) {
     const st = ev.root_signature.sig_status ? SIG_KO[ev.root_signature.sig_status.toLowerCase()] ?? ev.root_signature.sig_status : "";
     facts.push(["서명", ev.root_signature.signer ? `${ev.root_signature.signer}${st ? ` (${st})` : ""}` : st || "서명 정보 없음"]);
   }
   if (ev.egress) {
     const w = whereText(ev.egress_where);
-    facts.push(["가장 늦은 외부 접속지", `${ev.egress}${ev.egress_ip ? ` (${ev.egress_ip})` : ""}${w ? ` — ${w}` : ""}`]);
+    // 접속지가 이미 숫자 주소면 같은 주소를 괄호로 되풀이하지 않는다
+    const ip = ev.egress_ip && !ev.egress.includes(ev.egress_ip) ? ` (${ev.egress_ip})` : "";
+    facts.push(["가장 늦은 외부 접속지", `${ev.egress}${ip}${w ? ` — ${w}` : ""}`]);
   }
   for (const it of ev.items ?? []) if (it && typeof it.label === "string" && typeof it.value === "string") facts.push([it.label, it.value]);
   const out: Block[] = [{ kind: "heading", text: bare(ev.title) || `사건 #${ev.root}` }, { kind: "facts", rows: facts }];
   if (ev.destroy?.sentence) out.push({ kind: "para", text: `5장 파괴 징후: ${ev.destroy.sentence} (${when(ftToUnix(ev.destroy.ts))})` });
   const rows = (ev.sentences ?? []).map((s) => [
-    s.ts ? when(ftToUnix(s.ts)) : "-",
+    s.ts ? when(ftToUnix(s.ts)) : "",
     s.text,
     (s.sources ?? []).map(([k, n]) => `${SOURCE_KO[k] ?? k} ${n}`).join(", "),
   ]);
@@ -187,6 +191,7 @@ export function incidentsSection(events: REvent[], period: Period, partial = fal
   const shown = inRange.slice(0, MAX_INCIDENTS);
   const notes = ["기간 안에 마지막 활동이 있는 사건입니다(처리 상태와 관계없이 모두). 심각도 높은 순, 같은 심각도는 최신 순.",
     "문장은 화면에 보이는 문장 그대로이며, 이 PC가 기록한 사실입니다. 접속지의 나라·조직은 PC 안의 오프라인 주소 자료 기준이라 실제 위치와 다를 수 있습니다."];
+  notes.push("시각·근거 칸이 빈 문장은 서비스가 그 문장에 시각과 근거 건수를 따로 붙이지 않은 것입니다.");
   if (unknown) notes.push(`마지막 활동 시각을 받지 못한 사건 ${unknown}건은 기간과 관계없이 실었습니다.`);
   if (partial) notes.push("사건 목록을 끝까지 받지 못했습니다. 받은 사건만 실었습니다.");
   return {
@@ -275,7 +280,7 @@ export function policySection(list: RPolicy[], addr: RAddressBlock[], history: R
   const rest = list.filter((p) => !live.includes(p));
   const row = (p: RPolicy) => [p.state_ko ?? p.state, p.name, p.summary ?? "", p.expires ?? "기한 없음", originKo(p.origin), `판 ${p.version}`, when(p.created_ts)];
   const hist = history.filter((h) => h.ts >= period.from && h.ts <= period.to).sort((a, b) => b.ts - a.ts);
-  const notes = [`지금 적용된 규칙은 보고서를 만든 시각(${when(nowSec)}) 기준입니다. 변경 이력만 기간으로 걸렀습니다.`];
+  const notes = ["건수는 지금 적용된 규칙(정책) 수입니다.", `지금 적용된 규칙은 보고서를 만든 시각(${when(nowSec)}) 기준입니다. 변경 이력만 기간으로 걸렀습니다.`];
   if (historyMissing) notes.push(`정책 ${historyMissing}건의 변경 이력은 받지 못해 싣지 못했습니다.`);
   const blocks: Block[] = [{ kind: "heading", text: `지금 적용된 규칙 ${live.length}건` }];
   const headers = ["상태", "이름", "내용", "만료", "만든 곳", "판", "만든 시각"];

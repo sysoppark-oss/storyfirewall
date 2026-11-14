@@ -49,6 +49,13 @@ describe("인시던트 구역", () => {
     expect(table.rows[0]![1]).toBe("app7.exe 가 203.0.113.7:443 에 접속했습니다");
     expect(table.rows[0]![2]).toBe("실시간 기록 2");
   });
+  it("카드 사실 줄에 서명이 있으면 겹쳐 적지 않고, 숫자 접속지는 주소를 되풀이하지 않는다. 5장에도 이름이 붙는다", () => {
+    const b = incidentBlocks(ev(8, "Critical", NOW - 10, { reached: [2, 5], root_signature: { signer: null, sig_status: "nosignature" }, items: [{ label: "서명", value: "없음" }], egress: "203.0.113.8:443", egress_ip: "203.0.113.8" }));
+    const facts = (b[1] as { rows: [string, string][] }).rows;
+    expect(facts.filter(([k]) => k === "서명")).toEqual([["서명", "없음"]]);
+    expect(facts).toContainEqual(["가장 늦은 외부 접속지", "203.0.113.8:443"]);
+    expect(facts.find(([k]) => k === "이어진 장")![1]).toContain("5장 파괴 징후");
+  });
   it("상한을 넘으면 전체 수와 실은 수가 다르다", () => {
     const many = Array.from({ length: MAX_INCIDENTS + 30 }, (_, i) => ev(i + 1, "Watch", NOW - i));
     const s = incidentsSection(many, period);
