@@ -1,0 +1,11 @@
+﻿b2 run 20261115-231108
+commit=94e1e66
+os=Microsoft Windows Server 2022 Datacenter build=20348
+ram_gb=16 free_gb=13.4
+cpu=AMD EPYC 9V74 80-Core Processor                
+sysmon=15.22
+seconds=90 scenario=True
+window_utc=2026-11-15 23:12:36.698 .. 2026-11-15 23:13:52.478
+sysmon_events_exported=287
+collector_exit=0
+mem_free_mb_start=13702 mem_free_mb_end=13764 collector_ws_max_mb=33 product_svc_ws_mb=-

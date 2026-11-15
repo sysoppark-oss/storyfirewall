@@ -1,6 +1,6 @@
 {
-  "window_from": 134384401486240000,
-  "window_to": 134384402250930000,
+  "window_from": 134392579566980000,
+  "window_to": 134392580324780000,
   "tolerance_ms": 10000,
   "categories": {
     "dns(22)": {
@@ -10,7 +10,7 @@
       "matched_by_offset": 0,
       "boundary_skipped": 0,
       "miss_rate_pct": 0.0,
-      "ours_only": 8,
+      "ours_only": 0,
       "missed_examples": []
     },
     "network_in(3)": {
@@ -24,18 +24,18 @@
       "missed_examples": []
     },
     "network_out(3)": {
-      "sysmon": 81,
-      "matched": 81,
+      "sysmon": 92,
+      "matched": 92,
       "missed": 0,
       "matched_by_offset": 0,
       "boundary_skipped": 0,
       "miss_rate_pct": 0.0,
-      "ours_only": 2,
+      "ours_only": 3,
       "missed_examples": []
     },
     "process_start(1)": {
-      "sysmon": 48,
-      "matched": 48,
+      "sysmon": 46,
+      "matched": 46,
       "missed": 0,
       "matched_by_offset": 0,
       "boundary_skipped": 0,
@@ -44,8 +44,8 @@
       "missed_examples": []
     },
     "process_stop(5)": {
-      "sysmon": 50,
-      "matched": 50,
+      "sysmon": 47,
+      "matched": 47,
       "missed": 0,
       "matched_by_offset": 0,
       "boundary_skipped": 0,
