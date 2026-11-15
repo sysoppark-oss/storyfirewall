@@ -1,0 +1,64 @@
+{
+  "window_from": 134392579678680000,
+  "window_to": 134392580443410000,
+  "tolerance_ms": 2000,
+  "categories": {
+    "dns(22)": {
+      "sysmon": 58,
+      "matched": 58,
+      "missed": 0,
+      "matched_by_offset": 0,
+      "boundary_skipped": 0,
+      "miss_rate_pct": 0.0,
+      "ours_only": 0,
+      "missed_examples": []
+    },
+    "network_in(3)": {
+      "sysmon": 6,
+      "matched": 6,
+      "missed": 0,
+      "matched_by_offset": 0,
+      "boundary_skipped": 0,
+      "miss_rate_pct": 0.0,
+      "ours_only": 0,
+      "missed_examples": []
+    },
+    "network_out(3)": {
+      "sysmon": 108,
+      "matched": 108,
+      "missed": 0,
+      "matched_by_offset": 0,
+      "boundary_skipped": 0,
+      "miss_rate_pct": 0.0,
+      "ours_only": 7,
+      "missed_examples": []
+    },
+    "process_start(1)": {
+      "sysmon": 69,
+      "matched": 69,
+      "missed": 0,
+      "matched_by_offset": 0,
+      "boundary_skipped": 0,
+      "miss_rate_pct": 0.0,
+      "ours_only": 0,
+      "missed_examples": []
+    },
+    "process_stop(5)": {
+      "sysmon": 62,
+      "matched": 62,
+      "missed": 0,
+      "matched_by_offset": 0,
+      "boundary_skipped": 0,
+      "miss_rate_pct": 0.0,
+      "ours_only": 0,
+      "missed_examples": []
+    }
+  },
+  "excluded_images": [
+    "sysmon.exe",
+    "sysmon64.exe",
+    "collector-poc.exe",
+    "b2-compare.exe"
+  ],
+  "sysmon_etw_offset": 0
+}
