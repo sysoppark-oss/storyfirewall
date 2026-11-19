@@ -365,6 +365,9 @@ fn build(store: &Store, from_ts: i64, to_ts: i64) -> Result<State> {
         conn.query_row("SELECT COALESCE(MAX(id), 0) FROM edges", [], |r| r.get(0))?;
     let view = View::load(store, from_ts, to_ts)?;
     tx.commit()?;
+    // 같은 스냅숏에서 읽은 선마다의 지금 장 = DB 에 이미 있는 값. 같은 값은 다시 쓰지 않는다
+    // (diag-237: 전체 다시 뒤 첫 판정이 모든 사건 선의 장을 다시 써 "장 기록"이 6.5초였다). 다른 값만 쓰므로 안전망은 그대로다
+    let written: HashMap<i64, Option<i64>> = view.edges.iter().map(|e| (e.id, e.chapter)).collect();
     Ok(State {
         view,
         from_ts,
@@ -374,7 +377,7 @@ fn build(store: &Store, from_ts: i64, to_ts: i64) -> Result<State> {
         pruned: 0,
         roots: HashMap::new(),
         cache: ChainCache::default(),
-        written: HashMap::new(),
+        written,
         incr_runs: 0,
         config_gen,
         schema_version,
