@@ -198,6 +198,19 @@ try {
                     # service was still re-registered with the NEW build's signer pin, so the old UI could no longer pass the
                     # pipe check. On a failed setup keep the service exactly as it was and only report.
                     if ($p.ExitCode -ne 0) { Log $id ("done exit=1 (setup exit=" + $p.ExitCode + ", old build kept; service pin unchanged - close the UI and retry)"); break }
+                    # install-224/225 (2026-11-19): setup exit=0 but the service exe was NOT replaced (old dev build kept), and the
+                    # job still said "done exit=0". Ask the exe on disk for its own version BEFORE re-registering the new signer pin
+                    # (same reason as L065): if it is not this build, keep the service exactly as it was and report a failure.
+                    if ($built -ne "?") {
+                        $short = $built.Substring(0, 7)
+                        $pre = (& $svcExe status 2>&1 | Out-String).Trim()
+                        $have = if ($pre -match 'exe_version=(\S+)') { $Matches[1] } else { "?" }
+                        if ($have -notmatch ('-dev\.' + $short + '$')) {
+                            Log $id ("done exit=1 (setup exit=0 but the installed service is not this build: want dev." + $short + ", got " + $have + "; old build kept, service pin unchanged - retry)")
+                            break
+                        }
+                        Log $id ("installed exe_version=" + $have)
+                    }
                     foreach ($a in @(@("install", "--test-signer-sha256", $pin), @("stop"), @("start"))) {
                         $o = & $svcExe @a 2>&1 | Out-String
                         Log $id ("svc " + $a[0] + ": " + $o.Trim())
