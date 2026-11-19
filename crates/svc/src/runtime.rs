@@ -235,6 +235,10 @@ pub struct World<'a> {
     pub housekeeping_due: Option<std::time::Instant>,
     /// 직전 주기 판정이 끝난 때와 걸린 시간(판정 간격 늘리기, judge_min_gap)
     pub last_judge: Option<(std::time::Instant, Duration)>,
+    /// 엔진 밖에서 만드는 중인 정기 전체 다시(prebuild_step)
+    pub prebuild: Option<PrebuildJob>,
+    /// 미리 만들기가 한 번 실패·시간 초과했으면 이 서비스가 도는 동안은 엔진이 직접 전체를 읽는다
+    pub prebuild_off: bool,
     /// 판정 결과가 바뀌어 문장을 미리 만들어야 함
     pub warm_due: bool,
     /// 37차 Q2: 지난번 본 (별칭, LUID) 짝. 바뀌면 인터페이스 조건 규칙을 지금 LUID 로 다시 건다. None = 아직 못 봄
@@ -397,6 +401,8 @@ impl Runtime {
                     agent_job: None,
                     housekeeping_due: None,
                     last_judge: None,
+                    prebuild: None,
+                    prebuild_off: false,
                     warm_due: false,
                     if_seen: None,
                     our_filters: our_filters_thread.clone(),
@@ -621,6 +627,10 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                             .record("엔진: 주기 판정 건너뜀(쉬는 중)", Duration::ZERO);
                         continue;
                     }
+                }
+                // diag-234: 정기 전체 다시는 엔진 밖에서 미리 만든다(만드는 동안 판정을 쉰다)
+                if prebuild_step(world) {
+                    continue;
                 }
                 // 새로 쌓인 기록이 다음 조회에 보이게(캐시는 그 사이 30초만 산다)
                 world.judge_cache = None;
@@ -1124,6 +1134,93 @@ pub fn publish_snapshot(world: &mut World) {
     );
     world.read_gate.publish(std::sync::Arc::new(snap));
     world.timings.record("엔진: 조회용 스냅숏", t.elapsed());
+}
+
+/// 엔진 밖에서 만드는 정기 전체 다시(diag-234: 30분마다 전체 판정 8~12초 — 그동안 엔진 대기열의 화면 조회가 5초를 넘겼다)
+pub struct PrebuildJob {
+    rx: std::sync::mpsc::Receiver<judge::Result<judge::incremental::Prebuilt>>,
+    started: std::time::Instant,
+}
+
+/// 미리 만들기를 이만큼 기다려도 안 끝나면 버리고 엔진이 직접 전체를 읽는다
+const PREBUILD_GIVE_UP: Duration = Duration::from_secs(180);
+
+/// 주기 판정 앞에서: 정기 전체 다시 차례면 다른 스레드(읽기 전용 연결)에서 만들게 하고 이번 판정은 쉰다(true).
+/// 다 만들어졌으면 받아 끼운다 — 이어지는 판정은 그 뒤 변경만 증분으로 따라잡는다(false = 판정한다).
+/// 미리 만드는 동안 판정을 쉬는 까닭: 판정이 변경 기록을 지우면 미리 만든 스냅숏 뒤의 변경을 따라잡을 수 없다
+pub fn prebuild_step(world: &mut World) -> bool {
+    let from = world.last_judge_ts;
+    if let Some(job) = world.prebuild.take() {
+        match job.rx.try_recv() {
+            Ok(Ok(pb)) => {
+                let took = world.judge_inc.adopt(pb, from, i64::MAX);
+                world.timings.record(
+                    if took {
+                        "엔진: 전체 다시 미리 만들기(받음)"
+                    } else {
+                        "엔진: 전체 다시 미리 만들기(버림 — 그 사이 무효)"
+                    },
+                    job.started.elapsed(),
+                );
+                false
+            }
+            Ok(Err(_)) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                world.prebuild_off = true;
+                world.timings.record(
+                    "엔진: 전체 다시 미리 만들기(실패 — 엔진이 직접)",
+                    job.started.elapsed(),
+                );
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                if job.started.elapsed() > PREBUILD_GIVE_UP {
+                    world.prebuild_off = true;
+                    world.timings.record(
+                        "엔진: 전체 다시 미리 만들기(시간 초과 — 엔진이 직접)",
+                        job.started.elapsed(),
+                    );
+                    return false;
+                }
+                world.prebuild = Some(job);
+                world.timings.record(
+                    "엔진: 주기 판정 건너뜀(전체 다시 만드는 중)",
+                    Duration::ZERO,
+                );
+                true
+            }
+        }
+    } else {
+        let path = world.graph.path();
+        if world.prebuild_off || path.is_empty() || !world.judge_inc.full_due(from, i64::MAX) {
+            return false;
+        }
+        let epoch = world.judge_inc.epoch();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new()
+            .name("judge-prebuild".into())
+            .spawn(move || {
+                let r = judge::incremental::prebuild(
+                    std::path::Path::new(&path),
+                    from,
+                    i64::MAX,
+                    epoch,
+                );
+                let _ = tx.send(r);
+            });
+        if spawned.is_err() {
+            world.prebuild_off = true;
+            return false;
+        }
+        world.prebuild = Some(PrebuildJob {
+            rx,
+            started: std::time::Instant::now(),
+        });
+        world.timings.record(
+            "엔진: 주기 판정 건너뜀(전체 다시 만드는 중)",
+            Duration::ZERO,
+        );
+        true
+    }
 }
 
 pub fn judge_and_notify(world: &mut World) {

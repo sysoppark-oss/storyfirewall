@@ -874,3 +874,88 @@ fn slow_chain_over_tens_of_minutes_matches_full() {
         "30분 뒤 접속까지 한 사건으로 이어진다"
     );
 }
+
+/// diag-234: 정기 전체 다시를 엔진 밖에서 미리 만들고(읽기 전용 연결, 한 스냅숏) 그 뒤 변경을 증분으로 따라잡아도
+/// 결과·뷰·쓴 장이 처음부터 전체 판정한 것과 같다. 미리 만든 뒤·받기 전에 변경이 더 쌓이고, 가끔 그 사이 invalidate 된다
+#[test]
+fn prebuilt_full_rebuild_matches_full() {
+    init();
+    let dir = std::env::temp_dir().join(format!("sf-prebuild-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("graph.db");
+    let _ = std::fs::remove_file(&path);
+    let (mut adopted, mut refused, mut caught_up) = (0, 0, 0);
+    for seed in 1..=6u64 {
+        let _ = std::fs::remove_file(&path);
+        let s = Store::open(&path).unwrap();
+        let bl = Baseline::open(&s, T0 + 30 * 24 * 3600 * SEC).unwrap();
+        let mut r = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+        let mut w = setup(&s, &mut r);
+        let mut inc = Incremental::new();
+        inc.full_every = 3;
+        for step in 1..=60i64 {
+            for _ in 0..=r.below(4) {
+                if r.chance(70) {
+                    add_random_edge(&s, &mut w, &mut r, step);
+                } else {
+                    mutate(&s, &mut w, &mut r, step, &bl);
+                }
+            }
+            if inc.full_due(0, i64::MAX) {
+                // 엔진처럼: 미리 만들기 시작 → 그 사이 수집은 계속(판정은 쉰다) → 받아서 판정
+                let pb = judge::incremental::prebuild(&path, 0, i64::MAX, inc.epoch()).unwrap();
+                // 미리 만든 뒤의 변경: 새 선(선 id 로 찾는다)과 옛 선·노드 바꾸기(변경 기록으로만 찾는다)
+                for _ in 0..=r.below(6) {
+                    if r.chance(50) {
+                        add_random_edge(&s, &mut w, &mut r, step);
+                    } else {
+                        mutate(&s, &mut w, &mut r, step, &bl);
+                    }
+                }
+                if r.chance(15) {
+                    inc.invalidate();
+                } else if r.chance(20) {
+                    // 미리 만드는 사이 엔진이 판정을 해 버린 경우(판정 뒤 정리의 "버린 뒤 다시") — 변경 기록이 지워졌으면 받으면 안 된다
+                    check(
+                        &s,
+                        &mut inc,
+                        &bl,
+                        &format!("prebuilt-gap seed {seed} step {step}"),
+                    );
+                    for _ in 0..=r.below(3) {
+                        add_random_edge(&s, &mut w, &mut r, step);
+                    }
+                }
+                let took = inc.adopt(pb, 0, i64::MAX);
+                if took {
+                    adopted += 1;
+                } else {
+                    refused += 1;
+                }
+                let p = check(
+                    &s,
+                    &mut inc,
+                    &bl,
+                    &format!("prebuilt seed {seed} step {step}"),
+                );
+                // 받았으면 엔진은 보통 전체를 다시 읽지 않고 증분으로 따라잡는다(그래서 빠르다).
+                // 그 사이 대량 변경 표시('*')가 생기면 증분이 전체 다시로 넘어가는 것은 정상
+                if took && p.mode == "incremental" {
+                    caught_up += 1;
+                }
+                continue;
+            }
+            if r.chance(60) {
+                check(&s, &mut inc, &bl, &format!("seed {seed} step {step}"));
+            }
+        }
+        drop(s);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(adopted > 5, "미리 만든 상태를 받은 횟수 {adopted}");
+    assert!(refused > 0, "invalidate 뒤 거절이 한 번도 없음");
+    assert!(
+        caught_up * 2 > adopted,
+        "받은 {adopted}번 중 증분으로 따라잡은 것 {caught_up}번"
+    );
+}

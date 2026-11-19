@@ -115,6 +115,29 @@ pub struct Incremental {
     pub max_delta: usize,
     /// false 면 매번 전체 판정(증분을 끄는 스위치 — 결과는 같고 느리다)
     pub enabled: bool,
+    /// invalidate 마다 1씩 — 그 전에 시작한 미리 만들기(Prebuilt)는 받지 않는다
+    epoch: u64,
+}
+
+/// 엔진 밖(다른 스레드·읽기 전용 연결)에서 미리 만든 "전체 다시" 상태(diag-234: 30분마다 전체 판정 8~12초 동안 화면 조회가 밀렸다).
+/// 엔진은 이것을 받아(`adopt`) 그 뒤로 쌓인 변경만 증분으로 반영한다 — 엔진이 직접 전체를 다시 읽은 것과 결과가 같다
+pub struct Prebuilt {
+    state: State,
+    epoch: u64,
+}
+
+/// 읽기 전용으로 따로 열어 전체 상태를 만든다(뷰 + 뿌리). 한 읽기 트랜잭션 안의 스냅숏이라 그 뒤 변경은 변경 기록으로 따라잡는다.
+/// `epoch` = 시작할 때의 `Incremental::epoch()`
+pub fn prebuild(db: &std::path::Path, from_ts: i64, to_ts: i64, epoch: u64) -> Result<Prebuilt> {
+    let store = Store::open_read_only(db)?;
+    let mut st = build(&store, from_ts, to_ts)?;
+    st.roots = st
+        .view
+        .nodes
+        .values()
+        .filter_map(|n| rules::root_kind_of(&st.view, n).map(|k| (n.id, k)))
+        .collect();
+    Ok(Prebuilt { state: st, epoch })
 }
 
 impl Default for Incremental {
@@ -130,12 +153,51 @@ impl Incremental {
             full_every: 30,
             max_delta: 200_000,
             enabled: true,
+            epoch: 0,
         }
     }
 
     /// 다음 판정이 전체를 다시 읽게 한다
     pub fn invalidate(&mut self) {
         self.state = None;
+        self.epoch += 1;
+    }
+
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    /// 다음 run 이 "정기 전체 다시"(증분 full_every 번 뒤·범위 바뀜) 차례인가 — 미리 만들어 둘 때.
+    /// 상태가 없을 때(처음·invalidate 뒤)는 false: 그때는 엔진이 바로 전체를 읽는다(기다릴 이전 결과가 없다)
+    pub fn full_due(&self, from_ts: i64, to_ts: i64) -> bool {
+        match &self.state {
+            Some(s) if self.enabled => {
+                s.incr_runs >= self.full_every || s.from_ts != from_ts || s.to_ts != to_ts
+            }
+            _ => false,
+        }
+    }
+
+    /// 미리 만든 상태로 갈아 끼운다. 그 사이 invalidate 됐거나 범위가 다르면 받지 않는다(false — 엔진이 직접 전체를 읽는다).
+    /// 받은 뒤 run 은 미리 만든 때 이후의 변경만 증분으로 반영한다. 미리 만드는 동안 엔진이 판정(변경 기록 지우기)을 하지 않아야 한다
+    pub fn adopt(&mut self, p: Prebuilt, from_ts: i64, to_ts: i64) -> bool {
+        if p.epoch != self.epoch
+            || p.state.from_ts != from_ts
+            || p.state.to_ts != to_ts
+            || !self.enabled
+        {
+            return false;
+        }
+        // 미리 만든 뒤에 엔진이 판정을 해서 변경 기록을 그 스냅숏보다 뒤까지 지웠으면 따라잡을 수 없다(빠진 변경이 생긴다) → 버린다
+        if self
+            .state
+            .as_ref()
+            .is_some_and(|old| old.pruned > p.state.seq)
+        {
+            return false;
+        }
+        self.state = Some(p.state);
+        true
     }
 
     /// 들고 있는 뷰가 있는가(시험·진단용)
