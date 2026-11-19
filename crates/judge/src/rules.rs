@@ -512,6 +512,13 @@ pub const ELEVATION_AFTER_BROWSER_END: i64 = 10 * 10_000_000;
 /// 보조 근거: 같은 계열 브라우저 프로세스가 끝난 뒤 10초 안에 권한 상승 서비스가 시작됐고, 그때 `actors` 중 하나가 살아 있었다.
 /// 돌려주는 값 = 권한 상승 서비스 프로세스로 들어오는 선 id(spawned, 없으면 executed_as). 판정은 이것만으로 사건을 만들지 않는다
 pub fn elevation_after_browser_end(v: &View, actors: &[i64]) -> Option<i64> {
+    elevation_after_browser_end_in(v, &elevation_candidates(v), actors)
+}
+
+/// 권한 상승 서비스 검사 중 사건(`actors`)과 상관없는 앞부분: 같은 계열 브라우저가 끝난 뒤 10초 안에 시작한 권한 상승 서비스.
+/// (노드 id, 시작 시각, 근거 선) — 노드 id 순. diag-229: 이 부분이 모든 노드를 두 겹으로 훑는데 사건마다(228번) 다시 돌아
+/// 점수 단계 14.5초 중 14초였다. 판정 한 번에 한 번만 구한다(score::BlMemo)
+pub fn elevation_candidates(v: &View) -> Vec<(i64, i64, Option<i64>)> {
     // 노드 id 순으로(갈래 C: HashMap 순서면 근거 선이 실행마다·뷰마다 달랐다 — 증분 뷰와 전체 뷰의 결과가 같아야 한다)
     let mut elev: Vec<&Node> = v
         .nodes
@@ -524,6 +531,7 @@ pub fn elevation_after_browser_end(v: &View, actors: &[i64]) -> Option<i64> {
         })
         .collect();
     elev.sort_unstable_by_key(|n| n.id);
+    let mut out = Vec::new();
     for n in elev {
         let Some(b) = browser_of_proc(v, n.id).filter(|b| b.chromium()) else {
             continue;
@@ -544,6 +552,23 @@ pub fn elevation_after_browser_end(v: &View, actors: &[i64]) -> Option<i64> {
         if !ended_before {
             continue;
         }
+        let edge = v
+            .ins(n.id)
+            .find(|e| e.rel == "spawned")
+            .or_else(|| v.ins(n.id).find(|e| e.rel == "executed_as"))
+            .map(|e| e.id);
+        out.push((n.id, t, edge));
+    }
+    out
+}
+
+/// 뒷부분: 후보 가운데 그때 `actors` 중 하나가 살아 있던 첫 것의 근거 선(근거 선이 없으면 다음 후보 — 전과 같은 순서·결과)
+pub fn elevation_after_browser_end_in(
+    v: &View,
+    candidates: &[(i64, i64, Option<i64>)],
+    actors: &[i64],
+) -> Option<i64> {
+    for &(_, t, edge) in candidates {
         let alive = actors.iter().any(|a| {
             let p = v.node(*a);
             let ended = p.attr("ended").and_then(|x| x.as_bool()).unwrap_or(false);
@@ -552,12 +577,8 @@ pub fn elevation_after_browser_end(v: &View, actors: &[i64]) -> Option<i64> {
         if !alive {
             continue;
         }
-        if let Some(e) = v
-            .ins(n.id)
-            .find(|e| e.rel == "spawned")
-            .or_else(|| v.ins(n.id).find(|e| e.rel == "executed_as"))
-        {
-            return Some(e.id);
+        if let Some(e) = edge {
+            return Some(e);
         }
     }
     None

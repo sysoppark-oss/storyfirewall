@@ -248,6 +248,8 @@ pub struct BlMemo {
     pub t_edges: std::time::Duration,
     pub t_vault: std::time::Duration,
     pub n_edges: usize,
+    /// 권한 상승 서비스 후보(rules::elevation_candidates) — 사건과 상관없어 판정 한 번에 한 번만 구한다(diag-229)
+    elevation: Option<Vec<(i64, i64, Option<i64>)>>,
 }
 
 impl BlMemo {
@@ -618,7 +620,10 @@ pub fn score(
     // 보조 근거: 금고 신호가 있는 사건에서만(이것만으로는 사건이 되지 않는다)
     if !vault_actors.is_empty() && !vault_seen.contains(&rules::VaultSignal::ElevationByNonBrowser)
     {
-        if let Some(eid) = rules::elevation_after_browser_end(v, &vault_actors) {
+        let cands = memo
+            .elevation
+            .get_or_insert_with(|| rules::elevation_candidates(v));
+        if let Some(eid) = rules::elevation_after_browser_end_in(v, cands, &vault_actors) {
             let what = "브라우저 종료 직후 권한 상승 서비스 시작";
             add(w(what), what, Some(eid), None);
         }
