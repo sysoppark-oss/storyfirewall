@@ -1231,9 +1231,48 @@ pub fn prebuild_step(world: &mut World) -> bool {
     }
 }
 
+/// 지금 스레드가 CPU 를 실제로 쓴 시간(커널 + 사용자). 벽시계 시간과 견줘 "우리 계산이 느린가, 밀려서 기다렸나"를 가른다.
+/// 읽지 못하면 None — 진단용이라 실패해도 판정에는 영향이 없다.
+#[cfg(windows)]
+pub fn thread_cpu_time() -> Option<Duration> {
+    use windows_sys::Win32::Foundation::FILETIME;
+    use windows_sys::Win32::System::Threading::{GetCurrentThread, GetThreadTimes};
+    let zero = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+    // SAFETY: GetCurrentThread 는 닫을 필요 없는 가짜 핸들이고, 네 포인터는 모두 이 함수의 지역 변수를 가리킨다.
+    let ok = unsafe {
+        GetThreadTimes(
+            GetCurrentThread(),
+            &mut created,
+            &mut exited,
+            &mut kernel,
+            &mut user,
+        )
+    };
+    if ok == 0 {
+        return None;
+    }
+    // FILETIME 은 100ns 단위
+    let ticks = |f: &FILETIME| ((f.dwHighDateTime as u64) << 32) | f.dwLowDateTime as u64;
+    let total = ticks(&kernel).saturating_add(ticks(&user));
+    Some(Duration::from_nanos(total.saturating_mul(100)))
+}
+
+/// Linux(작업 환경·시험): /proc/thread-self/schedstat 의 첫 칸이 이 스레드가 CPU 에 올라 있던 ns.
+#[cfg(not(windows))]
+pub fn thread_cpu_time() -> Option<Duration> {
+    let s = std::fs::read_to_string("/proc/thread-self/schedstat").ok()?;
+    let ns: u64 = s.split_whitespace().next()?.parse().ok()?;
+    Some(Duration::from_nanos(ns))
+}
+
 pub fn judge_and_notify(world: &mut World) {
     let from = world.last_judge_ts;
     let t0 = std::time::Instant::now();
+    let cpu0 = thread_cpu_time();
     let stories = match world
         .judge_inc
         .run(&world.graph, from, i64::MAX, &world.baseline)
@@ -1246,6 +1285,16 @@ pub fn judge_and_notify(world: &mut World) {
                 "엔진: 주기 판정(전체)"
             };
             world.timings.record(label, t0.elapsed());
+            // 벽시계 시간만으로는 "노트북이 바빠서 밀렸다"와 "우리 계산이 늘었다"를 가를 수 없다(diag-251).
+            // 같은 구간의 스레드 CPU 시간을 나란히 남긴다: CPU 는 그대로인데 벽시계만 늘면 부하·디스크 대기다.
+            if let (Some(a), Some(b)) = (cpu0, thread_cpu_time()) {
+                let cpu_label = if p.mode == "incremental" {
+                    "엔진: 주기 판정(증분) CPU 시간"
+                } else {
+                    "엔진: 주기 판정(전체) CPU 시간"
+                };
+                world.timings.record(cpu_label, b.saturating_sub(a));
+            }
             // L055: 주기 판정이 노트북에서 5초대 — 어느 구간인지 진단 화면에서 보이게
             world.timings.record("엔진: 주기 판정: 불러오기", p.load);
             world.timings.record("엔진: 주기 판정: 후보 찾기", p.roots);
@@ -1340,6 +1389,33 @@ pub fn judge_and_notify(world: &mut World) {
 #[cfg(test)]
 mod tests {
     use super::should_notify;
+
+    /// 스레드 CPU 시간: 일을 하면 늘고, 잠자는 동안에는 벽시계만큼 늘지 않는다(부하와 계산을 가르는 근거).
+    #[test]
+    fn thread_cpu_time_counts_work_not_sleep() {
+        use super::thread_cpu_time;
+        use std::time::Duration;
+        let Some(a) = thread_cpu_time() else { return };
+        let mut x = 0u64;
+        let t = std::time::Instant::now();
+        while t.elapsed() < Duration::from_millis(60) {
+            x = std::hint::black_box(x.wrapping_mul(31).wrapping_add(7));
+        }
+        let b = thread_cpu_time().unwrap();
+        assert!(
+            b >= a + Duration::from_millis(20),
+            "일한 시간이 잡혀야 한다: {:?}",
+            b - a
+        );
+        std::thread::sleep(Duration::from_millis(200));
+        let c = thread_cpu_time().unwrap();
+        assert!(
+            c - b < Duration::from_millis(100),
+            "잠잔 시간은 세지 않는다: {:?}",
+            c - b
+        );
+    }
+
     use judge::Level;
     #[test]
     fn engine_busy_ms_counts_while_guarded() {
