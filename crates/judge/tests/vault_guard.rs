@@ -641,3 +641,44 @@ fn signed_program_opening_only_local_state_is_not_critical() {
         .expect("로그인 정보 열기는 근거여야 함");
     assert_eq!(s.level, Level::Critical, "{:?}", s.reasons);
 }
+
+/// 54차 Q4(Gemini): 권한 상승 서비스를 수천 번 띄워도 판정이 노드 수 × 후보 수로 늘지 않고, 신호는 전과 같이 걸린다
+#[test]
+fn many_elevation_service_launches_stay_cheap_and_correct() {
+    let store = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&store);
+    let stealer = r"C:\Users\pjg\AppData\Local\Temp\x.exe";
+    let mut evs = base();
+    evs.extend([
+        start(T0 + SEC, 3000, 1000, CHROME),
+        start(T0 + 2 * SEC, 8000, 1000, stealer),
+        sig(T0 + 2 * SEC, stealer, None, "nosignature", false),
+        open(T0 + 3 * SEC, 8000, LOCAL_STATE),
+    ]);
+    // 브라우저가 끝나기 전에 띄운 권한 상승 서비스 3,000개(근거가 아니다) — 끝난 브라우저도 없다
+    for i in 0..3000u32 {
+        evs.push(start(
+            T0 + 3 * SEC + i as i64 * 1000,
+            20_000 + i,
+            600,
+            CHROME_ELEV,
+        ));
+        evs.push(stop(T0 + 3 * SEC + i as i64 * 1000 + 500, 20_000 + i));
+    }
+    // 그 뒤 브라우저가 끝나고 3초 뒤 띄운 것 하나가 근거
+    evs.extend([
+        stop(T0 + 10 * SEC, 3000),
+        start(T0 + 13 * SEC, 8100, 600, CHROME_ELEV),
+    ]);
+    ing.ingest_all(&evs).unwrap();
+    let t = std::time::Instant::now();
+    let stories = judge_all(&store);
+    let took = t.elapsed();
+    let s = stories
+        .iter()
+        .find(|s| whats(s).contains(&"브라우저 종료 직후 권한 상승 서비스 시작"))
+        .unwrap_or_else(|| panic!("권한 상승 신호 이야기가 없음: {stories:#?}"));
+    assert!(whats(s).contains(&"브라우저가 아닌 프로그램이 브라우저 설정(Local State)을 엶"));
+    // 넉넉한 상한(느린 러너): 고치기 전에는 후보 3,000 × 노드 수를 사건마다 훑었다
+    assert!(took < std::time::Duration::from_secs(20), "{took:?}");
+}

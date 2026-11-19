@@ -532,23 +532,37 @@ pub fn elevation_candidates(v: &View) -> Vec<(i64, i64, Option<i64>)> {
         .collect();
     elev.sort_unstable_by_key(|n| n.id);
     let mut out = Vec::new();
+    // 54차 Q4(Gemini): 사용자 폴더(AppData\Local\…\Chrome\Application)에 서명된 권한 상승 서비스 사본을 두고 수천 번 띄우면
+    // 후보마다 모든 노드를 다시 훑어 판정이 다시 수십 초가 됐다. 끝난 프로세스를 마지막 시각 순으로 한 번만 추려 두고,
+    // 후보마다는 [t-10초, t] 구간만 이진 탐색으로 본다. 조건(같은 계열 브라우저·끝남·권한 상승 서비스가 아님·자신이 아님)은 전과 같다.
+    // 후보가 하나도 없으면 추리지 않는다(평소)
+    let mut ended: Option<Vec<(i64, i64)>> = None;
     for n in elev {
         let Some(b) = browser_of_proc(v, n.id).filter(|b| b.chromium()) else {
             continue;
         };
         let t = n.first_ts;
-        // 시각 조건을 먼저(값싼 것), 그다음 속성 JSON
-        let ended_before = v.nodes.values().any(|m| {
-            m.kind == "process"
-                && m.id != n.id
-                && m.last_ts <= t
-                && t - m.last_ts <= ELEVATION_AFTER_BROWSER_END
-                && !m
-                    .label
-                    .eq_ignore_ascii_case(graph::vault::ELEVATION_SERVICE)
-                && m.attr("ended").and_then(|x| x.as_bool()).unwrap_or(false)
-                && browser_of_proc(v, m.id) == Some(b)
+        let ended = ended.get_or_insert_with(|| {
+            let mut e: Vec<(i64, i64)> = v
+                .nodes
+                .values()
+                .filter(|m| {
+                    m.kind == "process"
+                        && !m
+                            .label
+                            .eq_ignore_ascii_case(graph::vault::ELEVATION_SERVICE)
+                        && m.attr("ended").and_then(|x| x.as_bool()).unwrap_or(false)
+                })
+                .map(|m| (m.last_ts, m.id))
+                .collect();
+            e.sort_unstable();
+            e
         });
+        let lo = ended.partition_point(|&(ts, _)| ts < t - ELEVATION_AFTER_BROWSER_END);
+        let hi = ended.partition_point(|&(ts, _)| ts <= t);
+        let ended_before = ended[lo..hi]
+            .iter()
+            .any(|&(_, id)| id != n.id && browser_of_proc(v, id) == Some(b));
         if !ended_before {
             continue;
         }
