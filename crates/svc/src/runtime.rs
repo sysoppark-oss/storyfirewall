@@ -63,6 +63,24 @@ pub static SERVER_VERSION: std::sync::RwLock<String> = std::sync::RwLock::new(St
 /// 실시간 3(사용자 "실시간으로 문제를 찾아야 바로 해결가능함" 2026-11-07): 주기 판정 간격(초). 노트북 실측 증분 판정 평균 360ms·최대 471ms(diag-25)
 pub const JUDGE_EVERY_SECS: u64 = 15;
 
+/// diag-222(2026-11-19): 그래프가 1 GB 를 넘자 주기 판정이 평균 14초 걸려 15초 간격과 거의 같아졌다 — 엔진이 쉬지 못해
+/// 화면 조회(정책·수집 상태·이야기 목록)가 5초 대기 끝에 계속 포기됐다(16분에 221건). 그래서 판정 사이에 판정 시간의
+/// JUDGE_IDLE_FACTOR 배만큼은 쉬게 한다: 판정이 빠르면 15초 그대로, 느리면 간격이 늘어난다(엔진이 판정에 쓰는 몫 ≤ 1/(1+배수)).
+pub const JUDGE_IDLE_FACTOR: u32 = 2;
+/// 판정 간격의 상한(아무리 느려도 이만큼마다는 판정한다)
+pub const JUDGE_MAX_GAP_SECS: u64 = 180;
+
+/// 직전 판정이 `last` 걸렸을 때, 그 판정이 끝난 뒤 다음 판정까지 둘 최소 간격
+pub fn judge_min_gap(last: Duration) -> Duration {
+    let every = Duration::from_secs(JUDGE_EVERY_SECS);
+    let idle = last.saturating_mul(JUDGE_IDLE_FACTOR);
+    // 타이머가 JUDGE_EVERY 마다 보내므로 "끝난 뒤"로 재는 간격은 그보다 조금 짧아도 된다 — 빠른 판정은 막지 않는다
+    if idle < every.saturating_sub(last) {
+        return Duration::ZERO;
+    }
+    idle.min(Duration::from_secs(JUDGE_MAX_GAP_SECS))
+}
+
 /// 엔진 스레드에 보내는 명령
 pub enum Command {
     /// 개발 서버(svc-dev) 전용: 수집 상태 한 줄(C1)을 시연값으로 — 실제 서비스는 보내지 않는다(수집기 없음)
@@ -215,6 +233,8 @@ pub struct World<'a> {
     /// diag-164·화면 검수(2026-11-11): 판정 명령 하나 안에서 모두 하느라 화면 요청이 대기열에서 최대 17초 기다렸다 →
     /// 대기 중인 명령(화면 요청 포함)을 먼저 처리하고 비었을 때 한다(최대 HK_MAX_DEFER 까지만 미룸)
     pub housekeeping_due: Option<std::time::Instant>,
+    /// 직전 주기 판정이 끝난 때와 걸린 시간(판정 간격 늘리기, judge_min_gap)
+    pub last_judge: Option<(std::time::Instant, Duration)>,
     /// 판정 결과가 바뀌어 문장을 미리 만들어야 함
     pub warm_due: bool,
     /// 37차 Q2: 지난번 본 (별칭, LUID) 짝. 바뀌면 인터페이스 조건 규칙을 지금 LUID 로 다시 건다. None = 아직 못 봄
@@ -376,6 +396,7 @@ impl Runtime {
                     agent_cache: None,
                     agent_job: None,
                     housekeeping_due: None,
+                    last_judge: None,
                     warm_due: false,
                     if_seen: None,
                     our_filters: our_filters_thread.clone(),
@@ -592,13 +613,23 @@ fn run_loop(world: &mut World, rx: Receiver<Command>, clock: &dyn Clock) {
                 world.invalidate_reads();
             }
             Command::Judge => {
-                // 1분마다: 새로 쌓인 기록이 다음 조회에 보이게(캐시는 그 사이 30초만 산다)
+                // diag-222: 직전 판정이 느렸으면 그 두 배만큼 쉰 뒤에 — 그 사이 온 판정 신호는 건너뛴다(쌓이지 않게)
+                if let Some((end, took)) = world.last_judge {
+                    if end.elapsed() < judge_min_gap(took) {
+                        world
+                            .timings
+                            .record("엔진: 주기 판정 건너뜀(쉬는 중)", Duration::ZERO);
+                        continue;
+                    }
+                }
+                // 새로 쌓인 기록이 다음 조회에 보이게(캐시는 그 사이 30초만 산다)
                 world.judge_cache = None;
                 world.invalidate_reads();
                 // L050: 판정과 보관 정리를 처리 시간 표에 따로 남긴다(87초가 어느 쪽인지 가르게)
                 let tj = std::time::Instant::now();
                 judge_and_notify(world);
                 world.timings.record("엔진: 주기 판정", tj.elapsed());
+                world.last_judge = Some((std::time::Instant::now(), tj.elapsed()));
                 refresh_our_filters(world);
                 // 나머지 정리는 미뤄 두고 대기 중인 명령(화면 요청)을 먼저 — 루프 머리의 run_housekeeping
                 world
@@ -1265,4 +1296,25 @@ fn ran_images_like(g: &graph::Store, kw: &str, since: i64) -> Vec<(String, Vec<S
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod judge_gap_tests {
+    use super::*;
+
+    /// diag-222: 판정이 빠르면 15초 간격 그대로, 느리면 판정 시간의 두 배를 쉰다(상한 180초)
+    #[test]
+    fn slow_judgment_gets_idle_time() {
+        let s = Duration::from_secs;
+        let ms = Duration::from_millis;
+        assert_eq!(judge_min_gap(ms(400)), Duration::ZERO);
+        assert_eq!(judge_min_gap(s(4)), Duration::ZERO);
+        assert_eq!(judge_min_gap(s(14)), s(28));
+        assert_eq!(judge_min_gap(s(62)), s(124));
+        assert_eq!(judge_min_gap(s(200)), s(JUDGE_MAX_GAP_SECS));
+        // 엔진이 판정에 쓰는 몫: 14초 판정 → 다음 신호는 끝난 뒤 28초 이후 → 많아야 1/3
+        let took = s(14);
+        let cycle = took + judge_min_gap(took);
+        assert!(took.as_secs_f64() / cycle.as_secs_f64() <= 1.0 / 3.0 + 1e-9);
+    }
 }
