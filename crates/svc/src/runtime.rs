@@ -1003,7 +1003,8 @@ pub fn run_retention(world: &mut World) {
             "provenance_deleted": rep.provenance_deleted, "suspicious_deleted": rep.suspicious_deleted,
             "summaries_deleted": rep.summaries_deleted, "nodes_deleted": rep.nodes_deleted, "raw_bytes_after": rep.raw_bytes_after,
             // L050: 단계별(ms) — 접기·출신·의심 / 원시 / 용량 / 고아 노드 / 파일 회수·통계
-            "phases": { "fold": rep.ms_fold, "raw": rep.ms_raw, "size": rep.ms_size, "nodes": rep.ms_nodes },
+            "phases": { "fold": rep.ms_fold, "raw": rep.ms_raw, "size": rep.ms_size, "nodes": rep.ms_nodes,
+                        "raw_susp": rep.ms_raw_susp, "raw_pick": rep.ms_raw_pick, "raw_delete": rep.ms_raw_delete },
         }),
         Err(e) => serde_json::json!({ "at": now, "ms": ms, "ok": false, "error": e.to_string() }),
     };

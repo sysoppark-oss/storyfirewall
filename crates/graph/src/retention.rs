@@ -92,6 +92,10 @@ pub struct RetentionReport {
     pub ms_raw: u64,
     pub ms_size: u64,
     pub ms_nodes: u64,
+    /// 원시 단계 안(diag-239: 원시 7.6초 가르기): 의심 사건 근거 모으기 / 지울 것 고르기 / 지우기(참조 끊기 포함)
+    pub ms_raw_susp: u64,
+    pub ms_raw_pick: u64,
+    pub ms_raw_delete: u64,
 }
 
 pub const SUMMARY_DDL: &str = r#"
@@ -151,6 +155,9 @@ fn add_report(a: &mut RetentionReport, b: RetentionReport) {
     a.ms_raw += b.ms_raw;
     a.ms_size += b.ms_size;
     a.ms_nodes += b.ms_nodes;
+    a.ms_raw_susp += b.ms_raw_susp;
+    a.ms_raw_pick += b.ms_raw_pick;
+    a.ms_raw_delete += b.ms_raw_delete;
 }
 
 /// `now` 기준으로 보관 정책을 적용한다. 멱등: 두 번 돌려도 결과는 같다.
@@ -179,7 +186,7 @@ fn apply_inner(
     {
         let mut st = tx.prepare(
             "SELECT (ts / ?1) * ?1 AS day, src, dst, rel, COUNT(*), MIN(ts), MAX(ts)
-             FROM edges WHERE chapter IS NULL AND ts < ?2 AND rel IN ('connected', 'resolved')
+             FROM edges INDEXED BY ix_edges_fold WHERE chapter IS NULL AND ts < ?2 AND rel IN ('connected', 'resolved')
              GROUP BY day, src, dst, rel",
         )?;
         let rows: Vec<(i64, i64, i64, String, i64, i64, i64)> = st
@@ -209,7 +216,7 @@ fn apply_inner(
         }
         // 접힌 선 삭제(접속·주소 조회만)
         rep.edges_compacted = tx.execute(
-            "DELETE FROM edges WHERE chapter IS NULL AND ts < ?1 AND rel IN ('connected', 'resolved')",
+            "DELETE FROM edges INDEXED BY ix_edges_fold WHERE chapter IS NULL AND ts < ?1 AND rel IN ('connected', 'resolved')",
             params![ordinary_before],
         )?;
     }
@@ -253,6 +260,7 @@ fn apply_inner(
         "CREATE TEMP TABLE IF NOT EXISTS susp_raw(id INTEGER PRIMARY KEY);
          DELETE FROM susp_raw;",
     )?;
+    let ts_susp = std::time::Instant::now();
     if need_susp {
         tx.execute(
             "INSERT OR IGNORE INTO susp_raw(id)
@@ -261,11 +269,13 @@ fn apply_inner(
             [],
         )?;
     }
+    rep.ms_raw_susp = ms(ts_susp);
     tx.execute_batch(
         "CREATE TEMP TABLE IF NOT EXISTS raw_del(id INTEGER PRIMARY KEY);
          DELETE FROM raw_del;",
     )?;
     if any_old {
+        let tp = std::time::Instant::now();
         tx.execute(
             "INSERT INTO raw_del(id)
              SELECT id FROM raw_events
@@ -274,8 +284,11 @@ fn apply_inner(
             params![raw_before, susp_raw_before],
         )?;
         rep.raw_deleted = count_raw_del(&tx)?;
+        rep.ms_raw_pick = ms(tp);
         if rep.raw_deleted > 0 {
+            let td = std::time::Instant::now();
             delete_raw_del(&tx)?;
+            rep.ms_raw_delete = ms(td);
         }
     }
     rep.ms_raw = ms(t1);
