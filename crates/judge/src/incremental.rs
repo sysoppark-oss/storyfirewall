@@ -178,6 +178,19 @@ impl Incremental {
         }
     }
 
+    /// 다음 판정을 "정기 전체 다시" 차례로 만든다(보관 정리가 선을 지운 뒤 — 엔진이 직접 읽지 않고 미리 만들게).
+    /// 지금 상태는 그대로 둔다(새것을 받을 때까지 직전 결과를 쓴다). 상태가 없으면 false — 그때는 엔진이 직접 읽는다
+    pub fn request_full(&mut self) -> bool {
+        let every = self.full_every;
+        match &mut self.state {
+            Some(s) if self.enabled => {
+                s.incr_runs = s.incr_runs.max(every);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// 미리 만든 상태로 갈아 끼운다. 그 사이 invalidate 됐거나 범위가 다르면 받지 않는다(false — 엔진이 직접 전체를 읽는다).
     /// 받은 뒤 run 은 미리 만든 때 이후의 변경만 증분으로 반영한다. 미리 만드는 동안 엔진이 판정(변경 기록 지우기)을 하지 않아야 한다
     pub fn adopt(&mut self, p: Prebuilt, from_ts: i64, to_ts: i64) -> bool {

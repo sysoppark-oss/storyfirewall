@@ -1027,8 +1027,15 @@ pub fn run_retention(world: &mut World) {
         {
             // 지운 선을 가리키는 판정 결과·캐시는 버린다(다음 조회가 쓰지 않는 판정으로 다시 채운다)
             // 증분 판정기도 다음 번에 전체를 다시 읽는다(보관 정리가 남긴 "전체 다시" 표시와 같은 뜻 — 이중 안전)
-            world.judge_inc.invalidate();
-            world.drop_judged();
+            // diag-243: 여기서 버리면 엔진이 그 자리에서 전체 판정을 다시 했다(12~15초, 그동안 화면 조회가 밀림).
+            // 파일 DB 면 직전 결과를 그대로 두고(작업자·화면은 새 판정까지 직전 것을 쓴다 — judged_prev 와 같은 뜻) 다음 판정 차례에
+            // 엔진 밖에서 미리 만들어 받는다(prebuild_step). 미리 만들 수 없으면(메모리 DB·실패한 적 있음·만드는 중) 전처럼 버린다
+            let can_prebuild =
+                !world.prebuild_off && world.prebuild.is_none() && !world.graph.path().is_empty();
+            if !(can_prebuild && world.judge_inc.request_full()) {
+                world.judge_inc.invalidate();
+                world.drop_judged();
+            }
             world.judge_cache = None;
             world.invalidate_reads();
         }

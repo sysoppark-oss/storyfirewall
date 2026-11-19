@@ -884,7 +884,7 @@ fn prebuilt_full_rebuild_matches_full() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("graph.db");
     let _ = std::fs::remove_file(&path);
-    let (mut adopted, mut refused, mut caught_up) = (0, 0, 0);
+    let (mut adopted, mut refused, mut caught_up, mut after_retention) = (0, 0, 0, 0);
     for seed in 1..=6u64 {
         let _ = std::fs::remove_file(&path);
         let s = Store::open(&path).unwrap();
@@ -899,6 +899,18 @@ fn prebuilt_full_rebuild_matches_full() {
                     add_random_edge(&s, &mut w, &mut r, step);
                 } else {
                     mutate(&s, &mut w, &mut r, step, &bl);
+                }
+            }
+            // 가끔 보관 정리(대량 삭제 → "전체 다시" 표시) 뒤 엔진처럼 "미리 만들어 받기"를 청한다
+            if r.chance(8) {
+                let now = T0 + (step + 4 * 24 * 3600) * SEC;
+                graph::retention::apply(&s, now, graph::retention::RetentionPolicy::default())
+                    .unwrap();
+                let n = w.n;
+                w = setup(&s, &mut r);
+                w.n += n;
+                if inc.request_full() {
+                    after_retention += 1;
                 }
             }
             if inc.full_due(0, i64::MAX) {
@@ -954,6 +966,10 @@ fn prebuilt_full_rebuild_matches_full() {
     let _ = std::fs::remove_dir_all(&dir);
     assert!(adopted > 5, "미리 만든 상태를 받은 횟수 {adopted}");
     assert!(refused > 0, "invalidate 뒤 거절이 한 번도 없음");
+    assert!(
+        after_retention > 3,
+        "보관 정리 뒤 미리 만들기 청한 횟수 {after_retention}"
+    );
     assert!(
         caught_up * 2 > adopted,
         "받은 {adopted}번 중 증분으로 따라잡은 것 {caught_up}번"
