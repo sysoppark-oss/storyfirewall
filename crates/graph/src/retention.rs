@@ -262,10 +262,17 @@ fn apply_inner(
     )?;
     let ts_susp = std::time::Instant::now();
     if need_susp {
+        // diag-241: 장이 있는 선에서 출발한다(부분 색인 ix_edges_susp — 장 있는 선만, 근거 번호 포함).
+        // 전에는 근거가 있는 선 전부 + edge_evidence 전부를 훑었다. 모이는 집합은 같다
         tx.execute(
             "INSERT OR IGNORE INTO susp_raw(id)
-             SELECT evidence_id FROM edges WHERE chapter IS NOT NULL AND evidence_id IS NOT NULL
-             UNION SELECT ee.raw_id FROM edge_evidence ee JOIN edges e ON e.id = ee.edge_id WHERE e.chapter IS NOT NULL",
+             SELECT evidence_id FROM edges INDEXED BY ix_edges_susp WHERE chapter IS NOT NULL AND evidence_id IS NOT NULL",
+            [],
+        )?;
+        tx.execute(
+            "INSERT OR IGNORE INTO susp_raw(id)
+             SELECT ee.raw_id FROM edges e INDEXED BY ix_edges_susp CROSS JOIN edge_evidence ee ON ee.edge_id = e.id
+             WHERE e.chapter IS NOT NULL",
             [],
         )?;
     }

@@ -95,6 +95,9 @@ CREATE INDEX IF NOT EXISTS ix_edges_conn ON edges(ts, src, dst) WHERE rel = 'con
 -- 기준 시각보다 오래된 선 전부(30일치 출신 사슬·의심 사건 선, 접을 것이 아닌 것)를 시간마다 두 번(고르기·지우기) 훑었다.
 -- 조건식은 retention.rs 의 접기 질의와 글자까지 같아야 SQLite 가 이 색인을 쓴다(그쪽은 INDEXED BY 로 못 박아 어긋나면 시험이 실패한다)
 CREATE INDEX IF NOT EXISTS ix_edges_fold ON edges(ts) WHERE chapter IS NULL AND rel IN ('connected', 'resolved');
+-- 보관 정리 "의심 사건 근거 모으기" 전용 부분 색인(diag-241: 이 단계 11.9초). 장이 있는 선만 담고 근거 번호를 함께 실어(덮는 색인)
+-- 표를 읽지 않는다. 색인이 없을 때는 근거가 있는 선 전부와 edge_evidence 전부를 훑으며 선마다 표에서 장을 읽었다
+CREATE INDEX IF NOT EXISTS ix_edges_susp ON edges(evidence_id) WHERE chapter IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_nodes_kind_ts ON nodes(kind, last_ts);
 CREATE INDEX IF NOT EXISTS ix_raw_ts ON raw_events(ts);
 -- install-132 실측(보관 정리 용량 단계 수 분): foreign_keys=ON 이라 raw_events 한 줄을 지울 때마다 SQLite 가 자식 표
