@@ -242,6 +242,12 @@ pub struct BlMemo {
     learned: std::collections::HashMap<String, bool>,
     has: std::collections::HashMap<(String, &'static str, String), bool>,
     pc_learned: Option<bool>,
+    /// diag-227(점수 13초) 가르기: 기준선 DB 를 실제로 물은 시간·횟수, 선 반복(접속 등)·금고 신호 시간, 다룬 선 수
+    pub t_db: std::time::Duration,
+    pub n_db: usize,
+    pub t_edges: std::time::Duration,
+    pub t_vault: std::time::Duration,
+    pub n_edges: usize,
 }
 
 impl BlMemo {
@@ -249,7 +255,10 @@ impl BlMemo {
         if let Some(v) = self.learned.get(k) {
             return *v;
         }
+        let t = std::time::Instant::now();
         let v = bl.learned(store, k).unwrap_or(false);
+        self.t_db += t.elapsed();
+        self.n_db += 1;
         self.learned.insert(k.to_string(), v);
         v
     }
@@ -265,7 +274,10 @@ impl BlMemo {
         if let Some(v) = self.has.get(&key) {
             return Ok(*v);
         }
+        let t = std::time::Instant::now();
         let v = bl.has(store, k, kind, value)?;
+        self.t_db += t.elapsed();
+        self.n_db += 1;
         self.has.insert(key, v);
         Ok(v)
     }
@@ -273,7 +285,10 @@ impl BlMemo {
         if let Some(v) = self.pc_learned {
             return Ok(v);
         }
+        let t = std::time::Instant::now();
         let v = bl.pc_learned(store)?;
+        self.t_db += t.elapsed();
+        self.n_db += 1;
         self.pc_learned = Some(v);
         Ok(v)
     }
@@ -457,6 +472,8 @@ pub fn score(
     let mut known_added = false;
     let mut new_port_added = false;
     let mut t1490_added = false;
+    let t_edges = std::time::Instant::now();
+    memo.n_edges += chain.edges.len();
     for (eid, ch) in &chain.edges {
         let e = v.edge(*eid).expect("edge in view");
         let dst = v.node(e.dst);
@@ -570,7 +587,9 @@ pub fn score(
             _ => {}
         }
     }
+    memo.t_edges += t_edges.elapsed();
     // ---- (사) 브라우저 금고 경비 (17판 23-2 ②): 신호 종류마다 한 번, 근거 = 첫 신호 선 ----
+    let t_vault = std::time::Instant::now();
     let mut vault_seen: HashSet<rules::VaultSignal> = HashSet::new();
     let mut vault_actors: Vec<i64> = Vec::new();
     for (eid, _) in &chain.edges {
@@ -604,6 +623,7 @@ pub fn score(
             add(w(what), what, Some(eid), None);
         }
     }
+    memo.t_vault += t_vault.elapsed();
     if kind == RootKind::LolbinFromDocApp {
         let root_proc = chain.procs.first().copied();
         let spawn_edge =

@@ -1148,6 +1148,24 @@ pub fn judge_and_notify(world: &mut World) {
                 .timings
                 .record("엔진: 주기 판정: 사슬 모으기", p.chain);
             world.timings.record("엔진: 주기 판정: 점수", p.score);
+            // diag-227: 점수 13초 가르기. 개수는 시간 칸에 숫자로 싣는다(이름에 "개수" — ms 가 아니다)
+            world.timings.record("엔진: 점수: 기준선 DB", p.score_db);
+            world
+                .timings
+                .record("엔진: 점수: 선 반복(DB 포함)", p.score_edges);
+            world.timings.record("엔진: 점수: 금고 신호", p.score_vault);
+            world.timings.record(
+                "엔진: 점수: 개수 — 기준선 DB 조회",
+                std::time::Duration::from_millis(p.score_db_calls as u64),
+            );
+            world.timings.record(
+                "엔진: 점수: 개수 — 다룬 선",
+                std::time::Duration::from_millis(p.score_edge_count as u64),
+            );
+            world.timings.record(
+                "엔진: 점수: 개수 — 점수 매긴 사건",
+                std::time::Duration::from_millis(p.stories as u64),
+            );
             world.timings.record("엔진: 주기 판정: 장 기록", p.write);
             std::sync::Arc::new(s)
         }

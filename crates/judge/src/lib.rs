@@ -334,6 +334,12 @@ pub struct Profile {
     pub stories: usize,
     /// 실제로 보낸 장 기록 수
     pub updates: usize,
+    /// 점수 단계 안: 기준선 DB 조회(기억 못 한 것만) 시간·횟수, 선 반복 시간(DB 포함), 금고 신호 시간, 다룬 선 수(diag-227)
+    pub score_db: std::time::Duration,
+    pub score_db_calls: usize,
+    pub score_edges: std::time::Duration,
+    pub score_vault: std::time::Duration,
+    pub score_edge_count: usize,
 }
 
 impl Profile {
@@ -475,6 +481,11 @@ pub(crate) fn assemble(
             &mut memo,
         )?;
         prof.score += ts.elapsed();
+        prof.score_db = memo.t_db;
+        prof.score_db_calls = memo.n_db;
+        prof.score_edges = memo.t_edges;
+        prof.score_vault = memo.t_vault;
+        prof.score_edge_count = memo.n_edges;
         // 사건에 속한 선에 장을 기록 (평범은 NULL 로 두지 않고 장을 남긴다: 보관 정책의 "의심" 기준은 level)
         chapter_updates.extend(
             chain
