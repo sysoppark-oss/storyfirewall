@@ -22,13 +22,13 @@ computing gzip size...
 - Using dynamic import() to code-split the application
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-[32m✓ built in 2.24s[39m
+[32m✓ built in 2.18s[39m
    Compiling story-firewall-ui v0.1.6 (D:\a\storyfirewall\storyfirewall\ui\src-tauri)
-    Finished `release` profile [optimized] target(s) in 50.29s
+    Finished `release` profile [optimized] target(s) in 50.59s
        Built application at: D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe
         Info Patching D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\story-firewall-ui.exe with bundle type information: nsis
         Info Target: x64
      Running makensis to produce D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\bundle\nsis\Story Firewall_0.1.6_x64-setup.exe
     Finished 1 bundle at:
-        D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\bundle\nsis\Story Firewall_0.1.6_x64-setup.exe (13.56 MiB)
+        D:\a\storyfirewall\storyfirewall\ui\src-tauri\target\release\bundle\nsis\Story Firewall_0.1.6_x64-setup.exe (13.58 MiB)
 
