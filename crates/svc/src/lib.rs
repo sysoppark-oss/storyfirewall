@@ -27,6 +27,7 @@ pub mod first_run;
 pub mod handler;
 pub mod host;
 pub mod investigate;
+pub mod perfdiag;
 pub mod policy_view;
 pub mod reads;
 pub mod remote_watch;

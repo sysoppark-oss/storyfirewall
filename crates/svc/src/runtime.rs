@@ -1378,6 +1378,9 @@ pub fn judge_and_notify(world: &mut World) {
     let from = world.last_judge_ts;
     let t0 = std::time::Instant::now();
     let cpu0 = thread_cpu_time();
+    let split0 = crate::perfdiag::thread_cpu_split();
+    let faults0 = crate::perfdiag::page_faults();
+    let class0 = crate::perfdiag::core_class_now();
     let stories = match world
         .judge_inc
         .run(&world.graph, from, i64::MAX, &world.baseline)
@@ -1407,6 +1410,31 @@ pub fn judge_and_notify(world: &mut World) {
                 .timings
                 .record("엔진: 주기 판정: 사슬 모으기", p.chain);
             world.timings.record("엔진: 주기 판정: 점수", p.score);
+            // 55차 Q7: CPU 시간을 커널 몫으로 가르고, 페이지 폴트와 코어 종류(성능/효율)를 함께 남긴다.
+            if let (Some((k0, _)), Some((k1, _))) = (split0, crate::perfdiag::thread_cpu_split()) {
+                world
+                    .timings
+                    .record("엔진: 주기 판정 CPU 시간 중 커널", k1.saturating_sub(k0));
+            }
+            if let (Some(a), Some(b)) = (faults0, crate::perfdiag::page_faults()) {
+                world.timings.record(
+                    "엔진: 주기 판정: 개수 — 페이지 폴트(프로세스 전체)",
+                    Duration::from_millis(b.wrapping_sub(a) as u64),
+                );
+            }
+            // 판정 시작과 끝 두 번 본다(도중에 코어를 옮길 수 있다). 천분율: 1000 = 가장 높은 등급(성능 코어), 0 = 가장 낮은 등급.
+            // 코어 구분이 없는 PC(최고 등급 0)에서는 남기지 않는다.
+            for (class, max) in [class0, crate::perfdiag::core_class_now()]
+                .into_iter()
+                .flatten()
+            {
+                if max > 0 {
+                    world.timings.record(
+                        "엔진: 전원: 개수 — 성능 코어에서 돈 몫(천분율)",
+                        Duration::from_millis(class as u64 * 1000 / max as u64),
+                    );
+                }
+            }
             // diag-253: 같은 입력에 CPU 시간이 2.1초 → 5.1초. 그 순간 전원·클럭을 나란히 남긴다(개수 칸 — ms 가 아니다).
             // 평균으로 읽는다: "배터리 사용"이 0.4 면 판정의 40%가 배터리에서 돌았다는 뜻.
             let pw = power_sample();
