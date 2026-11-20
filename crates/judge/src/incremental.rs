@@ -244,6 +244,40 @@ impl Incremental {
         self.epoch += 1;
     }
 
+    /// 뷰의 선을 관계별·나이별로 센다: (관계, [하루 안, 3일 안, 7일 안, 그보다 오래], 장 있는 선 수).
+    /// 뷰를 좁힐 때 무엇을 뺄 수 있는지 보는 진단(diag-269). 선을 한 번 훑으므로 판정마다 부르지 않는다
+    pub fn edge_census(&self, now: i64) -> Vec<(String, [usize; 4], usize)> {
+        const DAY: i64 = 86_400;
+        let Some(st) = self.state.as_ref() else {
+            return Vec::new();
+        };
+        let mut m: std::collections::BTreeMap<&str, ([usize; 4], usize)> = Default::default();
+        for e in &st.view.edges {
+            // 뺀 선의 칸은 목록에 남는다 — 살아 있는 선만
+            if st.view.by_id.get(&e.id).is_none() {
+                continue;
+            }
+            let age = now.saturating_sub(e.ts);
+            let b = if age < DAY {
+                0
+            } else if age < 3 * DAY {
+                1
+            } else if age < 7 * DAY {
+                2
+            } else {
+                3
+            };
+            let slot = m.entry(e.rel.as_str()).or_default();
+            slot.0[b] += 1;
+            if e.chapter.is_some() {
+                slot.1 += 1;
+            }
+        }
+        m.into_iter()
+            .map(|(k, (a, c))| (k.to_string(), a, c))
+            .collect()
+    }
+
     /// 지금 판정 상태가 쥔 메모리의 어림(상태가 없으면 None). 선·노드를 한 번 훑으므로 판정마다 부르지 않는다
     pub fn mem_stats(&self) -> Option<MemStats> {
         self.state.as_ref().map(MemStats::of)

@@ -1133,7 +1133,7 @@ fn write_timings_file(world: &World) {
     if db.as_os_str().is_empty() {
         return;
     }
-    let body = serde_json::json!({ "wall": world.engine_wall(), "timings": world.timings.with_reads(&world.read_gate).to_json(80) });
+    let body = serde_json::json!({ "wall": world.engine_wall(), "timings": world.timings.with_reads(&world.read_gate).to_json(200) });
     let tmp = dir.join("timings.json.tmp");
     if std::fs::write(&tmp, body.to_string()).is_ok() {
         let _ = std::fs::rename(&tmp, dir.join("timings.json"));
@@ -1304,6 +1304,29 @@ pub fn thread_cpu_time() -> Option<Duration> {
     let s = std::fs::read_to_string("/proc/thread-self/schedstat").ok()?;
     let ns: u64 = s.split_whitespace().next()?.parse().ok()?;
     Some(Duration::from_nanos(ns))
+}
+
+/// 처리 시간 표는 이름이 `&'static str` 이다. 관계 이름은 DB 에서 오므로 처음 볼 때 한 번만 굳혀 둔다.
+/// 관계 종류는 열몇 가지뿐이지만, 혹시 모를 낯선 값이 끝없이 쌓이지 않게 200개에서 멈춘다(넘으면 "기타").
+fn census_name(rel: &str, label: &str) -> &'static str {
+    use std::sync::{Mutex, OnceLock};
+    static NAMES: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
+    let mut m = NAMES.get_or_init(Default::default).lock().unwrap();
+    let rel: String = rel
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .take(24)
+        .collect();
+    let key = format!("엔진: 뷰 선: 개수 — {rel} {label}");
+    if let Some(n) = m.get(&key) {
+        return n;
+    }
+    if m.len() >= 200 {
+        return "엔진: 뷰 선: 개수 — 기타";
+    }
+    let leaked: &'static str = Box::leak(key.clone().into_boxed_str());
+    m.insert(key, leaked);
+    leaked
 }
 
 /// 판정하던 순간의 전원 상태. 같은 일에 CPU 시간이 2배 넘게 드는 때(diag-253)가 절전·배터리 때문인지 가르는 진단용.
@@ -1482,6 +1505,25 @@ pub fn judge_and_notify(world: &mut World) {
                             m.total_bytes() / MIB,
                         ),
                     ] {
+                        world.timings.record(name, Duration::from_millis(v as u64));
+                    }
+                }
+            }
+            // diag-269: 뷰의 선 227만이 어떤 관계·나이인지(뷰 좁히기 설계의 근거). 메모리 내역과 같은 박자로 잰다
+            if world.mem_probe_n % 20 == 1 {
+                for (rel, ages, chaptered) in world.judge_inc.edge_census(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs() as i64),
+                ) {
+                    for (label, v) in [
+                        ("하루 안", ages[0]),
+                        ("3일 안", ages[1]),
+                        ("7일 안", ages[2]),
+                        ("7일 넘음", ages[3]),
+                        ("장 있음", chaptered),
+                    ] {
+                        let name = census_name(&rel, label);
                         world.timings.record(name, Duration::from_millis(v as u64));
                     }
                 }

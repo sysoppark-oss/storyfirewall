@@ -1018,3 +1018,25 @@ fn mem_stats_counts_what_the_state_holds() {
         m.edge_bytes + m.node_bytes + m.index_bytes + m.written_bytes + m.chain_bytes
     );
 }
+
+/// 뷰 좁히기 설계의 근거 진단: 관계별·나이별 개수의 합이 뷰의 살아 있는 선 수와 같다
+#[test]
+fn edge_census_adds_up_to_live_edges() {
+    init();
+    let s = Store::open_in_memory().unwrap();
+    let bl = Baseline::open(&s, T0).unwrap();
+    let mut r = Rng(5);
+    let mut w = setup(&s, &mut r);
+    let mut inc = Incremental::new();
+    assert!(inc.edge_census(T0).is_empty());
+    for step in 1..=40 {
+        add_random_edge(&s, &mut w, &mut r, step);
+    }
+    check(&s, &mut inc, &bl, "census");
+    let c = inc.edge_census(T0 + 4000 * 86_400);
+    let total: usize = c.iter().map(|(_, a, _)| a.iter().sum::<usize>()).sum();
+    assert_eq!(total, inc.mem_stats().unwrap().edges);
+    assert!(c.iter().all(|(rel, _, ch)| !rel.is_empty() && *ch <= total));
+    // 한참 뒤에서 보면 모두 "7일 넘음" 칸이다
+    assert!(c.iter().all(|(_, a, _)| a[0] + a[1] + a[2] == 0));
+}
