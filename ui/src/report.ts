@@ -343,14 +343,14 @@ export function plainTime(iso: string): string {
   const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(iso);
   return m ? `${m[1]} ${m[2]}` : iso;
 }
-/// 기록 한 줄을 화면 글자로: [시각, 구역, 기간, 가리기·원자료, 결과, 경로]
+/// 기록 한 줄을 화면 글자로: [시각, 구역, 기간, 가리기·원자료, 결과, 경로] — 2.3 의 일곱 항목이 모두 읽혀야 한다(검수 지적)
 export function madeCells(e: MadeEntry): string[] {
   const title = (id: string) => SECTIONS_1.find((s) => s.id === id)?.title ?? id;
   return [
     plainTime(e.at),
     e.sections.map(title).join(", ") || "-",
     `${plainTime(e.period_from).slice(0, 10)} ~ ${plainTime(e.period_to).slice(0, 10)}`,
-    `${e.masked ? "가리기 켬" : "가리기 끔"}${e.raw_json ? ", 원자료 포함" : ""}`,
+    `${e.masked ? "가리기 켬" : "가리기 끔"}, ${e.raw_json ? "원자료 함께 냄" : "원자료 없음"}`,
     e.ok ? "저장함" : `실패: ${e.reason || "이유 모름"}`,
     e.path || "-",
   ];

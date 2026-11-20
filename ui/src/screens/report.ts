@@ -99,19 +99,26 @@ export function reportScreen(): HTMLElement {
     el("p", "muted small", "보고서를 만들 때마다 이 PC의 사용자 폴더에 한 줄씩 남깁니다. 어디로도 보내지 않습니다. 직접 지우거나 고칠 수 있는 기록이라 증빙으로 쓸 수는 없습니다."),
     madeBody,
   );
-  const HEAD = ["만든 시각", "담은 메뉴", "기간", "가리기", "결과", "저장한 곳"];
+  const MADE_SHOWN = 20;
+  // 실패한 줄에도 경로가 있다(쓰려던 곳) — "저장한 곳"이라고 하면 저장된 것처럼 읽힌다(검수 지적)
+  // 경로는 길어서 칸에 넣으면 좁은 창에서 한 글자씩 세로로 쪼개진다(캡처 확인) — 줄마다 아래 한 줄을 통째로 쓴다
+  const HEAD = ["만든 시각", "담은 메뉴", "기간", "가리기 · 원자료", "결과"];
   const loadMade = async () => {
-    const items = await reportLog(20);
+    const items = await reportLog(MADE_SHOWN + 1);
     if (!items.length) return madeBody.replaceChildren(el("p", "muted", "아직 만든 보고서가 없습니다."));
     const table = el("table", "report-made-table");
     table.append(el("thead", undefined, el("tr", undefined, ...HEAD.map((h) => el("th", undefined, h)))));
     const tb = el("tbody");
-    for (const e of items) {
+    for (const e of items.slice(0, MADE_SHOWN)) {
       const cells = madeCells(e);
-      tb.append(el("tr", e.ok ? undefined : "failed", ...cells.map((c, i) => el("td", i === 5 ? "mono" : undefined, c))));
+      tb.append(el("tr", e.ok ? "entry" : "entry failed", ...cells.slice(0, 5).map((c) => el("td", undefined, c))));
+      const pathCell = el("td", "mono", `${e.ok ? "저장 경로" : "저장하려던 경로"}: ${cells[5]}`);
+      pathCell.colSpan = HEAD.length;
+      tb.append(el("tr", "path", pathCell));
     }
     table.append(tb);
-    madeBody.replaceChildren(table, el("p", "muted small", `최근 ${items.length}건`));
+    // "최근 3건"은 전부인지 일부인지 두 가지로 읽혔다(검수 지적)
+    madeBody.replaceChildren(table, el("p", "muted small", items.length > MADE_SHOWN ? `최근 ${MADE_SHOWN}건만 보입니다. 그 앞의 기록도 파일에는 남아 있습니다.` : `모두 ${items.length}건`));
   };
   made.addEventListener("toggle", () => { if (made.open) void loadMade(); });
   root.append(secBox, perBox, maskBox, el("div", "actions", make, cancel), out, made);

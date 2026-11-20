@@ -322,11 +322,13 @@ if (mode.startsWith("shots:")) {
     // 보고서 만든 기록(2판 2.3): 접힌 줄을 펼쳐 표가 보이는지
     await page.click(".report-made summary");
     await page.locator(".report-made-table").waitFor({ timeout: 5000 }).catch(() => {});
-    console.log(`shots report made: rows=${await page.locator(".report-made-table tbody tr").count()}`);
+    console.log(`shots report made: rows=${await page.locator(".report-made-table tbody tr.entry").count()}`);
     await page.locator(".report-made").scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(outDir, `${label}-made.png`), fullPage: true });
     await page.setViewportSize({ width: 900, height: 700 });
-    await page.screenshot({ path: path.join(outDir, `${label}-made-narrow.png`), fullPage: true });
+    await page.locator(".report-made").scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await page.locator(".report-made").screenshot({ path: path.join(outDir, `${label}-made-narrow.png`) });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.locator(".report-make fieldset >> nth=2").locator("input[type=checkbox]").uncheck();
     await page.click(".report-make .actions .btn.primary");

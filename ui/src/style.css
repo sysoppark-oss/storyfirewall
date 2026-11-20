@@ -784,6 +784,10 @@ button.filter-chip.on, button.filter-chip[aria-pressed="true"] { border-color: v
 .report-made summary { cursor: pointer; font-weight: 600; }
 .report-made-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.9em; }
 .report-made-table th, .report-made-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line, rgba(128, 128, 128, 0.3)); vertical-align: top; }
-.report-made-table td.mono { word-break: break-all; }
-.report-made-table tr.failed td:nth-child(5) { font-weight: 600; }
-.report-made-table td:nth-child(1), .report-made-table td:nth-child(3), .report-made-table td:nth-child(4), .report-made-table th { white-space: nowrap; }
+.report-made-table td { word-break: keep-all; }
+.report-made-table td.mono { word-break: normal; overflow-wrap: anywhere; }
+.report-made-table tr.failed td:nth-child(5) { font-weight: 600; color: var(--bad); }
+.report-made { overflow-x: auto; }
+.report-made-table tr.entry td:nth-child(1), .report-made-table th { white-space: nowrap; }
+.report-made-table tr.entry td { border-bottom: 0; padding-bottom: 0; }
+.report-made-table tr.path td { color: var(--muted); padding-top: 2px; }
