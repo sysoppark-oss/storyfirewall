@@ -1390,6 +1390,8 @@ pub fn judge_and_notify(world: &mut World) {
     let split0 = crate::perfdiag::thread_cpu_split();
     let faults0 = crate::perfdiag::page_faults();
     let class0 = crate::perfdiag::core_class_now();
+    // 판정이 메모리를 훑기 전의 형편(훑고 나면 다시 올라와 있다)
+    let mem0 = crate::perfdiag::memory_now();
     let stories = match world
         .judge_inc
         .run(&world.graph, from, i64::MAX, &world.baseline)
@@ -1430,6 +1432,20 @@ pub fn judge_and_notify(world: &mut World) {
                     "엔진: 주기 판정: 개수 — 페이지 폴트(프로세스 전체)",
                     Duration::from_millis(b.wrapping_sub(a) as u64),
                 );
+            }
+            // diag-261: 서비스 메모리가 덜어졌다가 판정 때 다시 올라오는지. 판정 앞과 뒤의 "올려 둔 크기" 차이가 그 양이다
+            if let (Some((ws0, commit, load, avail)), Some((ws1, ..))) =
+                (mem0, crate::perfdiag::memory_now())
+            {
+                for (name, v) in [
+                    ("엔진: 메모리: 개수 — 판정 전 올려 둔 크기 MiB", ws0),
+                    ("엔진: 메모리: 개수 — 판정 뒤 올려 둔 크기 MiB", ws1),
+                    ("엔진: 메모리: 개수 — 잡아 둔 크기 MiB", commit),
+                    ("엔진: 메모리: 개수 — PC 사용률 %", load),
+                    ("엔진: 메모리: 개수 — PC 남은 메모리 MiB", avail),
+                ] {
+                    world.timings.record(name, Duration::from_millis(v));
+                }
             }
             // 캐시 설정이 실제로 먹었는지(음수 = KiB). 안 먹었으면 2000 쪽(기본)이 찍힌다
             if let Ok(c) = world.graph.cache_size() {

@@ -147,6 +147,45 @@ pub fn page_faults() -> Option<u32> {
     None
 }
 
+/// 메모리 형편: (이 프로세스가 지금 실제 메모리에 올려 둔 크기 MiB, 이 프로세스가 잡아 둔 전체 크기 MiB,
+/// PC 전체 메모리 사용률 %, PC 에 남은 실제 메모리 MiB).
+/// diag-261: Windows 가 서비스의 메모리를 덜어 냈다가 판정 때 다시 불러오는지 가른다 —
+/// 올려 둔 크기가 잡아 둔 크기보다 훨씬 작고 PC 사용률이 높으면 그 경우다.
+#[cfg(windows)]
+pub fn memory_now() -> Option<(u64, u64, u64, u64)> {
+    use windows_sys::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    const MIB: u64 = 1024 * 1024;
+    // SAFETY: 0 으로 채워도 유효한 평범한 C 구조체
+    let mut c: PROCESS_MEMORY_COUNTERS = unsafe { std::mem::zeroed() };
+    let cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+    c.cb = cb;
+    // SAFETY: 가짜 핸들(닫지 않음), 포인터와 길이는 위 지역 변수의 것
+    if unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, cb) } == 0 {
+        return None;
+    }
+    // SAFETY: 위와 같다. dwLength 를 먼저 채워야 한다(문서)
+    let mut m: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+    m.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+    if unsafe { GlobalMemoryStatusEx(&mut m) } == 0 {
+        return None;
+    }
+    Some((
+        c.WorkingSetSize as u64 / MIB,
+        c.PagefileUsage as u64 / MIB,
+        m.dwMemoryLoad as u64,
+        m.ullAvailPhys / MIB,
+    ))
+}
+
+#[cfg(not(windows))]
+pub fn memory_now() -> Option<(u64, u64, u64, u64)> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
