@@ -353,6 +353,8 @@ impl Runtime {
                     judged_gen: 0,
                     judge_cache_gen: 0,
                     judge_inc: {
+                        // 판정 단계별 페이지 폴트(진단): 판정 크레이트는 플랫폼 코드가 없어 여기서 탐침을 넘긴다
+                        judge::set_fault_probe(crate::perfdiag::page_faults);
                         let mut j = judge::Incremental::new();
                         // 실시간 3: 판정 주기 60초 → 15초. 전체 판정은 지금처럼 30분마다(15초 × 120)
                         j.full_every = (30 * 60 / JUDGE_EVERY_SECS) as u32;
@@ -1128,7 +1130,7 @@ fn write_timings_file(world: &World) {
     if db.as_os_str().is_empty() {
         return;
     }
-    let body = serde_json::json!({ "wall": world.engine_wall(), "timings": world.timings.with_reads(&world.read_gate).to_json(40) });
+    let body = serde_json::json!({ "wall": world.engine_wall(), "timings": world.timings.with_reads(&world.read_gate).to_json(80) });
     let tmp = dir.join("timings.json.tmp");
     if std::fs::write(&tmp, body.to_string()).is_ok() {
         let _ = std::fs::rename(&tmp, dir.join("timings.json"));
@@ -1145,6 +1147,7 @@ pub fn publish_snapshot(world: &mut World) {
         return;
     };
     let t = std::time::Instant::now();
+    let pf0 = crate::perfdiag::page_faults();
     let snap = crate::events::StorySnap::build(
         world.judged_gen,
         at,
@@ -1154,6 +1157,12 @@ pub fn publish_snapshot(world: &mut World) {
     );
     world.read_gate.publish(std::sync::Arc::new(snap));
     world.timings.record("엔진: 조회용 스냅숏", t.elapsed());
+    if let (Some(a), Some(b)) = (pf0, crate::perfdiag::page_faults()) {
+        world.timings.record(
+            "엔진: 페이지 폴트: 개수 — 조회용 스냅숏",
+            Duration::from_millis(b.wrapping_sub(a) as u64),
+        );
+    }
 }
 
 /// 엔진 밖에서 만드는 정기 전체 다시(diag-234: 30분마다 전체 판정 8~12초 — 그동안 엔진 대기열의 화면 조회가 5초를 넘겼다)
@@ -1421,6 +1430,17 @@ pub fn judge_and_notify(world: &mut World) {
                     "엔진: 주기 판정: 개수 — 페이지 폴트(프로세스 전체)",
                     Duration::from_millis(b.wrapping_sub(a) as u64),
                 );
+            }
+            // diag-257: 판정 한 번에 평균 18만 번. 어느 단계인지 가른다(개수 칸)
+            for (name, v) in [
+                ("엔진: 페이지 폴트: 개수 — 불러오기", p.pf_load),
+                ("엔진: 페이지 폴트: 개수 — 후보 찾기", p.pf_roots),
+                ("엔진: 페이지 폴트: 개수 — 사슬 모으기", p.pf_chain),
+                ("엔진: 페이지 폴트: 개수 — 점수", p.pf_score),
+                ("엔진: 페이지 폴트: 개수 — 조립 나머지", p.pf_assemble_rest),
+                ("엔진: 페이지 폴트: 개수 — 장 기록", p.pf_write),
+            ] {
+                world.timings.record(name, Duration::from_millis(v));
             }
             // 판정 시작과 끝 두 번 본다(도중에 코어를 옮길 수 있다). 천분율: 1000 = 가장 높은 등급(성능 코어), 0 = 가장 낮은 등급.
             // 코어 구분이 없는 PC(최고 등급 0)에서는 남기지 않는다.

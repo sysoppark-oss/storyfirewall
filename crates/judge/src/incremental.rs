@@ -248,6 +248,7 @@ impl Incremental {
     ) -> Result<(Vec<Story>, Profile)> {
         let mut prof = Profile::default();
         let t0 = std::time::Instant::now();
+        let f0 = crate::faults_now();
         let schema_version = schema_version(store)?;
         let want_full = match &self.state {
             _ if !self.enabled => true,
@@ -270,6 +271,8 @@ impl Incremental {
                 // 증분: 바뀐 노드 근처만 다시 분류하고, 그 노드를 읽은 사슬을 버린다
                 prof.mode = "incremental";
                 prof.load = t0.elapsed();
+                let f1 = crate::faults_now();
+                prof.pf_load = crate::faults_between(f0, f1);
                 let t1 = std::time::Instant::now();
                 let st = self.state.as_mut().expect("상태");
                 st.incr_runs += 1;
@@ -279,6 +282,7 @@ impl Incremental {
                 }
                 prof.dirty_nodes = delta.dirty.len();
                 prof.roots = t1.elapsed();
+                prof.pf_roots = crate::faults_between(f1, crate::faults_now());
                 st
             }
             None => {
@@ -286,6 +290,8 @@ impl Incremental {
                 self.state = None;
                 let st = build(store, from_ts, to_ts)?;
                 prof.load = t0.elapsed();
+                let f1 = crate::faults_now();
+                prof.pf_load = crate::faults_between(f0, f1);
                 let t1 = std::time::Instant::now();
                 let st = self.state.insert(st);
                 st.roots = st
@@ -295,6 +301,7 @@ impl Incremental {
                     .filter_map(|n| rules::root_kind_of(&st.view, n).map(|k| (n.id, k)))
                     .collect();
                 prof.roots = t1.elapsed();
+                prof.pf_roots = crate::faults_between(f1, crate::faults_now());
                 st
             }
         };
@@ -307,6 +314,7 @@ impl Incremental {
         roots.sort_unstable_by_key(|(r, id, _)| (*r, *id));
         let roots: Vec<(i64, RootKind)> = roots.into_iter().map(|(_, id, k)| (id, k)).collect();
         prof.n_roots = roots.len();
+        let fa = crate::faults_now();
         let (stories, updates) = crate::assemble(
             &st.view,
             &roots,
@@ -321,6 +329,11 @@ impl Incremental {
         // 장 기록: 같은 선이 두 사건에 들면 뒤의 것이 이긴다(전체 판정의 UPDATE 순서와 같게) → 선마다 마지막 값 하나로 줄이고,
         // 지난번에 쓴 값과 다른 것만 보낸다
         let t2 = std::time::Instant::now();
+        let f2 = crate::faults_now();
+        // 조립 전체에서 사슬·점수 몫을 뺀 나머지(뿌리 정렬 뒤 ~ 여기까지: 준비·묶기·사슬 버리기)
+        prof.pf_assemble_rest = crate::faults_between(fa, f2)
+            .saturating_sub(prof.pf_chain)
+            .saturating_sub(prof.pf_score);
         let mut last: HashMap<i64, Option<i64>> = HashMap::with_capacity(updates.len());
         for (e, c) in updates {
             last.insert(e, c);
@@ -337,6 +350,7 @@ impl Incremental {
         prof.updates = send.len();
         st.written.extend(send);
         prof.write = t2.elapsed();
+        prof.pf_write = crate::faults_between(f2, crate::faults_now());
         prof.print();
         Ok((stories, prof))
     }

@@ -340,6 +340,35 @@ pub struct Profile {
     pub score_edges: std::time::Duration,
     pub score_vault: std::time::Duration,
     pub score_edge_count: usize,
+    /// 단계별 페이지 폴트 수(프로세스 전체 — 탐침이 등록돼 있을 때만, 아니면 0). 어느 단계가 큰 메모리를 매번 새로 잡는지 가른다(diag-257)
+    pub pf_load: u64,
+    pub pf_roots: u64,
+    pub pf_chain: u64,
+    pub pf_score: u64,
+    /// 사슬·점수 밖의 조립 부분(준비·정렬·묶기)
+    pub pf_assemble_rest: u64,
+    pub pf_write: u64,
+}
+
+/// 페이지 폴트 누적값을 읽는 탐침. 판정 크레이트에는 플랫폼 코드를 넣지 않으므로 서비스가 시작할 때 등록한다.
+static FAULT_PROBE: std::sync::OnceLock<fn() -> Option<u32>> = std::sync::OnceLock::new();
+
+/// 서비스가 한 번 등록한다. 등록하지 않으면 pf_* 는 모두 0 이다
+pub fn set_fault_probe(f: fn() -> Option<u32>) {
+    let _ = FAULT_PROBE.set(f);
+}
+
+/// 지금 누적값(탐침이 없거나 읽지 못하면 None)
+pub(crate) fn faults_now() -> Option<u32> {
+    FAULT_PROBE.get().and_then(|f| f())
+}
+
+/// 두 누적값의 차이. 32비트 누적값이 한 바퀴 돌아도 맞게(wrapping), 한쪽이라도 없으면 0
+pub(crate) fn faults_between(a: Option<u32>, b: Option<u32>) -> u64 {
+    match (a, b) {
+        (Some(a), Some(b)) => b.wrapping_sub(a) as u64,
+        _ => 0,
+    }
 }
 
 impl Profile {
@@ -453,6 +482,7 @@ pub(crate) fn assemble(
             continue;
         }
         let tc = std::time::Instant::now();
+        let fc = faults_now();
         let built;
         let chain: &rules::Chain = match cache.as_deref_mut() {
             Some(c) => c.get_or_build(view, root, kind, &mut prof.chains_built),
@@ -463,6 +493,7 @@ pub(crate) fn assemble(
             }
         };
         prof.chain += tc.elapsed();
+        prof.pf_chain += faults_between(fc, faults_now());
         if chain.edges.is_empty() {
             continue;
         }
@@ -470,6 +501,7 @@ pub(crate) fn assemble(
         claimed.extend(chain.files.iter().copied());
         // 뿌리가 여러 후보에 걸리면(예: Zone 3 이면서 서명 없음) 첫 번째 규칙이 이긴다.
         let ts = std::time::Instant::now();
+        let fs = faults_now();
         let scored = score::score(
             view,
             chain,
@@ -481,6 +513,7 @@ pub(crate) fn assemble(
             &mut memo,
         )?;
         prof.score += ts.elapsed();
+        prof.pf_score += faults_between(fs, faults_now());
         prof.score_db = memo.t_db;
         prof.score_db_calls = memo.n_db;
         prof.score_edges = memo.t_edges;
@@ -629,5 +662,20 @@ mod hub_tests {
         assert_eq!(c.procs, vec![1]);
         // 고치기 전: N × (M+N) = 12억 번 비교(디버그 빌드 수십 초). 고친 뒤: 선형
         assert!(el < std::time::Duration::from_secs(5), "사슬 모으기 {el:?}");
+    }
+}
+
+#[cfg(test)]
+mod fault_probe_tests {
+    use super::faults_between;
+
+    #[test]
+    fn faults_between_wraps_and_tolerates_missing() {
+        assert_eq!(faults_between(Some(10), Some(250)), 240);
+        // 32비트 누적값이 한 바퀴 돈 경우
+        assert_eq!(faults_between(Some(u32::MAX - 4), Some(5)), 10);
+        // 탐침이 없거나 읽지 못하면 0
+        assert_eq!(faults_between(None, Some(5)), 0);
+        assert_eq!(faults_between(Some(5), None), 0);
     }
 }
