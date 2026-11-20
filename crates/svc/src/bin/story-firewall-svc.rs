@@ -154,6 +154,8 @@ mod real {
                 Box::new(GraphResolver::open(&g).expect("graph (resolver)"));
             let conn = rusqlite::Connection::open(self.dir.join("engine.db")).expect("engine db");
             let store = graph::store::Store::open(&g).expect("graph db");
+            // 엔진 연결만 쪽 캐시를 키운다(기본 2 MB → 64 MB). 실패해도 기본값으로 돈다
+            let _ = store.set_cache_kib(svc::runtime::ENGINE_GRAPH_CACHE_KIB);
             (
                 backend,
                 gq,

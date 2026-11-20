@@ -221,6 +221,21 @@ impl Store {
         &self.conn
     }
 
+    /// 이 연결의 쪽 캐시 크기(KiB). SQLite 기본은 2 MB 인데 그래프 DB 는 1 GB 를 넘는다 —
+    /// 판정처럼 같은 쪽을 거듭 읽는 연결은 매번 파일에서 다시 읽게 된다(diag-259: 판정 CPU 의 25~35%가 커널 시간).
+    /// 연결마다 따로 드는 메모리이므로 오래 살고 많이 읽는 연결(엔진)에만 쓴다. 상한이지 미리 잡는 크기가 아니다.
+    pub fn set_cache_kib(&self, kib: u32) -> Result<()> {
+        // 음수 = KiB 단위(양수는 쪽 수) — SQLite pragma 문서
+        self.conn
+            .execute_batch(&format!("PRAGMA cache_size=-{kib};"))?;
+        Ok(())
+    }
+
+    /// 지금 캐시 크기 설정값(음수면 KiB, 양수면 쪽 수)
+    pub fn cache_size(&self) -> Result<i64> {
+        Ok(self.conn.query_row("PRAGMA cache_size", [], |r| r.get(0))?)
+    }
+
     /// 쓰기 트랜잭션은 **항상 이것으로** 연다 (`BEGIN IMMEDIATE`). 같은 파일에 쓰는 연결이 둘이다(수집 세션·엔진).
     /// `BEGIN`(DEFERRED) 으로 열고 읽은 뒤 쓰기로 올라가면, 그 사이 다른 연결이 커밋한 경우 SQLite 는 busy 처리기 없이
     /// 바로 SQLITE_BUSY(_SNAPSHOT) 를 준다 — 수집 저장 스레드가 이 오류로 끝나면 수집 세션 전체가 멈춘다(16차 Q4-2, A20 재현).
