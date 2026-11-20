@@ -246,11 +246,15 @@ impl Incremental {
 
     /// 뷰의 선을 관계별·나이별로 센다: (관계, [하루 안, 3일 안, 7일 안, 그보다 오래], 장 있는 선 수).
     /// 뷰를 좁힐 때 무엇을 뺄 수 있는지 보는 진단(diag-269). 선을 한 번 훑으므로 판정마다 부르지 않는다
-    pub fn edge_census(&self, now: i64) -> Vec<(String, [usize; 4], usize)> {
-        const DAY: i64 = 86_400;
+    ///
+    /// 나이는 **뷰에서 가장 늦은 선의 시각**을 기준으로 잰다. 선의 시각은 Windows FILETIME(100ns 단위)이라
+    /// 바깥에서 "지금"을 받으면 단위가 어긋나기 쉽다(처음에 unix 초를 넘겨 시험이 잡았다) — 같은 목록 안에서만 견준다.
+    pub fn edge_census(&self) -> Vec<(String, [usize; 4], usize)> {
+        const DAY: i64 = graph::retention::DAY;
         let Some(st) = self.state.as_ref() else {
             return Vec::new();
         };
+        let now = st.view.edges.iter().map(|e| e.ts).max().unwrap_or(0);
         let mut m: std::collections::BTreeMap<&str, ([usize; 4], usize)> = Default::default();
         for e in &st.view.edges {
             // 뺀 선의 칸은 목록에 남는다 — 살아 있는 선만

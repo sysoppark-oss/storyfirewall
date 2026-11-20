@@ -1511,11 +1511,7 @@ pub fn judge_and_notify(world: &mut World) {
             }
             // diag-269: 뷰의 선 227만이 어떤 관계·나이인지(뷰 좁히기 설계의 근거). 메모리 내역과 같은 박자로 잰다
             if world.mem_probe_n % 20 == 1 {
-                for (rel, ages, chaptered) in world.judge_inc.edge_census(
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map_or(0, |d| d.as_secs() as i64),
-                ) {
+                for (rel, ages, chaptered) in world.judge_inc.edge_census() {
                     for (label, v) in [
                         ("하루 안", ages[0]),
                         ("3일 안", ages[1]),

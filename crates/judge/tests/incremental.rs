@@ -1028,15 +1028,23 @@ fn edge_census_adds_up_to_live_edges() {
     let mut r = Rng(5);
     let mut w = setup(&s, &mut r);
     let mut inc = Incremental::new();
-    assert!(inc.edge_census(T0).is_empty());
+    assert!(inc.edge_census().is_empty());
     for step in 1..=40 {
         add_random_edge(&s, &mut w, &mut r, step);
     }
     check(&s, &mut inc, &bl, "census");
-    let c = inc.edge_census(T0 + 4000 * 86_400);
+    // 가장 늦은 선보다 열흘 앞선 선을 하나 넣는다 — "7일 넘음" 칸에 정확히 그 하나가 잡혀야 한다(시각 단위 = FILETIME)
+    let old_ts = T0 - 10 * graph::retention::DAY;
+    let (a, b) = (w.procs[0], w.procs[1]);
+    s.insert_edge(a, b, graph::Rel::Spawned, old_ts, None)
+        .unwrap();
+    check(&s, &mut inc, &bl, "census-old");
+    let c = inc.edge_census();
     let total: usize = c.iter().map(|(_, a, _)| a.iter().sum::<usize>()).sum();
     assert_eq!(total, inc.mem_stats().unwrap().edges);
     assert!(c.iter().all(|(rel, _, ch)| !rel.is_empty() && *ch <= total));
-    // 한참 뒤에서 보면 모두 "7일 넘음" 칸이다
-    assert!(c.iter().all(|(_, a, _)| a[0] + a[1] + a[2] == 0));
+    let old: usize = c.iter().map(|(_, a, _)| a[3]).sum();
+    assert_eq!(old, 1, "{c:?}");
+    // 나머지는 몇 초 사이의 선이라 "하루 안"
+    assert_eq!(c.iter().map(|(_, a, _)| a[0]).sum::<usize>(), total - 1);
 }
