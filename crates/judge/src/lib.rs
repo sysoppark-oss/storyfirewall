@@ -96,7 +96,10 @@ impl View {
         lp: &mut LoadProfile,
     ) -> Result<Self> {
         let t = std::time::Instant::now();
-        let edges = graph::query::edges_between(store, from_ts, to_ts)?;
+        let mut edges = graph::query::edges_between(store, from_ts, to_ts)?;
+        // 읽어 모으는 동안 목록은 두 배씩 자란다 — 다 읽고 나면 남는 칸을 돌려준다
+        // (diag-267: 선 213만에 칸이 그 두 배 가까이 잡혀 선 목록만 477 MiB 였다. 칸 하나 112 B)
+        edges.shrink_to_fit();
         lp.edges = t.elapsed();
         lp.n_edges = edges.len();
         // L030: 노드는 묶음 조회로 한 번에(선마다 따로 묻지 않는다)
@@ -118,6 +121,13 @@ impl View {
             by_id.insert(e.id, i);
             out.entry(e.src).or_default().push(i);
             inc.entry(e.dst).or_default().push(i);
+        }
+        // 노드마다의 선 목록도 같은 이유로 남는 칸을 돌려준다(노드 수십만 × 두 방향)
+        for m in [&mut out, &mut inc] {
+            for list in m.values_mut() {
+                list.shrink_to_fit();
+            }
+            m.shrink_to_fit();
         }
         lp.index = t.elapsed();
         let t = std::time::Instant::now();
@@ -218,6 +228,10 @@ impl View {
         let idx = self.edges.len();
         let key = (e.ts, e.id);
         let (src, dst, id) = (e.src, e.dst, e.id);
+        // 가득 찼을 때 기본 동작(두 배로 늘리기)에 맡기면 선 하나 더하려고 수백 MiB 를 다시 잡는다 — 1/16 씩만 늘린다
+        if self.edges.len() == self.edges.capacity() {
+            self.edges.reserve_exact((self.edges.len() / 16).max(1024));
+        }
         self.edges.push(e);
         self.by_id.insert(id, idx);
         let edges = &self.edges;

@@ -1000,6 +1000,19 @@ fn mem_stats_counts_what_the_state_holds() {
     assert!(m.edge_bytes >= m.edges * std::mem::size_of::<graph::Edge>());
     assert!(m.node_bytes >= m.nodes * std::mem::size_of::<graph::Node>());
     assert!(m.index_bytes > 0);
+    // 선 목록에 남는 칸이 두 배씩 쌓이지 않는다(diag-267): 선을 하나씩 더해도 칸은 선 수 + 여유(1/16 또는 1024칸) 안
+    for step in 21..=60 {
+        add_random_edge(&s, &mut w, &mut r, step);
+        check(&s, &mut inc, &bl, "mem-grow");
+    }
+    let m2 = inc.mem_stats().unwrap();
+    let per_edge = std::mem::size_of::<graph::Edge>() + 64;
+    assert!(
+        m2.edge_bytes <= (m2.edges + m2.edges / 16 + 1024 + 64) * per_edge,
+        "선 {} 개에 {} 바이트",
+        m2.edges,
+        m2.edge_bytes
+    );
     assert_eq!(
         m.total_bytes(),
         m.edge_bytes + m.node_bytes + m.index_bytes + m.written_bytes + m.chain_bytes
