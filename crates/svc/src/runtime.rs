@@ -237,8 +237,9 @@ pub struct World<'a> {
     pub last_judge: Option<(std::time::Instant, Duration)>,
     /// 엔진 밖에서 만드는 중인 정기 전체 다시(prebuild_step)
     pub prebuild: Option<PrebuildJob>,
-    /// 미리 만들기가 한 번 실패·시간 초과했으면 이 서비스가 도는 동안은 엔진이 직접 전체를 읽는다
-    pub prebuild_off: bool,
+    /// 미리 만들기가 실패·시간 초과했으면 이 시각까지는 엔진이 직접 전체를 읽는다(PREBUILD_RETRY_AFTER 뒤 다시 시도).
+    /// 55차 Q1: 한 번 실패로 서비스가 꺼질 때까지 끄면, 디스크를 바쁘게 해 180초를 넘기는 것만으로 "엔진이 12~15초 막힘"을 되살릴 수 있다
+    pub prebuild_off_until: Option<std::time::Instant>,
     /// 판정 결과가 바뀌어 문장을 미리 만들어야 함
     pub warm_due: bool,
     /// 37차 Q2: 지난번 본 (별칭, LUID) 짝. 바뀌면 인터페이스 조건 규칙을 지금 LUID 로 다시 건다. None = 아직 못 봄
@@ -402,7 +403,7 @@ impl Runtime {
                     housekeeping_due: None,
                     last_judge: None,
                     prebuild: None,
-                    prebuild_off: false,
+                    prebuild_off_until: None,
                     warm_due: false,
                     if_seen: None,
                     our_filters: our_filters_thread.clone(),
@@ -856,6 +857,16 @@ fn cmd_label(c: &Command) -> &'static str {
 
 impl<'a> World<'a> {
     /// 판정 결과를 버린다(직전 결과로 남김). 다시 판정은 엔진이 쉴 때(판정 뒤 정리)
+    /// 미리 만들기를 PREBUILD_RETRY_AFTER 동안 쉰다
+    pub fn prebuild_backoff(&mut self) {
+        self.prebuild_off_until = Some(std::time::Instant::now() + PREBUILD_RETRY_AFTER);
+    }
+    /// 지금 미리 만들기를 쉬는 중인가. 쉬는 시간이 지났으면 표시를 지우고 다시 쓴다
+    pub fn prebuild_is_off(&mut self) -> bool {
+        let (off, until) = backoff_state(self.prebuild_off_until, std::time::Instant::now());
+        self.prebuild_off_until = until;
+        off
+    }
     pub fn drop_judged(&mut self) {
         if let Some(j) = self.judged.take() {
             self.judged_prev = Some(j);
@@ -1030,8 +1041,9 @@ pub fn run_retention(world: &mut World) {
             // diag-243: 여기서 버리면 엔진이 그 자리에서 전체 판정을 다시 했다(12~15초, 그동안 화면 조회가 밀림).
             // 파일 DB 면 직전 결과를 그대로 두고(작업자·화면은 새 판정까지 직전 것을 쓴다 — judged_prev 와 같은 뜻) 다음 판정 차례에
             // 엔진 밖에서 미리 만들어 받는다(prebuild_step). 미리 만들 수 없으면(메모리 DB·실패한 적 있음·만드는 중) 전처럼 버린다
-            let can_prebuild =
-                !world.prebuild_off && world.prebuild.is_none() && !world.graph.path().is_empty();
+            let can_prebuild = !world.prebuild_is_off()
+                && world.prebuild.is_none()
+                && !world.graph.path().is_empty();
             if !(can_prebuild && world.judge_inc.request_full()) {
                 world.judge_inc.invalidate();
                 world.drop_judged();
@@ -1151,7 +1163,20 @@ pub struct PrebuildJob {
 }
 
 /// 미리 만들기를 이만큼 기다려도 안 끝나면 버리고 엔진이 직접 전체를 읽는다
+/// 쉬는 중인가와 남길 표시. 쉬는 시각이 지났으면 표시를 지운다(다시 시도)
+pub fn backoff_state(
+    until: Option<std::time::Instant>,
+    now: std::time::Instant,
+) -> (bool, Option<std::time::Instant>) {
+    match until {
+        Some(t) if now < t => (true, Some(t)),
+        _ => (false, None),
+    }
+}
+
 const PREBUILD_GIVE_UP: Duration = Duration::from_secs(180);
+/// 미리 만들기가 실패·시간 초과한 뒤 다시 시도하기까지(55차 Q1). 그동안은 엔진이 직접 전체를 읽는다
+pub const PREBUILD_RETRY_AFTER: Duration = Duration::from_secs(2 * 3600);
 
 /// 주기 판정 앞에서: 정기 전체 다시 차례면 다른 스레드(읽기 전용 연결)에서 만들게 하고 이번 판정은 쉰다(true).
 /// 다 만들어졌으면 받아 끼운다 — 이어지는 판정은 그 뒤 변경만 증분으로 따라잡는다(false = 판정한다).
@@ -1173,7 +1198,7 @@ pub fn prebuild_step(world: &mut World) -> bool {
                 false
             }
             Ok(Err(_)) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                world.prebuild_off = true;
+                world.prebuild_backoff();
                 world.timings.record(
                     "엔진: 전체 다시 미리 만들기(실패 — 엔진이 직접)",
                     job.started.elapsed(),
@@ -1182,7 +1207,7 @@ pub fn prebuild_step(world: &mut World) -> bool {
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 if job.started.elapsed() > PREBUILD_GIVE_UP {
-                    world.prebuild_off = true;
+                    world.prebuild_backoff();
                     world.timings.record(
                         "엔진: 전체 다시 미리 만들기(시간 초과 — 엔진이 직접)",
                         job.started.elapsed(),
@@ -1199,7 +1224,7 @@ pub fn prebuild_step(world: &mut World) -> bool {
         }
     } else {
         let path = world.graph.path();
-        if world.prebuild_off || path.is_empty() || !world.judge_inc.full_due(from, i64::MAX) {
+        if world.prebuild_is_off() || path.is_empty() || !world.judge_inc.full_due(from, i64::MAX) {
             return false;
         }
         let epoch = world.judge_inc.epoch();
@@ -1216,7 +1241,7 @@ pub fn prebuild_step(world: &mut World) -> bool {
                 let _ = tx.send(r);
             });
         if spawned.is_err() {
-            world.prebuild_off = true;
+            world.prebuild_backoff();
             return false;
         }
         world.prebuild = Some(PrebuildJob {
@@ -1496,6 +1521,24 @@ mod tests {
     use super::should_notify;
 
     /// 스레드 CPU 시간: 일을 하면 늘고, 잠자는 동안에는 벽시계만큼 늘지 않는다(부하와 계산을 가르는 근거).
+    #[test]
+    fn prebuild_backoff_ends_after_retry_window() {
+        use super::{backoff_state, PREBUILD_RETRY_AFTER};
+        use std::time::{Duration, Instant};
+        let t0 = Instant::now();
+        let until = Some(t0 + PREBUILD_RETRY_AFTER);
+        // 55차 Q1: 실패 뒤 영영 꺼지지 않는다 — 쉬는 동안만 꺼지고, 지나면 표시가 지워져 다시 시도한다
+        assert_eq!(
+            backoff_state(until, t0 + Duration::from_secs(60)),
+            (true, until)
+        );
+        assert_eq!(
+            backoff_state(until, t0 + PREBUILD_RETRY_AFTER),
+            (false, None)
+        );
+        assert_eq!(backoff_state(None, t0), (false, None));
+    }
+
     #[test]
     fn mean_mhz_skips_unfilled_slots() {
         use super::mean_mhz;
