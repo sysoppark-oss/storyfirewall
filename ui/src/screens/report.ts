@@ -118,7 +118,7 @@ export function reportScreen(): HTMLElement {
     }
     table.append(tb);
     // "최근 3건"은 전부인지 일부인지 두 가지로 읽혔다(검수 지적)
-    madeBody.replaceChildren(table, el("p", "muted small", items.length > MADE_SHOWN ? `최근 ${MADE_SHOWN}건만 보입니다. 그 앞의 기록도 파일에는 남아 있습니다.` : `모두 ${items.length}건`));
+    madeBody.replaceChildren(table, el("p", "muted small", items.length > MADE_SHOWN ? `최근 ${MADE_SHOWN}건만 표시합니다. 그 앞의 기록도 파일에는 남아 있습니다.` : `모두 ${items.length}건`));
   };
   made.addEventListener("toggle", () => { if (made.open) void loadMade(); });
   root.append(secBox, perBox, maskBox, el("div", "actions", make, cancel), out, made);
