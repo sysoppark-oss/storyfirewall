@@ -2,7 +2,7 @@
    Compiling rack v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\rack)
    Compiling report v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\report)
    Compiling decoy v0.1.0 (D:\a\storyfirewall\storyfirewall\crates\decoy)
-    Finished `release` profile [optimized] target(s) in 11.68s
+    Finished `release` profile [optimized] target(s) in 13.10s
      Running unittests src\lib.rs (target\release\build\story-firewall-ui/876cd16f8d5c4d45\out\story_firewall_ui_lib-876cd16f8d5c4d45.exe)
 
 running 6 tests
