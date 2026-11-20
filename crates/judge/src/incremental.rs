@@ -42,7 +42,7 @@ use graph::store::Store;
 use graph::Edge;
 
 use crate::rules::{self, Chain, RootKind};
-use crate::{Baseline, Profile, Result, Story, View};
+use crate::{Baseline, Chapter, Profile, Result, Story, View};
 
 /// (뿌리, 종류)별 사슬 캐시와 "이 노드가 바뀌면 버릴 사슬" 색인
 #[derive(Default)]
@@ -106,6 +106,87 @@ struct State {
     schema_version: i64,
 }
 
+/// 판정 상태가 쥔 메모리의 어림(diag-263: 서비스가 1.7 GB 를 잡고 있다 — 무엇이 큰지 가른다).
+/// 바이트는 "잡아 둔 칸 수 × 칸 크기 + 글자 버퍼"의 합이다. 할당기 머리·해시 표의 제어 바이트는 뺀 값이라 실제보다 조금 작다.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct MemStats {
+    pub edges: usize,
+    pub edge_bytes: usize,
+    pub nodes: usize,
+    pub node_bytes: usize,
+    /// out·inc·by_id (선을 찾는 색인)
+    pub index_bytes: usize,
+    pub written: usize,
+    pub written_bytes: usize,
+    pub chains: usize,
+    pub chain_bytes: usize,
+}
+
+fn str_cap(s: &Option<String>) -> usize {
+    s.as_ref().map_or(0, |s| s.capacity())
+}
+
+impl MemStats {
+    fn of(st: &State) -> Self {
+        use std::mem::size_of;
+        let v = &st.view;
+        let edge_bytes = v.edges.capacity() * size_of::<graph::Edge>()
+            + v.edges
+                .iter()
+                .map(|e| e.rel.capacity() + str_cap(&e.attrs_json))
+                .sum::<usize>();
+        let node_bytes = v.nodes.capacity() * size_of::<(i64, graph::Node)>()
+            + v.nodes
+                .values()
+                .map(|n| {
+                    n.kind.capacity()
+                        + n.key.capacity()
+                        + n.label.capacity()
+                        + str_cap(&n.attrs_json)
+                })
+                .sum::<usize>();
+        let adj = |m: &HashMap<i64, Vec<usize>>| {
+            m.capacity() * size_of::<(i64, Vec<usize>)>()
+                + m.values()
+                    .map(|l| l.capacity() * size_of::<usize>())
+                    .sum::<usize>()
+        };
+        let index_bytes =
+            adj(&v.out) + adj(&v.inc) + v.by_id.capacity() * size_of::<(i64, usize)>();
+        let chain_bytes = st.cache.chains.capacity() * size_of::<((i64, RootKind), Chain)>()
+            + st.cache
+                .chains
+                .values()
+                .map(|c| {
+                    c.edges.capacity() * size_of::<(i64, Option<Chapter>)>()
+                        + (c.procs.capacity() + c.files.capacity() + c.deps.capacity())
+                            * size_of::<i64>()
+                })
+                .sum::<usize>()
+            + st.cache.dep_index.capacity() * size_of::<(i64, Vec<(i64, RootKind)>)>()
+            + st.cache
+                .dep_index
+                .values()
+                .map(|l| l.capacity() * size_of::<(i64, RootKind)>())
+                .sum::<usize>();
+        Self {
+            edges: v.edges.len(),
+            edge_bytes,
+            nodes: v.nodes.len(),
+            node_bytes,
+            index_bytes,
+            written: st.written.len(),
+            written_bytes: st.written.capacity() * size_of::<(i64, Option<i64>)>(),
+            chains: st.cache.chains.len(),
+            chain_bytes,
+        }
+    }
+
+    pub fn total_bytes(&self) -> usize {
+        self.edge_bytes + self.node_bytes + self.index_bytes + self.written_bytes + self.chain_bytes
+    }
+}
+
 /// 엔진이 들고 있는 증분 판정기
 pub struct Incremental {
     state: Option<State>,
@@ -161,6 +242,11 @@ impl Incremental {
     pub fn invalidate(&mut self) {
         self.state = None;
         self.epoch += 1;
+    }
+
+    /// 지금 판정 상태가 쥔 메모리의 어림(상태가 없으면 None). 선·노드를 한 번 훑으므로 판정마다 부르지 않는다
+    pub fn mem_stats(&self) -> Option<MemStats> {
+        self.state.as_ref().map(MemStats::of)
     }
 
     pub fn epoch(&self) -> u64 {

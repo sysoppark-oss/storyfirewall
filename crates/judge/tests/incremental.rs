@@ -975,3 +975,33 @@ fn prebuilt_full_rebuild_matches_full() {
         "받은 {adopted}번 중 증분으로 따라잡은 것 {caught_up}번"
     );
 }
+
+/// diag-263: 판정 상태가 쥔 메모리의 어림. 개수는 실제와 맞고, 바이트는 "칸 수 × 칸 크기"보다 작지 않다
+#[test]
+fn mem_stats_counts_what_the_state_holds() {
+    init();
+    let s = Store::open_in_memory().unwrap();
+    let bl = Baseline::open(&s, T0).unwrap();
+    let mut r = Rng(11);
+    let mut w = setup(&s, &mut r);
+    let mut inc = Incremental::new();
+    assert!(inc.mem_stats().is_none(), "상태가 없으면 없다");
+    for step in 1..=20 {
+        add_random_edge(&s, &mut w, &mut r, step);
+    }
+    check(&s, &mut inc, &bl, "mem");
+    let m = inc.mem_stats().expect("판정 뒤에는 있다");
+    let n_edges: i64 = s
+        .conn()
+        .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(m.edges as i64, n_edges);
+    assert!(m.nodes > 0);
+    assert!(m.edge_bytes >= m.edges * std::mem::size_of::<graph::Edge>());
+    assert!(m.node_bytes >= m.nodes * std::mem::size_of::<graph::Node>());
+    assert!(m.index_bytes > 0);
+    assert_eq!(
+        m.total_bytes(),
+        m.edge_bytes + m.node_bytes + m.index_bytes + m.written_bytes + m.chain_bytes
+    );
+}

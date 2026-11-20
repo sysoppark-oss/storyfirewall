@@ -240,6 +240,8 @@ pub struct World<'a> {
     /// 미리 만들기가 실패·시간 초과했으면 이 시각까지는 엔진이 직접 전체를 읽는다(PREBUILD_RETRY_AFTER 뒤 다시 시도).
     /// 55차 Q1: 한 번 실패로 서비스가 꺼질 때까지 끄면, 디스크를 바쁘게 해 180초를 넘기는 것만으로 "엔진이 12~15초 막힘"을 되살릴 수 있다
     pub prebuild_off_until: Option<std::time::Instant>,
+    /// 메모리 내역 진단을 몇 번째 판정에 잴지 세는 수
+    pub mem_probe_n: u32,
     /// 판정 결과가 바뀌어 문장을 미리 만들어야 함
     pub warm_due: bool,
     /// 37차 Q2: 지난번 본 (별칭, LUID) 짝. 바뀌면 인터페이스 조건 규칙을 지금 LUID 로 다시 건다. None = 아직 못 봄
@@ -406,6 +408,7 @@ impl Runtime {
                     last_judge: None,
                     prebuild: None,
                     prebuild_off_until: None,
+                    mem_probe_n: 0,
                     warm_due: false,
                     if_seen: None,
                     our_filters: our_filters_thread.clone(),
@@ -1432,6 +1435,56 @@ pub fn judge_and_notify(world: &mut World) {
                     "엔진: 주기 판정: 개수 — 페이지 폴트(프로세스 전체)",
                     Duration::from_millis(b.wrapping_sub(a) as u64),
                 );
+            }
+            // diag-263: 서비스가 1.7 GB 를 잡고 있다. 판정 상태가 그중 얼마인지 — 선·노드를 훑으므로 20번에 한 번만 잰다
+            world.mem_probe_n = world.mem_probe_n.wrapping_add(1);
+            if world.mem_probe_n % 20 == 1 {
+                if let Some(m) = world.judge_inc.mem_stats() {
+                    const MIB: usize = 1024 * 1024;
+                    let story_bytes = |v: &Option<(i64, std::sync::Arc<Vec<judge::Story>>)>| {
+                        v.as_ref().map_or(0, |(_, s)| {
+                            s.iter()
+                                .map(|x| {
+                                    std::mem::size_of::<judge::Story>()
+                                        + x.edges.capacity() * 8
+                                        + x.root_label.capacity()
+                                        + x.reasons.capacity()
+                                            * std::mem::size_of::<judge::Reason>()
+                                })
+                                .sum::<usize>()
+                        })
+                    };
+                    let stories = story_bytes(&world.judged) + story_bytes(&world.judged_prev);
+                    for (name, v) in [
+                        ("엔진: 메모리 내역: 개수 — 뷰의 선(천 개)", m.edges / 1000),
+                        ("엔진: 메모리 내역: 개수 — 뷰의 노드(천 개)", m.nodes / 1000),
+                        ("엔진: 메모리 내역: 개수 — 선 MiB", m.edge_bytes / MIB),
+                        ("엔진: 메모리 내역: 개수 — 노드 MiB", m.node_bytes / MIB),
+                        (
+                            "엔진: 메모리 내역: 개수 — 선 찾는 색인 MiB",
+                            m.index_bytes / MIB,
+                        ),
+                        (
+                            "엔진: 메모리 내역: 개수 — 쓴 장 표 MiB",
+                            m.written_bytes / MIB,
+                        ),
+                        (
+                            "엔진: 메모리 내역: 개수 — 사슬 캐시 MiB",
+                            m.chain_bytes / MIB,
+                        ),
+                        ("엔진: 메모리 내역: 개수 — 사슬(개)", m.chains),
+                        (
+                            "엔진: 메모리 내역: 개수 — 판정 결과(이번+직전) MiB",
+                            stories / MIB,
+                        ),
+                        (
+                            "엔진: 메모리 내역: 개수 — 판정 상태 합계 MiB",
+                            m.total_bytes() / MIB,
+                        ),
+                    ] {
+                        world.timings.record(name, Duration::from_millis(v as u64));
+                    }
+                }
             }
             // diag-261: 서비스 메모리가 덜어졌다가 판정 때 다시 올라오는지. 판정 앞과 뒤의 "올려 둔 크기" 차이가 그 양이다
             if let (Some((ws0, commit, load, avail)), Some((ws1, ..))) =
