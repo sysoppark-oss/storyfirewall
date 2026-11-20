@@ -310,13 +310,15 @@ fn in_list(n: usize) -> String {
 
 /// 노드 여러 개를 한 번에
 pub fn nodes_by_ids(store: &Store, ids: &[i64]) -> Result<std::collections::HashMap<i64, Node>> {
-    let mut out = std::collections::HashMap::with_capacity(ids.len());
     let uniq: Vec<i64> = ids
         .iter()
         .copied()
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
+    // 표 크기는 **서로 다른** id 수로 잡는다. 받은 목록에는 같은 id 가 거듭 들어 있다(판정 뷰는 선마다 두 끝점을 넘긴다):
+    // diag-265 — 선 213만(id 426만 개)에 노드는 22만인데 표를 426만 칸으로 잡아 빈 칸만 900 MiB 를 쥐고 있었다.
+    let mut out = std::collections::HashMap::with_capacity(uniq.len());
     // diag-159: 전체 판정(노드 13만)에서 IN 묶음 조회가 노트북 콜드 캐시 31초 — 많이 찾을 때는 표를 한 번 차례로 읽고 거른다
     if uniq.len() > FULL_SCAN_IDS {
         let want: HashSet<i64> = uniq.iter().copied().collect();
@@ -401,13 +403,14 @@ pub fn raw_meta(
     store: &Store,
     ids: &[i64],
 ) -> Result<std::collections::HashMap<i64, (i64, String)>> {
-    let mut out = std::collections::HashMap::with_capacity(ids.len());
     let uniq: Vec<i64> = ids
         .iter()
         .copied()
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
+    // 서로 다른 id 수로 잡는다(nodes_by_ids 와 같은 이유)
+    let mut out = std::collections::HashMap::with_capacity(uniq.len());
     for ch in uniq.chunks(CHUNK) {
         let sql = format!(
             "SELECT id, ts, source FROM raw_events WHERE id IN ({})",
