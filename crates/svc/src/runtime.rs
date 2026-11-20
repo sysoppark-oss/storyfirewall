@@ -1269,6 +1269,86 @@ pub fn thread_cpu_time() -> Option<Duration> {
     Some(Duration::from_nanos(ns))
 }
 
+/// 판정하던 순간의 전원 상태. 같은 일에 CPU 시간이 2배 넘게 드는 때(diag-253)가 절전·배터리 때문인지 가르는 진단용.
+/// 읽기만 한다 — Windows 설정을 바꾸지 않는다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PowerSample {
+    /// 배터리로 돌고 있다(AC 가 아니다). 알 수 없으면 None
+    pub on_battery: Option<bool>,
+    /// Windows 절전 모드(배터리 세이버)가 켜져 있다
+    pub saver: Option<bool>,
+    /// 논리 프로세서 평균: 지금 클럭, 최대 클럭, 지금 허용된 상한(MHz)
+    pub mhz: Option<(u32, u32, u32)>,
+}
+
+/// (현재, 최대, 상한) 목록의 평균. 최대가 0 인 칸(채워지지 않은 칸)은 뺀다.
+pub fn mean_mhz(rows: &[(u32, u32, u32)]) -> Option<(u32, u32, u32)> {
+    let live: Vec<_> = rows.iter().filter(|r| r.1 > 0).collect();
+    if live.is_empty() {
+        return None;
+    }
+    let n = live.len() as u64;
+    let avg =
+        |f: fn(&(u32, u32, u32)) -> u32| (live.iter().map(|r| f(r) as u64).sum::<u64>() / n) as u32;
+    Some((avg(|r| r.0), avg(|r| r.1), avg(|r| r.2)))
+}
+
+#[cfg(windows)]
+pub fn power_sample() -> PowerSample {
+    use windows_sys::Win32::System::Power::{
+        CallNtPowerInformation, GetSystemPowerStatus, ProcessorInformation,
+        PROCESSOR_POWER_INFORMATION, SYSTEM_POWER_STATUS,
+    };
+    // SAFETY: 0 으로 채운 값이 유효한 평범한 C 구조체이고, 포인터는 이 지역 변수를 가리킨다.
+    let mut st: SYSTEM_POWER_STATUS = unsafe { std::mem::zeroed() };
+    let ok = unsafe { GetSystemPowerStatus(&mut st) } != 0;
+    // ACLineStatus: 0 배터리, 1 AC, 255 모름. SystemStatusFlag: 1 이면 절전 모드
+    let on_battery = match (ok, st.ACLineStatus) {
+        (true, 0) => Some(true),
+        (true, 1) => Some(false),
+        _ => None,
+    };
+    let saver = ok.then_some(st.SystemStatusFlag == 1);
+    // ProcessorInformation 은 논리 프로세서마다 한 칸을 채운다. 버퍼가 모자라면 실패하므로 넉넉히 잡는다.
+    const SLOTS: usize = 256;
+    // SAFETY: 위와 같이 0 으로 채워도 유효한 구조체의 배열
+    let mut buf: Vec<PROCESSOR_POWER_INFORMATION> = vec![unsafe { std::mem::zeroed() }; SLOTS];
+    let bytes = (SLOTS * std::mem::size_of::<PROCESSOR_POWER_INFORMATION>()) as u32;
+    // SAFETY: 출력 버퍼의 주소와 그 바이트 길이를 정확히 넘긴다. 입력 버퍼는 쓰지 않는다.
+    let status = unsafe {
+        CallNtPowerInformation(
+            ProcessorInformation,
+            std::ptr::null(),
+            0,
+            buf.as_mut_ptr().cast(),
+            bytes,
+        )
+    };
+    let mhz = if status == 0 {
+        let rows: Vec<_> = buf
+            .iter()
+            .map(|p| (p.CurrentMhz, p.MaxMhz, p.MhzLimit))
+            .collect();
+        mean_mhz(&rows)
+    } else {
+        None
+    };
+    PowerSample {
+        on_battery,
+        saver,
+        mhz,
+    }
+}
+
+#[cfg(not(windows))]
+pub fn power_sample() -> PowerSample {
+    PowerSample {
+        on_battery: None,
+        saver: None,
+        mhz: None,
+    }
+}
+
 pub fn judge_and_notify(world: &mut World) {
     let from = world.last_judge_ts;
     let t0 = std::time::Instant::now();
@@ -1302,6 +1382,31 @@ pub fn judge_and_notify(world: &mut World) {
                 .timings
                 .record("엔진: 주기 판정: 사슬 모으기", p.chain);
             world.timings.record("엔진: 주기 판정: 점수", p.score);
+            // diag-253: 같은 입력에 CPU 시간이 2.1초 → 5.1초. 그 순간 전원·클럭을 나란히 남긴다(개수 칸 — ms 가 아니다).
+            // 평균으로 읽는다: "배터리 사용"이 0.4 면 판정의 40%가 배터리에서 돌았다는 뜻.
+            let pw = power_sample();
+            let n = |v: u32| Duration::from_millis(v as u64);
+            if let Some(b) = pw.on_battery {
+                world
+                    .timings
+                    .record("엔진: 전원: 개수 — 배터리 사용(천분율)", n(b as u32 * 1000));
+            }
+            if let Some(b) = pw.saver {
+                world
+                    .timings
+                    .record("엔진: 전원: 개수 — 절전 모드(천분율)", n(b as u32 * 1000));
+            }
+            if let Some((cur, max, limit)) = pw.mhz {
+                world
+                    .timings
+                    .record("엔진: 전원: 개수 — 현재 클럭 MHz", n(cur));
+                world
+                    .timings
+                    .record("엔진: 전원: 개수 — 최대 클럭 MHz", n(max));
+                world
+                    .timings
+                    .record("엔진: 전원: 개수 — 클럭 상한 MHz", n(limit));
+            }
             // diag-227: 점수 13초 가르기. 개수는 시간 칸에 숫자로 싣는다(이름에 "개수" — ms 가 아니다)
             world.timings.record("엔진: 점수: 기준선 DB", p.score_db);
             world
@@ -1391,6 +1496,16 @@ mod tests {
     use super::should_notify;
 
     /// 스레드 CPU 시간: 일을 하면 늘고, 잠자는 동안에는 벽시계만큼 늘지 않는다(부하와 계산을 가르는 근거).
+    #[test]
+    fn mean_mhz_skips_unfilled_slots() {
+        use super::mean_mhz;
+        // 채워진 두 칸만 평균 — 버퍼의 남은 칸(최대 0)은 세지 않는다
+        let rows = [(1000, 3000, 3000), (2000, 3000, 2400), (0, 0, 0), (0, 0, 0)];
+        assert_eq!(mean_mhz(&rows), Some((1500, 3000, 2700)));
+        assert_eq!(mean_mhz(&[(0, 0, 0)]), None);
+        assert_eq!(mean_mhz(&[]), None);
+    }
+
     #[test]
     fn thread_cpu_time_counts_work_not_sleep() {
         use super::thread_cpu_time;
