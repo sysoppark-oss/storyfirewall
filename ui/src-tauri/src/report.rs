@@ -1,4 +1,4 @@
-//! 상세 보고서 저장(통합프로젝트 「상세 보고서 기능 — 공통 규칙과 개발 의뢰 (1판)」 2장·3.2).
+//! 상세 보고서 저장(통합프로젝트 「상세 보고서 기능 — 공통 규칙과 개발 의뢰 (2판)」 2장·3.2).
 //!
 //! 화면(일반 권한)이 조회 결과로 만든 보고서 모형을 받아 여기서 가리기 → HTML → 사용자가 고른 위치에 쓴다.
 //! **서비스는 거치지 않는다**(서비스는 파일을 쓰지 않는다). 저장 위치는 웹뷰가 주지 않는다 — 코어가 띄운 저장 대화상자에서
@@ -37,6 +37,31 @@ fn who() -> report::Who {
         .map(|rd| rd.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).filter_map(|e| e.file_name().into_string().ok()).collect())
         .unwrap_or_default();
     report::out::who_from(std::env::var("COMPUTERNAME").ok(), std::env::var("USERNAME").ok(), dirs, local_ips())
+}
+
+/// 보고서 만든 기록 파일(2판 2.3): 사용자 폴더 `%LOCALAPPDATA%\\StoryFirewall\\report-log.jsonl`.
+/// 화면(일반 권한)이 쓴다 — 서비스의 기록에는 남기지 않는다. 자리를 못 찾으면 None(기록하지 않는다)
+fn made_log_file() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .map(|p| p.join("StoryFirewall").join("report-log.jsonl"))
+}
+
+/// 기록 한 줄을 남긴다. 실패해도 보고서 저장을 막지 않는다(2.3) — 결과만 돌려준다(화면이 조용히 알릴 수 있게)
+fn note_made(model: &report::Report, path: &str, reason: Option<&str>) -> bool {
+    let Some(file) = made_log_file() else {
+        return false;
+    };
+    // 1단계는 원자료(JSON)를 함께 내지 않는다(3.3 의 3단계)
+    report::made_log::append(&file, &report::made_log::Entry::of(model, false, path, reason)).is_ok()
+}
+
+/// 보고서 만든 기록을 최근 것부터 돌려준다(화면에서 보기 — 2.3). 이 PC 의 파일만 읽는다
+#[tauri::command]
+pub fn report_log(limit: Option<u32>) -> Vec<report::made_log::Entry> {
+    let n = limit.unwrap_or(20).clamp(1, 200) as usize;
+    made_log_file().map(|f| report::made_log::recent(&f, n)).unwrap_or_default()
 }
 
 #[cfg(windows)]
@@ -106,7 +131,9 @@ pub async fn report_save(app: tauri::AppHandle, model: report::Report, stamp: St
         let masked = report::masked_copy(&model, &who());
         let html = report::render_html(&masked);
         if html.len() > MAX_MODEL_BYTES {
-            return Err("보고서가 너무 큽니다. 기간이나 구역을 줄여 주세요".into());
+            let msg = "보고서가 너무 큽니다. 기간이나 구역을 줄여 주세요";
+            note_made(&model, "", Some(msg));
+            return Err(msg.into());
         }
         let name = report::file_name(&model.program, &stamp);
         #[cfg(windows)]
@@ -119,10 +146,19 @@ pub async fn report_save(app: tauri::AppHandle, model: report::Report, stamp: St
         let Some(path) = chosen else {
             return Ok(serde_json::json!({ "saved": false }));
         };
-        let path = report::out::write_whole(&path, html.as_bytes()).map_err(|e| format!("파일을 쓰지 못했습니다: {e}"))?;
+        let path = match report::out::write_whole(&path, html.as_bytes()) {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = format!("파일을 쓰지 못했습니다: {e}");
+                note_made(&model, &path.to_string_lossy(), Some(&msg));
+                return Err(msg);
+            }
+        };
         let shown = path.to_string_lossy().to_string();
         *LAST.lock().unwrap() = Some(path);
-        Ok(serde_json::json!({ "saved": true, "path": shown, "bytes": html.len() }))
+        // 대화상자에서 취소한 것은 "만든 것"이 아니라 적지 않는다. 기록 쓰기에 실패해도 저장은 성공이다
+        let logged = note_made(&model, &shown, None);
+        Ok(serde_json::json!({ "saved": true, "path": shown, "bytes": html.len(), "logged": logged }))
     })
     .await
     .map_err(|e| e.to_string())?

@@ -335,3 +335,32 @@ export async function openReport(what: "file" | "folder"): Promise<string | null
     return String(err).slice(0, 200);
   }
 }
+
+/// 보고서 만든 기록 한 줄(2판 2.3). 코어가 사용자 폴더의 기록 파일에서 읽어 준다
+export interface MadeEntry { at: string; sections: string[]; period_from: string; period_to: string; masked: boolean; raw_json: boolean; path: string; ok: boolean; reason?: string }
+/// "2026-11-20T13:40:00+09:00" → "2026-11-20 13:40:00". 모양이 다르면 받은 글자 그대로(기록 파일은 손으로 고칠 수 있다)
+export function plainTime(iso: string): string {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(iso);
+  return m ? `${m[1]} ${m[2]}` : iso;
+}
+/// 기록 한 줄을 화면 글자로: [시각, 구역, 기간, 가리기·원자료, 결과, 경로]
+export function madeCells(e: MadeEntry): string[] {
+  const title = (id: string) => SECTIONS_1.find((s) => s.id === id)?.title ?? id;
+  return [
+    plainTime(e.at),
+    e.sections.map(title).join(", ") || "-",
+    `${plainTime(e.period_from).slice(0, 10)} ~ ${plainTime(e.period_to).slice(0, 10)}`,
+    `${e.masked ? "가리기 켬" : "가리기 끔"}${e.raw_json ? ", 원자료 포함" : ""}`,
+    e.ok ? "저장함" : `실패: ${e.reason || "이유 모름"}`,
+    e.path || "-",
+  ];
+}
+export async function reportLog(limit = 20): Promise<MadeEntry[]> {
+  if (!inTauri) return [];
+  try {
+    const v = await invoke("report_log", { limit });
+    return Array.isArray(v) ? (v as MadeEntry[]) : [];
+  } catch {
+    return [];
+  }
+}

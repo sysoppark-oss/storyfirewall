@@ -7,6 +7,7 @@
 //! 모형에는 HTML 을 넣을 수 없다(글자만). 스크립트·이벤트 속성·링크·바깥 자원을 만들지 않는다.
 use serde::{Deserialize, Serialize};
 
+pub mod made_log;
 mod mask;
 pub mod out;
 pub use mask::{Masker, Who};

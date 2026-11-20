@@ -96,6 +96,12 @@ const server = http.createServer(async (req, res) => {
       out = { saved: true, path: `C:\\Users\\pjg\\Documents\\storyfirewall-report-${args.stamp}.html`, bytes: body.length };
     }
     else if (cmd === "report_open") out = null;
+    // 보고서 만든 기록(2판 2.3) 캡처용 견본: 성공 둘, 실패 하나, 긴 경로
+    else if (cmd === "report_log") out = [
+      { at: "2026-11-20T13:40:12+09:00", sections: ["incidents", "blocked", "policy"], period_from: "2026-11-13T13:40:12+09:00", period_to: "2026-11-20T13:40:12+09:00", masked: true, raw_json: false, path: "C:\\Users\\pjg\\Documents\\storyfirewall-report-20261120-134012.html", ok: true, reason: "" },
+      { at: "2026-11-19T09:02:44+09:00", sections: ["incidents"], period_from: "2026-11-19T00:00:00+09:00", period_to: "2026-11-19T09:02:44+09:00", masked: false, raw_json: false, path: "D:\\보고서\\아주 긴 폴더 이름이 이어지는 경우\\2026년 11월\\용인 사무실\\storyfirewall-report-20261119-090244.html", ok: true, reason: "" },
+      { at: "2026-11-18T21:15:03+09:00", sections: ["blocked", "policy"], period_from: "2026-10-19T21:15:03+09:00", period_to: "2026-11-18T21:15:03+09:00", masked: true, raw_json: false, path: "E:\\storyfirewall-report-20261118-211503.html", ok: false, reason: "파일을 쓰지 못했습니다: 액세스가 거부되었습니다. (os error 5)" },
+    ];
     else out = null;
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify(out));
@@ -313,6 +319,15 @@ if (mode.startsWith("shots:")) {
     await page.locator(".report-out .ok").waitFor({ timeout: 30000 }).catch(() => {});
     console.log(`shots report: out=${(await page.locator(".report-out").innerText().catch(() => "(없음)")).replace(/\n/g, " | ")}`);
     await page.screenshot({ path: path.join(outDir, `${label}-saved.png`), fullPage: true });
+    // 보고서 만든 기록(2판 2.3): 접힌 줄을 펼쳐 표가 보이는지
+    await page.click(".report-made summary");
+    await page.locator(".report-made-table").waitFor({ timeout: 5000 }).catch(() => {});
+    console.log(`shots report made: rows=${await page.locator(".report-made-table tbody tr").count()}`);
+    await page.locator(".report-made").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(outDir, `${label}-made.png`), fullPage: true });
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.screenshot({ path: path.join(outDir, `${label}-made-narrow.png`), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.locator(".report-make fieldset >> nth=2").locator("input[type=checkbox]").uncheck();
     await page.click(".report-make .actions .btn.primary");
     await page.waitForTimeout(400);

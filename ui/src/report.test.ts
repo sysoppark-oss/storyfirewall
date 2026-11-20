@@ -180,3 +180,14 @@ describe("접점", () => {
     expect(readFileSync(file, "utf8") as string).toBe(stable + "\n");
   });
 });
+
+describe("보고서 만든 기록(2판 2.3)", () => {
+  it("한 줄을 화면 글자 여섯 칸으로", async () => {
+    const { madeCells, plainTime } = await import("./report");
+    const e = { at: "2026-11-20T13:40:12+09:00", sections: ["incidents", "policy", "모르는구역"], period_from: "2026-11-13T13:40:12+09:00", period_to: "2026-11-20T13:40:12+09:00", masked: true, raw_json: false, path: "C:\\r.html", ok: true };
+    expect(madeCells(e)).toEqual(["2026-11-20 13:40:12", "인시던트, 정책, 모르는구역", "2026-11-13 ~ 2026-11-20", "가리기 켬", "저장함", "C:\\r.html"]);
+    expect(madeCells({ ...e, masked: false, raw_json: true, ok: false, reason: "접근 거부", path: "", sections: [] })).toEqual(["2026-11-20 13:40:12", "-", "2026-11-13 ~ 2026-11-20", "가리기 끔, 원자료 포함", "실패: 접근 거부", "-"]);
+    // 손으로 고친 기록: 모양이 다른 시각은 받은 그대로
+    expect(plainTime("어제쯤")).toBe("어제쯤");
+  });
+});

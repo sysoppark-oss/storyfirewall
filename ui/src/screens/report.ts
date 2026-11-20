@@ -1,4 +1,4 @@
-// 보고서 만들기(통합프로젝트 「상세 보고서 기능 — 공통 규칙과 개발 의뢰 (1판)」 1장, 3.3 의 1단계).
+// 보고서 만들기(통합프로젝트 「상세 보고서 기능 — 공통 규칙과 개발 의뢰 (2판)」 1장, 3.3 의 1단계, 2.3 의 보고서 만든 기록).
 // 구역을 고르고 → 기간 → 가리기 → [만들기] → (진행·취소) → 저장 위치는 코어의 저장 대화상자에서 사용자가 고른다 → [열기] [폴더 열기].
 // 자료는 기존 조회 메서드(읽기 전용)로만 받는다. 서비스는 파일을 쓰지 않는다. 업로드·보내기 단추는 없다(2.3).
 import { rpc } from "../rpc";
@@ -6,7 +6,7 @@ import { state } from "../state";
 import { el, button, clear } from "../ui";
 import {
   SECTIONS_1, type SectionId, type Section, type Period, type PeriodKind, type REvent, type RBlocked, type RPolicy, type RAddressBlock, type RHistory,
-  periodOf, incidentsSection, blockedSection, policySection, makeReport, saveReport, openReport,
+  periodOf, incidentsSection, blockedSection, policySection, makeReport, saveReport, openReport, reportLog, madeCells,
 } from "../report";
 
 /// 뒤 단계에서 넣을 구역(3.3 의 2·3단계) — 고를 수 없다는 것을 보여 준다
@@ -91,7 +91,30 @@ export function reportScreen(): HTMLElement {
   const make = button("만들기", () => void start(), "btn primary");
   const cancel = button("취소", () => { if (running) running.cancelled = true; }, "btn");
   cancel.hidden = true;
-  root.append(secBox, perBox, maskBox, el("div", "actions", make, cancel), out);
+  // 보고서 만든 기록(2.3): 이 PC 의 사용자 폴더에만 남는 편의 기록. 접어 두고, 펼치면 최근 것부터 보인다
+  const made = el("details", "card report-made");
+  const madeBody = el("div");
+  made.append(
+    el("summary", undefined, "보고서 만든 기록"),
+    el("p", "muted small", "보고서를 만들 때마다 이 PC의 사용자 폴더에 한 줄씩 남깁니다. 어디로도 보내지 않습니다. 직접 지우거나 고칠 수 있는 기록이라 증빙으로 쓸 수는 없습니다."),
+    madeBody,
+  );
+  const HEAD = ["만든 시각", "담은 메뉴", "기간", "가리기", "결과", "저장한 곳"];
+  const loadMade = async () => {
+    const items = await reportLog(20);
+    if (!items.length) return madeBody.replaceChildren(el("p", "muted", "아직 만든 보고서가 없습니다."));
+    const table = el("table", "report-made-table");
+    table.append(el("thead", undefined, el("tr", undefined, ...HEAD.map((h) => el("th", undefined, h)))));
+    const tb = el("tbody");
+    for (const e of items) {
+      const cells = madeCells(e);
+      tb.append(el("tr", e.ok ? undefined : "failed", ...cells.map((c, i) => el("td", i === 5 ? "mono" : undefined, c))));
+    }
+    table.append(tb);
+    madeBody.replaceChildren(table, el("p", "muted small", `최근 ${items.length}건`));
+  };
+  made.addEventListener("toggle", () => { if (made.open) void loadMade(); });
+  root.append(secBox, perBox, maskBox, el("div", "actions", make, cancel), out, made);
   root.addEventListener("screen-leave", () => { if (running) running.cancelled = true; });
 
   const say = (text: string, cls = "muted") => out.replaceChildren(el("p", cls, text));
@@ -136,6 +159,8 @@ export function reportScreen(): HTMLElement {
       }
       say("저장 위치를 골라 주세요…");
       const r = await saveReport(makeReport(sections, period, now, state.serverVersion || "판 모름", mask.checked), now);
+      // 성공이든 실패든 코어가 기록을 남겼다 — 펼쳐져 있으면 새로 읽는다
+      if (made.open) void loadMade();
       if (!r.ok) return say(`보고서를 만들지 못했습니다: ${r.message}`, "error");
       if (!r.saved) return say("저장을 취소했습니다. 파일은 만들지 않았습니다.");
       const note = el("p", "muted small");
