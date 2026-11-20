@@ -1185,10 +1185,6 @@ pub fn backoff_state(
 
 const PREBUILD_GIVE_UP: Duration = Duration::from_secs(180);
 /// 미리 만들기가 실패·시간 초과한 뒤 다시 시도하기까지(55차 Q1). 그동안은 엔진이 직접 전체를 읽는다
-/// 엔진의 그래프 DB 연결 쪽 캐시(KiB). SQLite 기본 2 MB 로는 1 GB 넘는 그래프에서 판정이 같은 쪽을 매번 파일에서 다시 읽는다(diag-259).
-/// 상한이며 쓰는 만큼만 든다. 엔진 연결 하나에만 적용한다(읽기 작업자·수집 연결은 기본값).
-pub const ENGINE_GRAPH_CACHE_KIB: u32 = 64 * 1024;
-
 pub const PREBUILD_RETRY_AFTER: Duration = Duration::from_secs(2 * 3600);
 
 /// 주기 판정 앞에서: 정기 전체 다시 차례면 다른 스레드(읽기 전용 연결)에서 만들게 하고 이번 판정은 쉰다(true).

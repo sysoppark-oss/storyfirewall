@@ -154,8 +154,8 @@ mod real {
                 Box::new(GraphResolver::open(&g).expect("graph (resolver)"));
             let conn = rusqlite::Connection::open(self.dir.join("engine.db")).expect("engine db");
             let store = graph::store::Store::open(&g).expect("graph db");
-            // 엔진 연결만 쪽 캐시를 키운다(기본 2 MB → 64 MB). 실패해도 기본값으로 돈다
-            let _ = store.set_cache_kib(svc::runtime::ENGINE_GRAPH_CACHE_KIB);
+            // 쪽 캐시는 기본값(2 MB)으로 둔다. 64 MB 로 키워 봤으나(diag-261) 판정·커널 시간이 줄지 않았다 —
+            // 커널 시간은 파일 읽기가 아니라 페이지 폴트 쪽이었다. 메모리만 더 쓰므로 되돌렸다.
             (
                 backend,
                 gq,
