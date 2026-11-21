@@ -47,6 +47,8 @@ pub struct Ingester<'a> {
     dns_cache: HashMap<String, (String, i64)>,
     /// 최근 사용자 프로세스 아웃바운드 접속: (ts, process node id). 서비스 경유 귀속용
     recent_user_connects: Vec<(i64, i64)>,
+    /// 이미 접속 선으로 남긴 UDP 흐름. 이어지는 송신은 선을 다시 만들지 않는다(udp_flow.rs)
+    udp_flows: crate::udp_flow::UdpFlows,
     /// PID → 이미지 파일명 (서비스 판별용)
     image_by_pid: HashMap<u32, String>,
     /// 최근 DNS 조회 선: (process node, domain node, ts, edge id). 1초 창 합치기용
@@ -89,6 +91,7 @@ impl<'a> Ingester<'a> {
             boot_time: None,
             dns_cache: HashMap::new(),
             recent_user_connects: Vec::new(),
+            udp_flows: crate::udp_flow::UdpFlows::new(),
             image_by_pid: HashMap::new(),
             recent_resolves: Vec::new(),
             services_by_pid: HashMap::new(),
@@ -309,6 +312,21 @@ impl<'a> Ingester<'a> {
 
     /// 이벤트 하나를 그래프에 반영한다. 만들어진 선의 수를 돌려준다.
     pub fn ingest(&mut self, ev: &Event) -> Result<usize> {
+        // 이어지는 UDP 흐름의 송신은 원시 이벤트도 선도 남기지 않는다(초당 한 건씩 쌓이던 것 — udp_flow.rs).
+        // 원시 이벤트를 넣기 **전에** 가른다.
+        if let EventKind::Connect {
+            proc,
+            proto: crate::event::Proto::Udp,
+            direction: Direction::Out,
+            raddr,
+            rport,
+            ..
+        } = &ev.kind
+        {
+            if self.udp_continuation(ev.ts, proc, raddr, *rport)? {
+                return Ok(0);
+            }
+        }
         let payload = serde_json::to_string(ev)?;
         let raw_id = self.store.insert_raw(ev.ts, &ev.source, &payload)?;
         match &ev.kind {
@@ -634,6 +652,12 @@ impl<'a> Ingester<'a> {
                     .store
                     .insert_edge(src, dst, Rel::Connected, ev.ts, Some(raw_id))?;
                 self.store.add_traffic_hour(ev.ts, 0, 0, 1)?;
+                // 선을 실제로 넣은 뒤에만 흐름을 기억한다(넣기 전에 적으면, 실패했을 때 다음 송신이 "이어짐"으로 묻힌다)
+                if *direction == Direction::Out && matches!(proto, crate::event::Proto::Udp) {
+                    let dns_domain = self.dns_cache.get(&ip).map(|(d, _)| d.as_str());
+                    self.udp_flows
+                        .emitted((p, ip.clone(), *rport), ev.ts, dns_domain);
+                }
                 if *direction == Direction::Out && !is_svc {
                     if let Some(d) = &domain {
                         self.touch_domain(ev.ts, p, d);
@@ -862,6 +886,42 @@ impl<'a> Ingester<'a> {
                     r.get(0)
                 })?;
         Ok(first >= b - BOOT_SLACK)
+    }
+
+    /// 이 UDP 송신이 이미 선으로 남긴 흐름의 이어짐이면 true — 선·원시 이벤트를 만들지 않는다.
+    /// 다만 접속 처리(EventKind::Connect)가 **선과 무관하게** 하던 기억은 그대로 한다, 귀속 결과가 전과 같도록:
+    /// 사용자 프로세스의 접속은 "직전 사용자 접속" 후보에 넣고, 도메인을 건드린 기록을 남긴다.
+    fn udp_continuation(
+        &mut self,
+        ts: i64,
+        proc: &ProcRef,
+        raddr: &str,
+        rport: u16,
+    ) -> Result<bool> {
+        let p = self.resolve_proc(proc, ts)?;
+        let ip = normalize_ip(raddr);
+        // 흐름을 가르는 도메인은 "직전 DNS 응답이 이 주소에 붙인 이름"이다. 같은 주소:포트 뒤의 다른 이름으로
+        // 새 접속을 열면 이 값이 달라져 이어짐이 아니게 된다(공유 CDN)
+        let dns_domain = self.dns_cache.get(&ip).map(|(d, _)| d.clone());
+        if !self
+            .udp_flows
+            .continues(&(p, ip, rport), ts, dns_domain.as_deref())
+        {
+            return Ok(false);
+        }
+        let udp = crate::event::Proto::Udp;
+        if !self.is_service(proc.pid) && !is_dns_transport(udp, rport) {
+            self.recent_user_connects.push((ts, p));
+            if self.recent_user_connects.len() > 256 {
+                self.recent_user_connects.drain(..128);
+            }
+        }
+        if !self.is_service(proc.pid) {
+            if let Some(d) = &dns_domain {
+                self.touch_domain(ts, p, d);
+            }
+        }
+        Ok(true)
     }
 
     fn resolve_proc(&mut self, p: &ProcRef, ts: i64) -> Result<i64> {

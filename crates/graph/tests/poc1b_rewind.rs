@@ -128,7 +128,26 @@ fn projection_marks_repeated_nodes_as_seen() {
     let events = load_fixture();
     let mut ing = Ingester::new(&store);
     ing.ingest_all(&events).unwrap();
-    // DNS 서비스(1896)를 주인공으로: DNS 서버(168.63.129.16:53)로 UDP 송신이 여러 번 → 두 번째부터 seen=true
+    // DNS 서비스(1896)를 주인공으로: 같은 원격지(168.63.129.16:53)로 가는 선이 여럿 → 두 번째부터 seen=true.
+    // 실측 로그의 반복은 몇 초 간격의 UDP 송신인데, 이어지는 UDP 흐름은 이제 선 하나다(udp_flow.rs).
+    // 반복 선은 흐름이 끊겼다 다시 이어진 경우로 만든다: 2분 뒤, 4분 뒤의 송신
+    let last = events.iter().map(|e| e.ts).max().unwrap();
+    for i in 1..=2i64 {
+        ing.ingest(&Event {
+            ts: last + i * 120 * 10_000_000,
+            source: "etw:network".into(),
+            kind: EventKind::Connect {
+                proc: graph::event::ProcRef::new(1896, None),
+                proto: graph::event::Proto::Udp,
+                direction: graph::event::Direction::Out,
+                laddr: "10.1.0.4".into(),
+                lport: 53000,
+                raddr: "168.63.129.16".into(),
+                rport: 53,
+            },
+        })
+        .unwrap();
+    }
     let svc = store
         .latest_process_by_pid(1896, i64::MAX)
         .unwrap()

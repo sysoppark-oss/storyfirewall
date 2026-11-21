@@ -25,6 +25,7 @@ pub mod schema;
 pub mod store;
 pub mod svchost;
 pub mod textlog;
+pub mod udp_flow;
 pub mod vault;
 pub mod views;
 
