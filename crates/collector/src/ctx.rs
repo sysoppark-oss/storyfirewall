@@ -61,8 +61,8 @@ pub struct Ctx {
     pub exp_counts: Mutex<HashMap<(String, u16), usize>>,
     /// ETW 가 본 아웃바운드 연결 (pid, raddr, rport). 연결 테이블 폴링이 누락 대조에 쓴다
     pub seen_connects: Mutex<HashSet<(u32, String, u16)>>,
-    /// 최근 UDP 송신 (pid, raddr, rport) → 마지막 시각. 같은 목적지 1초 안 반복은 Connect 로 안 보냄
-    pub recent_udp: Mutex<HashMap<(u32, String, u16), i64>>,
+    /// UDP 흐름 기억: 같은 (pid, raddr, rport) 로 이어지는 송신은 접속 선 하나로 본다(udp_flow.rs)
+    pub udp_flows: Mutex<crate::udp_flow::UdpFlows>,
     /// 파일 생성·이름 변경 링 버퍼 (명세 4판 2-2)
     pub files: Mutex<FileRing>,
     /// ETW QPC 원시 시각 → 벽시계 변환 (qpc.rs, 23차 Q2)
@@ -109,7 +109,7 @@ impl Ctx {
             exp_dumps: Mutex::new(Vec::new()),
             exp_counts: Mutex::new(HashMap::new()),
             seen_connects: Mutex::new(HashSet::new()),
-            recent_udp: Mutex::new(HashMap::new()),
+            udp_flows: Mutex::new(crate::udp_flow::UdpFlows::new()),
             files: Mutex::new(FileRing::new(600 * 10_000_000)), // 10분
             clock: Mutex::new(crate::qpc::QpcClock::new(qpc_freq())),
             volumes,
