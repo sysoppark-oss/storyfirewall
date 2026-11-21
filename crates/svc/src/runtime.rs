@@ -1524,6 +1524,21 @@ pub fn judge_and_notify(world: &mut World) {
                     }
                 }
             }
+            // 56차: 접속 선이 TCP 인지 UDP 인지, UDP 가 한 짝에 얼마나 쌓이는지(같은 박자)
+            if world.mem_probe_n % 20 == 1 {
+                if let Some(c) = world.judge_inc.connect_census() {
+                    for (name, v) in [
+                        ("엔진: 접속 선: 개수 — TCP", c[0]),
+                        ("엔진: 접속 선: 개수 — UDP", c[1]),
+                        ("엔진: 접속 선: 개수 — 방식 모름", c[2]),
+                        ("엔진: 접속 선: 개수 — UDP 의 (프로세스, 원격지) 짝", c[3]),
+                        ("엔진: 접속 선: 개수 — UDP 한 짝에 가장 많이 쌓인 선", c[4]),
+                        ("엔진: 접속 선: 개수 — TCP 의 (프로세스, 원격지) 짝", c[5]),
+                    ] {
+                        world.timings.record(name, Duration::from_millis(v as u64));
+                    }
+                }
+            }
             // diag-261: 서비스 메모리가 덜어졌다가 판정 때 다시 올라오는지. 판정 앞과 뒤의 "올려 둔 크기" 차이가 그 양이다
             if let (Some((ws0, commit, load, avail)), Some((ws1, ..))) =
                 (mem0, crate::perfdiag::memory_now())

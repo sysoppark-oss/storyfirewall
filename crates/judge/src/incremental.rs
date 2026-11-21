@@ -282,6 +282,51 @@ impl Incremental {
             .collect()
     }
 
+    /// 접속 선을 전송 방식으로 가른다(56차 추가 지적: 접속이 하루 64만 건인 까닭).
+    /// 돌려주는 값: [TCP 선, UDP 선, 모름, UDP 의 (프로세스, 원격지) 짝 수, 한 짝에 가장 많이 쌓인 UDP 선 수, TCP 의 짝 수].
+    /// UDP 는 연결이 없어 수집기가 "같은 목적지 1초 안 반복"만 거르고 보낸다 — 이어지는 UDP 흐름 하나가 하루 수만 선이 될 수 있다.
+    pub fn connect_census(&self) -> Option<[usize; 6]> {
+        let st = self.state.as_ref()?;
+        let v = &st.view;
+        // 원격지 노드마다 한 번만 속성을 푼다: 0 = tcp, 1 = udp, 2 = 모름
+        let mut proto: HashMap<i64, u8> = HashMap::new();
+        let mut kind_of = |id: i64| -> Option<u8> {
+            let n = v.nodes.get(&id)?;
+            if n.kind != "remote" {
+                return None;
+            }
+            Some(*proto.entry(id).or_insert_with(|| {
+                match n.attr("proto").as_ref().and_then(|p| p.as_str()) {
+                    Some(p) if p.eq_ignore_ascii_case("tcp") => 0,
+                    Some(p) if p.eq_ignore_ascii_case("udp") => 1,
+                    _ => 2,
+                }
+            }))
+        };
+        let mut out = [0usize; 6];
+        let mut udp_pairs: HashMap<(i64, i64), usize> = HashMap::new();
+        let mut tcp_pairs: HashSet<(i64, i64)> = HashSet::new();
+        for e in &v.edges {
+            if e.rel != "connected" || v.by_id.get(&e.id).is_none() {
+                continue;
+            }
+            // 나가는 접속은 도착이, 들어온 접속은 출발이 원격지다
+            let k = kind_of(e.dst).or_else(|| kind_of(e.src)).unwrap_or(2);
+            out[k as usize] += 1;
+            match k {
+                0 => {
+                    tcp_pairs.insert((e.src, e.dst));
+                }
+                1 => *udp_pairs.entry((e.src, e.dst)).or_default() += 1,
+                _ => {}
+            }
+        }
+        out[3] = udp_pairs.len();
+        out[4] = udp_pairs.values().copied().max().unwrap_or(0);
+        out[5] = tcp_pairs.len();
+        Some(out)
+    }
+
     /// 지금 판정 상태가 쥔 메모리의 어림(상태가 없으면 None). 선·노드를 한 번 훑으므로 판정마다 부르지 않는다
     pub fn mem_stats(&self) -> Option<MemStats> {
         self.state.as_ref().map(MemStats::of)

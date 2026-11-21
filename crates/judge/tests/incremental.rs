@@ -1048,3 +1048,51 @@ fn edge_census_adds_up_to_live_edges() {
     // 나머지는 몇 초 사이의 선이라 "하루 안"
     assert_eq!(c.iter().map(|(_, a, _)| a[0]).sum::<usize>(), total - 1);
 }
+
+/// 56차: 접속 선을 TCP/UDP 로 가르는 진단 — 원격지 노드의 proto 속성으로 세고, UDP 는 한 짝에 쌓인 수를 본다
+#[test]
+fn connect_census_splits_by_remote_proto() {
+    init();
+    let s = Store::open_in_memory().unwrap();
+    let bl = Baseline::open(&s, T0).unwrap();
+    let p = s
+        .upsert_node(
+            graph::NodeKind::Process,
+            "100:1",
+            "a.exe",
+            T0,
+            Some(r#"{"image":"C:\\a.exe"}"#),
+        )
+        .unwrap();
+    let tcp = s
+        .upsert_node(
+            graph::NodeKind::Remote,
+            "1.2.3.4:443",
+            "1.2.3.4:443",
+            T0,
+            Some(r#"{"ip":"1.2.3.4","port":443,"proto":"tcp"}"#),
+        )
+        .unwrap();
+    let udp = s
+        .upsert_node(
+            graph::NodeKind::Remote,
+            "5.6.7.8:41641",
+            "5.6.7.8:41641",
+            T0,
+            Some(r#"{"ip":"5.6.7.8","port":41641,"proto":"udp"}"#),
+        )
+        .unwrap();
+    s.insert_edge(p, tcp, graph::Rel::Connected, T0 + SEC, None)
+        .unwrap();
+    for i in 0..5 {
+        s.insert_edge(p, udp, graph::Rel::Connected, T0 + (2 + i) * SEC, None)
+            .unwrap();
+    }
+    // 들어온 접속: 출발이 원격지
+    s.insert_edge(udp, p, graph::Rel::Connected, T0 + 9 * SEC, None)
+        .unwrap();
+    let mut inc = Incremental::new();
+    assert!(inc.connect_census().is_none());
+    check(&s, &mut inc, &bl, "connect-census");
+    assert_eq!(inc.connect_census(), Some([1, 6, 0, 2, 5, 1]));
+}
