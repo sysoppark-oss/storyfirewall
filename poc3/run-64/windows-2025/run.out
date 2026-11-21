@@ -1,0 +1,172 @@
+A3 collector-poc — 90초 수집 → collector.db (experimental=true)
+=== REPORT ===
+elapsed=90.4705991s
+events_ingested=1875 edges_created=1204
+dropped=0 rate_limited=0 missing_fields=0
+clock: jumps=2 max_jump_ms=150001
+snapshot_processes=142 path_unknown=4 scm_pids=95 conntable_missed=12 bytes_rows_flushed=138 file_ring=1257
+callback_counts=[("capi2", 450), ("cmdline_browser_plain", 12), ("cmdline_kernel", 3), ("cmdline_open_failed_gone", 3), ("cmdline_renamed_tool", 1), ("dns", 290), ("exp:winhttp", 485), ("file", 226948), ("kernel_process_tool", 2), ("kernel_session_ok", 1), ("network", 5000), ("process", 89), ("svchost_service_arg", 2), ("task", 1), ("vault_open", 3)]
+session: events_lost=0 realtime_buffers_lost=0 log_buffers_lost=0 buffers_written=4599 buffers=128 free=127
+schema_notes=[("capi2", 11), ("capi2", 41), ("dns", 3006), ("dns", 3008), ("dns", 3020), ("exp:winhttp", 834), ("exp:winhttp", 835), ("exp:winhttp", 59995), ("exp:winhttp", 59996), ("exp:winhttp", 59997), ("exp:winhttp", 59998), ("file", 11), ("file", 12), ("file", 27), ("file", 30), ("kproc", 0), ("network", 10), ("network", 11), ("network", 12), ("network", 15), ("network", 42), ("network", 43), ("process", 1), ("process", 2), ("task", 129)]
+skipped_no_client_pid=0 chains_found=2
+vault: file_opens_seen=1512005 vault_open=3
+P8: max_flush_ms=0 max_flush_gap_ms=1124 max_bytes_rows_per_flush=14
+A4: motw_found=1 signatures_done=139 capi2_chains=221 capi2_fetches=42
+A20: hashes=3 store_failed=0
+volumes=[("\\Device\\HarddiskVolume3", "C:"), ("\\Device\\HarddiskVolume4", "D:")] rename_methods={"guess": 112, "filekey": 419}
+new_images=["C:\\Windows\\System32\\curl.exe", "C:\\Windows\\System32\\DeviceCensus.exe", "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe", "C:\\Windows\\System32\\reg.exe", "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\payload.exe", "C:\\Windows\\System32\\curl.exe", "C:\\Windows\\System32\\vssadmin.exe", "C:\\Windows\\System32\\bcdedit.exe", "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sf_vsscopy.exe", "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "C:\\Windows\\System32\\conhost.exe", "C:\\Windows\\System32\\wsl.exe", "C:\\Program Files\\WSL\\wsl.exe", "D:\\a\\storyfirewall\\storyfirewall\\target\\release\\defender-probe.exe", "D:\\a\\storyfirewall\\storyfirewall\\target\\release\\defender-probe.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Program Files\\Mozilla Firefox\\crashhelper.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Program Files\\Mozilla Firefox\\firefox.exe", "C:\\Windows\\System32\\whoami.exe", "C:\\Windows\\System32\\svchost.exe", "C:\\Windows\\System32\\svchost.exe", "C:\\Windows\\System32\\curl.exe", "C:\\Windows\\System32\\conhost.exe", "C:\\Program Files\\PowerShell\\7\\pwsh.exe", "C:\\Windows\\System32\\conhost.exe", "C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal_1.23.20211.0_x64__8wekyb3d8bbwe\\OpenConsole.exe", "C:\\Program Files\\PowerShell\\7\\pwsh.exe", "C:\\Windows\\System32\\conhost.exe", "C:\\Program Files\\PowerShell\\7\\pwsh.exe", "C:\\Windows\\System32\\conhost.exe", "C:\\Windows\\System32\\wsl.exe", "C:\\Program Files\\WSL\\wsl.exe", "C:\\Windows\\System32\\wsl.exe", "C:\\Program Files\\WSL\\wsl.exe"]
+ring: 134397677778826361 create "C:\\Users\\runneradmin\\AppData\\Local\\Microsoft\\PowerShell\\StartupProfileData-ServerMode" <- None
+ring: 134397677758899593 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn499.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn499.tmp")
+ring: 134397677758853045 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn499.tmp" <- None
+ring: 134397677758773556 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn498.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn498.tmp")
+ring: 134397677758730405 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn498.tmp" <- None
+ring: 134397677758650032 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn497.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn497.tmp")
+ring: 134397677758604715 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn497.tmp" <- None
+ring: 134397677758521996 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn496.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn496.tmp")
+ring: 134397677758476919 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn496.tmp" <- None
+ring: 134397677758390876 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn495.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn495.tmp")
+ring: 134397677758344953 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn495.tmp" <- None
+ring: 134397677758265623 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn494.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn333.dat")
+ring: 134397677758216123 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn494.tmp" <- None
+ring: 134397677758134180 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn493.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn334.dat")
+ring: 134397677758091100 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn493.tmp" <- None
+ring: 134397677758013130 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn492.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn335.dat")
+ring: 134397677757963323 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn492.tmp" <- None
+ring: 134397677757839781 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn491.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn336.dat")
+ring: 134397677757795577 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn491.tmp" <- None
+ring: 134397677757691470 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn490.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn337.dat")
+ring: 134397677757633235 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn490.tmp" <- None
+ring: 134397677757544427 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn489.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn338.dat")
+ring: 134397677757502089 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn489.tmp" <- None
+ring: 134397677757403022 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn488.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn339.dat")
+ring: 134397677757356401 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn488.tmp" <- None
+ring: 134397677757272578 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn487.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn340.dat")
+ring: 134397677757202139 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn487.tmp" <- None
+ring: 134397677757111046 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn486.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn341.dat")
+ring: 134397677757067449 create "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn486.tmp" <- None
+ring: 134397677756982979 rename "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn485.dat" <- Some("C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sfdl\\churn342.dat")
+A30: process_sessions=185/189 etw_session_events=44
+B2fix: inbound_lport_47555=300 inbound_rport_47555=0
+raw_by_source=[("etw:network", 773), ("etw:dns", 290), ("snapshot", 282), ("etw:capi2", 263), ("scm", 196), ("signature", 139), ("etw:process", 135), ("conntable", 12), ("hash", 3), ("etw:kernel-process", 3), ("etw:file:open", 3), ("motw", 1), ("etw:file:rename:C:\\Windows\\System32\\drivers\\en-US\\acpi.sys.mui", 1), ("etw:file", 1)]
+nodes=730 edges=1201 raw=2102
+process_nodes=189 (preexisting=145, unresolved=4) remote_nodes=439 domain_nodes=27 file_nodes=72
+connected=785 connected_via=14 resolved=32 spawned=176 wrote=2
+remote_with_domain=21 / remote_total=439
+conn_bytes_rows=56 total_sent=70573 total_recv=64467684
+top_recv=[(5656, "185.199.111.133", 443, 1535, 63045584), (8916, "140.248.145.91", 443, 3934, 612101), (980, "104.18.20.213", 80, 243, 492109), (7824, "140.82.112.4", 443, 631, 104525), (4008, "168.63.129.16", 80, 9309, 102552)]
+=== REWIND (new processes' connections) ===
+curl.exe -> www.rust-lang.org:443 :: remote:www.rust-lang.org:443 <- process:curl.exe <- process:pwsh.exe <- file:curl.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+payload.exe -> api.github.com:443 :: remote:api.github.com:443 <- process:payload.exe <- process:pwsh.exe <- file:payload.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- domain:example.com <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+curl.exe -> cloudflare-dns.com:443 :: remote:cloudflare-dns.com:443 <- process:curl.exe <- process:pwsh.exe <- file:curl.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+curl.exe -> cloudflare-dns.com:443 :: remote:cloudflare-dns.com:443 <- process:curl.exe <- process:pwsh.exe <- file:curl.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+curl.exe -> 104.20.23.154:443 :: remote:104.20.23.154:443 <- process:curl.exe <- process:pwsh.exe <- file:curl.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+firefox.exe -> 127.0.0.1:55604 :: remote:127.0.0.1:55604 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+firefox.exe -> 127.0.0.1:55606 :: remote:127.0.0.1:55606 <- process:firefox.exe <- file:firefox.exe <- process:firefox.exe <- remote:127.0.0.1:55607 <- process:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe
+firefox.exe -> aus5.mozilla.org:443 :: remote:aus5.mozilla.org:443 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+firefox.exe -> firefox.settings.services.mozilla.com:443 :: remote:firefox.settings.services.mozilla.com:443 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+firefox.exe -> aus5.mozilla.org:443 :: remote:aus5.mozilla.org:443 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+firefox.exe -> example.org:443 :: remote:example.org:443 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+firefox.exe -> firefox-portal-detection.com:80 :: remote:firefox-portal-detection.com:80 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+firefox.exe -> content-signature-2.cdn.mozilla.net:443 :: remote:content-signature-2.cdn.mozilla.net:443 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+firefox.exe -> aus5.mozilla.org:443 :: remote:aus5.mozilla.org:443 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+firefox.exe -> push.services.mozilla.com:443 :: remote:push.services.mozilla.com:443 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+firefox.exe -> push.services.mozilla.com:443 :: remote:push.services.mozilla.com:443 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+firefox.exe -> push.services.mozilla.com:443 :: remote:push.services.mozilla.com:443 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+firefox.exe -> firefox-portal-detection.com:80 :: remote:firefox-portal-detection.com:80 <- process:firefox.exe <- process:firefox.exe <- file:firefox.exe <- remote:127.0.0.1:55605 <- process:pwsh.exe <- process:Runner.Worker.exe <- file:pwsh.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe
+curl.exe -> release-assets.githubusercontent.com:443 :: remote:release-assets.githubusercontent.com:443 <- process:curl.exe <- file:curl.exe <- process:알 수 없는 프로그램(PID 7824)
+svchost.exe -> time.windows.com:123 :: remote:time.windows.com:123 <- process:svchost.exe <- process:svchost.exe <- process:curl.exe <- process:services.exe <- file:svchost.exe <- file:curl.exe <- process:알 수 없는 프로그램(PID 7824) <- process:wininit.exe <- file:services.exe <- file:wininit.exe
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+pwsh.exe -> 127.0.0.1:47555 :: remote:127.0.0.1:47555 <- process:pwsh.exe <- process:pwsh.exe <- file:pwsh.exe <- process:Runner.Worker.exe <- process:Runner.Listener.exe <- file:Runner.Worker.exe <- process:hosted-compute-agent <- file:Runner.Listener.exe <- process:svchost.exe <- file:hosted-compute-agent
+=== FILE CHAINS ===
+file payload.exe (etw:file:rename:C:\Windows\System32\drivers\en-US\acpi.sys.mui) -> executed as payload.exe
+file sf_vsscopy.exe (etw:file) -> executed as sf_vsscopy.exe
+=== CONNECTED_VIA (method/confidence) ===
+WindowsAzureGuestAgent.exe -> 168.63.129.16:32526 {"confidence":"low","lag_ms":900,"method":"window"}
+WindowsAzureGuestAgent.exe -> 168.63.129.16:32526 {"confidence":"low","lag_ms":900,"method":"window"}
+curl.exe -> x1.c.lencr.org:80 {"confidence":"high","method":"capi2","task_id":"{01AFD72A-5F23-4798-9228-37A5743FB109}","url":"http://x1.c.lencr.org/"}
+curl.exe -> yr.c.lencr.org:80 {"confidence":"high","method":"capi2","task_id":"{01AFD72A-5F23-4798-9228-37A5743FB109}","url":"http://yr.c.lencr.org/"}
+curl.exe -> yr1.c.lencr.org:80 {"confidence":"high","method":"capi2","task_id":"{01AFD72A-5F23-4798-9228-37A5743FB109}","url":"http://yr2.c.lencr.org/6.crl"}
+payload.exe -> ocsp.sectigo.com:80 {"confidence":"high","method":"capi2","task_id":"{743CE3F9-9B4F-452E-98AB-A369D8E58521}","url":"http://ocsp.sectigo.com/MFEwTzBNMEswSTAJBgUrDgMCGgUABBS3DhJWomGbOJFU%2Fpy58BaOB6aMCwQUF5moBMFv5C1wqAoQPQPT6Rq4JmMCEHMQW14cjUfcxRPZkmWQYeE%3D"}
+curl.exe -> ocsps.ssl.com:80 {"confidence":"high","method":"capi2","task_id":"{86A9BB16-AACC-4471-9956-0EC4F25432A4}","url":"http://ocsps.ssl.com/MFEwTzBNMEswSTAJBgUrDgMCGgUABBQsejSLTD%2FjnEsvKhkZeIeBsv3nRQQUgtGFczDnNQTTjgKS%2B%2BWk0cQh6M0CEBzXEhLeFRDZEoLaMxBKEC8%3D"}
+curl.exe -> yr1.c.lencr.org:80 {"confidence":"low","lag_ms":50,"method":"window"}
+curl.exe -> time.windows.com:123 {"confidence":"low","lag_ms":843,"method":"window"}
+curl.exe -> 168.63.129.16:80 {"confidence":"low","lag_ms":1463,"method":"window"}
+curl.exe -> 168.63.129.16:80 {"confidence":"low","lag_ms":1465,"method":"window"}
+curl.exe -> 168.63.129.16:80 {"confidence":"low","lag_ms":1467,"method":"window"}
+curl.exe -> 168.63.129.16:80 {"confidence":"low","lag_ms":1468,"method":"window"}
+curl.exe -> 168.63.129.16:80 {"confidence":"low","lag_ms":1470,"method":"window"}
+=== ORIGINS (MOTW) ===
+dockerd.exe host=None referrer=None attrs={"catalog":false,"issuer":null,"sha256":"0232e42f9abb32456b8ca9e82485d4285d99cf672e3c1855424de2745192adc5","sha256_seen_ts":134397677323016220,"sig_status":"nosignature","signer":null,"size":93231616}
+payload.exe host=Some("https://example.com/payload.exe") referrer=None attrs={"catalog":false,"host_url":"https://example.com/payload.exe","issuer":null,"sha256":"0747792728214afbfd2b9134b8ac46bedb2ec9b1b2b449a4c5d273efe020db2e","sha256_seen_ts":134397677374378088,"sig_status":"nosignature","signer":null,"size":818513,"zone_id":3}
+defender-probe.exe host=None referrer=None attrs={"catalog":false,"issuer":null,"sha256":"c188ab6067a2e4d22f5bf4e7f4c0cb98fa8b33e1548e558464354cd1efd09b35","sha256_seen_ts":134397677479757685,"sig_status":"nosignature","signer":null,"size":1981952}
+=== HASHES (A20: origins.sha256) ===
+hash: defender-probe.exe sha256=c188ab6067a2e4d22f5bf4e7f4c0cb98fa8b33e1548e558464354cd1efd09b35 motw=false
+hash: dockerd.exe sha256=0232e42f9abb32456b8ca9e82485d4285d99cf672e3c1855424de2745192adc5 motw=false
+hash: payload.exe sha256=0747792728214afbfd2b9134b8ac46bedb2ec9b1b2b449a4c5d273efe020db2e motw=true
+=== SIGNATURES (files with sig_status) ===
+DeviceCensus.exe {"catalog":false,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+MpDefenderCoreService.exe {"catalog":false,"issuer":"Windows Production PCA 2023","sig_status":"valid","signer":"Microsoft Windows Publisher"}
+MsMpEng.exe {"catalog":false,"issuer":"Windows Production PCA 2023","sig_status":"valid","signer":"Microsoft Windows Publisher"}
+OpenConsole.exe {"catalog":false,"issuer":"Microsoft Code Signing PCA 2011","sig_status":"valid","signer":"Microsoft Corporation"}
+SMSvcHost.exe {"catalog":false,"issuer":"Microsoft Code Signing PCA 2011","sig_status":"valid","signer":"Microsoft Corporation"}
+SecurityHealthService.exe {"catalog":false,"issuer":"Microsoft Windows Production PCA 2011","sig_status":"valid","signer":"Microsoft Windows Publisher"}
+VSSVC.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+WaAppAgent.exe {"catalog":false,"issuer":"Microsoft Code Signing PCA 2024","sig_status":"valid","signer":"Microsoft Corporation"}
+WindowsAzureGuestAgent.exe {"catalog":false,"issuer":"Microsoft Code Signing PCA 2024","sig_status":"valid","signer":"Microsoft Corporation"}
+WmiPrvSE.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+bcdedit.exe {"catalog":false,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+conhost.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+crashhelper.exe {"catalog":false,"issuer":"DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1","sig_status":"valid","signer":"Mozilla Corporation"}
+curl.exe {"catalog":false,"issuer":"Microsoft Code Signing PCA 2024","sig_status":"valid","signer":"Microsoft 3rd Party Application Component"}
+defender-probe.exe {"catalog":false,"issuer":null,"sha256":"c188ab6067a2e4d22f5bf4e7f4c0cb98fa8b33e1548e558464354cd1efd09b35","sha256_seen_ts":134397677479757685,"sig_status":"nosignature","signer":null,"size":1981952}
+dockerd.exe {"catalog":false,"issuer":null,"sha256":"0232e42f9abb32456b8ca9e82485d4285d99cf672e3c1855424de2745192adc5","sha256_seen_ts":134397677323016220,"sig_status":"nosignature","signer":null,"size":93231616}
+firefox.exe {"catalog":false,"issuer":"DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1","sig_status":"valid","signer":"Mozilla Corporation"}
+lsass.exe {"catalog":false,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows Publisher"}
+mqsvc.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+msdtc.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+payload.exe {"catalog":false,"host_url":"https://example.com/payload.exe","issuer":null,"sha256":"0747792728214afbfd2b9134b8ac46bedb2ec9b1b2b449a4c5d273efe020db2e","sha256_seen_ts":134397677374378088,"sig_status":"nosignature","signer":null,"size":818513,"zone_id":3}
+powershell.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+pwsh.exe {"catalog":false,"issuer":"Microsoft Code Signing PCA 2024","sig_status":"valid","signer":"Microsoft Corporation"}
+reg.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+sf_vsscopy.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2011","sig_status":"valid","signer":"Microsoft Windows"}
+spoolsv.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+sqlwriter.exe {"catalog":false,"issuer":"Microsoft Code Signing PCA 2011","sig_status":"valid","signer":"Microsoft Corporation"}
+sshd.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+svchost.exe {"catalog":false,"issuer":"Microsoft Windows Production PCA 2011","sig_status":"valid","signer":"Microsoft Windows Publisher"}
+vmcompute.exe {"catalog":false,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+vmms.exe {"catalog":false,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+vssadmin.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2011","sig_status":"valid","signer":"Microsoft Windows"}
+whoami.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2011","sig_status":"valid","signer":"Microsoft Windows"}
+wsl.exe {"catalog":true,"issuer":"Microsoft Windows Production PCA 2026 RSA2048-SHA256","sig_status":"valid","signer":"Microsoft Windows"}
+wsl.exe {"catalog":false,"issuer":"Microsoft Code Signing PCA 2024","sig_status":"valid","signer":"Microsoft Corporation"}
+wslservice.exe {"catalog":false,"issuer":"Microsoft Code Signing PCA 2024","sig_status":"valid","signer":"Microsoft Corporation"}
+sig_summary: valid=33 nosignature=3 untrusted=0 catalog=13
+END
+CLOCKJUMP: whoami_etw_minus_wall_ms=11.5646 ok
+CMDLINE: renamed_tool=1 ['vssadmin.exe']
+CMDLINE: total=3 vssadmin_list=1 bcdedit_enum=1 ok
+CMDLINE: line='"C:\\Windows\\system32\\vssadmin.exe" list shadows'
+CMDLINE: line='"C:\\Windows\\system32\\bcdedit.exe" /enum {current}'
+CMDLINE: line='"C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\sf_vsscopy.exe" list shadows'
+PROBE write ok C:\Users\runneradmin\Documents\sf_cfa_probe.txt
+CFAEVT: count=0
+PROBE events=0
+CFA: before mp=0 reg=0 audit mp=2 reg=2 match=True
