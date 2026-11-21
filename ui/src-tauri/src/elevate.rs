@@ -7,7 +7,9 @@
 #[cfg(windows)]
 pub fn is_elevated() -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
-    use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+    use windows_sys::Win32::Security::{
+        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+    };
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
     let mut tok: HANDLE = std::ptr::null_mut();
     if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut tok) } == 0 {
@@ -15,7 +17,15 @@ pub fn is_elevated() -> bool {
     }
     let mut e = TOKEN_ELEVATION { TokenIsElevated: 0 };
     let mut len = 0u32;
-    let ok = unsafe { GetTokenInformation(tok, TokenElevation, &mut e as *mut _ as *mut _, std::mem::size_of::<TOKEN_ELEVATION>() as u32, &mut len) };
+    let ok = unsafe {
+        GetTokenInformation(
+            tok,
+            TokenElevation,
+            &mut e as *mut _ as *mut _,
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut len,
+        )
+    };
     unsafe { CloseHandle(tok) };
     ok != 0 && e.TokenIsElevated != 0
 }
@@ -33,7 +43,9 @@ pub fn is_elevated() -> bool {
 pub fn run_helper(change_id: &str) -> Result<i32, String> {
     use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
     use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
-    use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
+    use windows_sys::Win32::UI::Shell::{
+        ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+    };
     if !crate::approve::is_uuid(change_id) {
         return Err("change_id 형식".into());
     }
@@ -88,7 +100,8 @@ pub fn run_helper(change_id: &str) -> Result<i32, String> {
 #[cfg(all(windows, feature = "e2e-cdp"))]
 fn e2e_uac_standin(dir: &str, change_id: &str) -> Result<i32, String> {
     let d = std::path::Path::new(dir);
-    std::fs::write(d.join(format!("req-{change_id}.txt")), change_id).map_err(|e| format!("UAC 대역 요청 쓰기: {e}"))?;
+    std::fs::write(d.join(format!("req-{change_id}.txt")), change_id)
+        .map_err(|e| format!("UAC 대역 요청 쓰기: {e}"))?;
     let done = d.join(format!("done-{change_id}.txt"));
     for _ in 0..240 {
         if let Ok(t) = std::fs::read_to_string(&done) {
@@ -107,7 +120,11 @@ pub fn e2e_env_from_args(args: &[String]) {
     if !cfg!(feature = "e2e-cdp") {
         return;
     }
-    const ALLOW: [&str; 3] = ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "STORYFW_E2E_APPROVE_OUT", "STORYFW_E2E_UAC_DIR"];
+    const ALLOW: [&str; 3] = [
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        "STORYFW_E2E_APPROVE_OUT",
+        "STORYFW_E2E_UAC_DIR",
+    ];
     let mut i = 0;
     while i < args.len() {
         if args[i] == "--e2e-env" {
@@ -147,7 +164,13 @@ pub fn harden_webview_env() {
     if cfg!(feature = "e2e-cdp") {
         return;
     }
-    for k in ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", "WEBVIEW2_USER_DATA_FOLDER", "WEBVIEW2_RELEASE_CHANNEL_PREFERENCE", "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER"] {
+    for k in [
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",
+        "WEBVIEW2_USER_DATA_FOLDER",
+        "WEBVIEW2_RELEASE_CHANNEL_PREFERENCE",
+        "WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER",
+    ] {
         // 단일 스레드인 시작 시점에만 부른다 (2024 판에서 unsafe 가 된 이유: 다른 스레드의 동시 읽기)
         std::env::remove_var(k);
     }

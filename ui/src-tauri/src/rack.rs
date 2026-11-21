@@ -14,11 +14,21 @@ mod win {
     use std::time::Duration;
 
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, GetFinalPathNameByHandleW, FILE_FLAG_BACKUP_SEMANTICS, FILE_NAME_NORMALIZED, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, VOLUME_NAME_DOS};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, GetFinalPathNameByHandleW, FILE_FLAG_BACKUP_SEMANTICS, FILE_NAME_NORMALIZED,
+        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, VOLUME_NAME_DOS,
+    };
     use windows_sys::Win32::System::Com::CoTaskMemFree;
-    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
-    use windows_sys::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
-    use windows_sys::Win32::UI::Shell::{FOLDERID_ProgramFiles, FOLDERID_ProgramFilesX86, SHGetKnownFolderPath};
+    use windows_sys::Win32::System::Registry::{
+        RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows_sys::Win32::UI::Shell::{
+        FOLDERID_ProgramFiles, FOLDERID_ProgramFilesX86, SHGetKnownFolderPath,
+    };
 
     use crate::client::{pipe, Client};
 
@@ -39,7 +49,17 @@ mod win {
         let (k, v) = (wide(key), wide(value));
         let mut buf = [0u16; 1024];
         let mut cb = (buf.len() * 2) as u32;
-        let r = unsafe { RegGetValueW(hive, k.as_ptr(), v.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr() as *mut _, &mut cb) };
+        let r = unsafe {
+            RegGetValueW(
+                hive,
+                k.as_ptr(),
+                v.as_ptr(),
+                RRF_RT_REG_SZ,
+                std::ptr::null_mut(),
+                buf.as_mut_ptr() as *mut _,
+                &mut cb,
+            )
+        };
         if r != 0 {
             return None;
         }
@@ -51,7 +71,11 @@ mod win {
 
     /// HKLM\SOFTWARE\Antioch\Modules\netx 의 Exe (설치 프로그램이 관리자 권한으로 쓴 값)
     fn netx_exe() -> Option<String> {
-        reg_sz(HKEY_LOCAL_MACHINE, &format!(r"{}\{}", rack::MODULES_KEY, rack::NETX_ID), "Exe")
+        reg_sz(
+            HKEY_LOCAL_MACHINE,
+            &format!(r"{}\{}", rack::MODULES_KEY, rack::NETX_ID),
+            "Exe",
+        )
     }
 
     /// Program Files 폴더들 — 환경 변수가 아니라 운영체제에 묻는다(환경 변수는 실행한 쪽이 바꿀 수 있다)
@@ -80,13 +104,30 @@ mod win {
     fn final_path(path: &str) -> Option<String> {
         let w = wide(path);
         // 권한 0 으로 연다(속성만) — 읽기 권한이 없어도 경로는 얻는다
-        let h = unsafe { CreateFileW(w.as_ptr(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, std::ptr::null(), OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, std::ptr::null_mut()) };
+        let h = unsafe {
+            CreateFileW(
+                w.as_ptr(),
+                0,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS,
+                std::ptr::null_mut(),
+            )
+        };
         if h == INVALID_HANDLE_VALUE {
             return None;
         }
         let h = Owned(h);
         let mut buf = vec![0u16; 2048];
-        let n = unsafe { GetFinalPathNameByHandleW(h.0, buf.as_mut_ptr(), buf.len() as u32, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS) } as usize;
+        let n = unsafe {
+            GetFinalPathNameByHandleW(
+                h.0,
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
+            )
+        } as usize;
         if n == 0 || n >= buf.len() {
             return None;
         }
@@ -102,7 +143,9 @@ mod win {
         let h = Owned(h);
         let mut buf = vec![0u16; 2048];
         let mut n = buf.len() as u32;
-        if unsafe { QueryFullProcessImageNameW(h.0, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut n) } == 0 {
+        if unsafe { QueryFullProcessImageNameW(h.0, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut n) }
+            == 0
+        {
             return None;
         }
         String::from_utf16(&buf[..n as usize]).ok()
@@ -113,7 +156,11 @@ mod win {
         netx_exe().is_some()
     }
 
-    pub fn diagnose(ip: &str, port: Option<u16>, name: Option<&str>) -> Result<serde_json::Value, String> {
+    pub fn diagnose(
+        ip: &str,
+        port: Option<u16>,
+        name: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
         // 보낼 값을 먼저 검사한다(주소가 아니면 NetX 에 붙지도 않는다)
         let mut rnd = [0u8; 16];
         getrandom::getrandom(&mut rnd).map_err(|e| format!("난수: {e}"))?;
@@ -126,25 +173,43 @@ mod win {
             return Err("등록된 NetX 가 Program Files 아래에 있지 않아 접속하지 않았습니다(PC 전체 설치가 필요합니다)".into());
         }
         // HKCU 는 일반 권한 프로그램이 고칠 수 있다 → 이름 형식을 검사하고, 접속한 뒤 서버를 확인한다
-        let name = reg_sz(HKEY_CURRENT_USER, &format!(r"{}\{}", rack::RUNNING_KEY, rack::NETX_ID), "PipeName").filter(|n| rack::valid_pipe_name(rack::NETX_ID, n)).ok_or(super::NETX_OFF)?;
+        let name = reg_sz(
+            HKEY_CURRENT_USER,
+            &format!(r"{}\{}", rack::RUNNING_KEY, rack::NETX_ID),
+            "PipeName",
+        )
+        .filter(|n| rack::valid_pipe_name(rack::NETX_ID, n))
+        .ok_or(super::NETX_OFF)?;
         // 파이프가 없으면(NetX 가 꺼졌는데 값만 남음) 켜 달라고만 한다
         let (h, spid) = pipe::open_unchecked(&name).map_err(|_| super::NETX_OFF.to_string())?;
         // 8.3 의 3번: 파이프 서버 프로세스의 실행 파일이 등록된 Exe 와 같은가. 다르면 한 글자도 보내지 않고 놓는다
-        let server = process_image(spid).and_then(|p| final_path(&p)).ok_or("NetX 파이프의 상대 프로그램을 확인하지 못해 접속하지 않았습니다")?;
+        let server = process_image(spid)
+            .and_then(|p| final_path(&p))
+            .ok_or("NetX 파이프의 상대 프로그램을 확인하지 못해 접속하지 않았습니다")?;
         if !rack::same_path(&server, &exe_final) {
             return Err("NetX 파이프의 상대가 등록된 NetX 가 아니어서 접속하지 않았습니다".into());
         }
         let c = Client::over_pipe(h, "netx").map_err(|e| format!("NetX 연결: {e}"))?;
-        let hello = c.call("rack.hello", rack::hello_params(env!("CARGO_PKG_VERSION")), Duration::from_secs(5)).map_err(|e| format!("NetX 응답 없음: {e}"))?;
+        let hello = c
+            .call(
+                "rack.hello",
+                rack::hello_params(env!("CARGO_PKG_VERSION")),
+                Duration::from_secs(5),
+            )
+            .map_err(|e| format!("NetX 응답 없음: {e}"))?;
         rack::check_hello(&hello)?;
         let named = params["entities"][0].get("name").is_some();
-        let mut reply = c.call("rack.handoff", params, Duration::from_secs(5)).map_err(|e| format!("NetX 응답 없음: {e}"))?;
+        let mut reply = c
+            .call("rack.handoff", params, Duration::from_secs(5))
+            .map_err(|e| format!("NetX 응답 없음: {e}"))?;
         // 이름 칸(변경 제안 2판)을 모르는 낮은 판의 NetX 가 "잘못된 값"으로 거절하면, 이름을 빼고 주소만으로 한 번 더 보낸다
         let mut name_sent = named;
         if named && rack::is_invalid_params(&reply) {
             getrandom::getrandom(&mut rnd).map_err(|e| format!("난수: {e}"))?;
             let plain = rack::handoff_params(&rack::uuid_v4(rnd), ip, port, None)?;
-            reply = c.call("rack.handoff", plain, Duration::from_secs(5)).map_err(|e| format!("NetX 응답 없음: {e}"))?;
+            reply = c
+                .call("rack.handoff", plain, Duration::from_secs(5))
+                .map_err(|e| format!("NetX 응답 없음: {e}"))?;
             name_sent = false;
         }
         let (accepted, opened) = rack::check_handoff(&reply)?;
@@ -167,10 +232,16 @@ pub fn netx_registered() -> bool {
 
 /// 사건의 접속지 주소·포트(와 짝지어진 이름)를 NetX 로 넘긴다. 결과: {accepted, opened, name_sent}. 실패는 화면에 그대로 보일 한국어 문장
 #[tauri::command]
-pub async fn netx_diagnose(ip: String, port: Option<u16>, name: Option<String>) -> Result<serde_json::Value, String> {
+pub async fn netx_diagnose(
+    ip: String,
+    port: Option<u16>,
+    name: Option<String>,
+) -> Result<serde_json::Value, String> {
     #[cfg(windows)]
     {
-        tauri::async_runtime::spawn_blocking(move || win::diagnose(&ip, port, name.as_deref())).await.map_err(|e| e.to_string())?
+        tauri::async_runtime::spawn_blocking(move || win::diagnose(&ip, port, name.as_deref()))
+            .await
+            .map_err(|e| e.to_string())?
     }
     #[cfg(not(windows))]
     {

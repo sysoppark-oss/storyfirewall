@@ -63,12 +63,16 @@ pub fn parse_cpu_sets(buf: &[u8]) -> Vec<(u16, u8, u8)> {
     while at + 8 <= buf.len() {
         let size = u32::from_le_bytes([buf[at], buf[at + 1], buf[at + 2], buf[at + 3]]) as usize;
         let kind = u32::from_le_bytes([buf[at + 4], buf[at + 5], buf[at + 6], buf[at + 7]]);
-        // 길이가 말이 안 되면 멈춘다(끝없이 돌거나 버퍼 밖을 읽지 않게)
-        if size < NEED || at + size > buf.len() {
+        // 길이가 말이 안 되면 멈춘다(끝없이 돌거나 버퍼 밖을 읽지 않게). 머리 8바이트보다 짧은 항목은 없다
+        if size < 8 || at + size > buf.len() {
             break;
         }
-        // Type 0 = CpuSetInformation. 모르는 종류는 건너뛴다
+        // Type 0 = CpuSetInformation. 모르는 종류는 건너뛴다 — 길이가 우리가 읽는 칸(19바이트)보다 짧아도
+        // 그 항목만 넘기고 뒤의 코어 목록은 계속 읽는다(57차 Q8: 전에는 짧은 낯선 항목에서 통째로 멈췄다)
         if kind == 0 {
+            if size < NEED {
+                break;
+            }
             let group = u16::from_le_bytes([buf[at + 12], buf[at + 13]]);
             out.push((group, buf[at + 14], buf[at + 18]));
         }
@@ -220,6 +224,14 @@ mod tests {
         let n = over.len();
         over[32..36].copy_from_slice(&64u32.to_le_bytes());
         assert_eq!(parse_cpu_sets(&over[..n]), vec![(0, 0, 1)]);
+        // 57차 Q8: 낯선 종류의 짧은 항목(16바이트)은 건너뛰고 뒤의 코어를 계속 읽는다
+        let mut short = entry(32, 0, 0, 0, 1);
+        let mut unknown = vec![0u8; 16];
+        unknown[0..4].copy_from_slice(&16u32.to_le_bytes());
+        unknown[4..8].copy_from_slice(&9u32.to_le_bytes());
+        short.extend(unknown);
+        short.extend(entry(32, 0, 0, 1, 0));
+        assert_eq!(parse_cpu_sets(&short), vec![(0, 0, 1), (0, 1, 0)]);
         assert_eq!(parse_cpu_sets(&[1, 2, 3]), vec![]);
         assert_eq!(parse_cpu_sets(&[]), vec![]);
     }

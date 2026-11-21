@@ -1330,7 +1330,11 @@ pub fn thread_cpu_time() -> Option<Duration> {
 fn census_name(rel: &str, label: &str) -> &'static str {
     use std::sync::{Mutex, OnceLock};
     static NAMES: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
-    let mut m = NAMES.get_or_init(Default::default).lock().unwrap();
+    // 표는 넣기만 하는 이름 모음이라 다른 스레드가 잠근 채 죽었어도 그대로 쓴다(57차 Q7-3: 여기서 unwrap 하면 판정마다 연쇄로 죽는다)
+    let mut m = NAMES
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let rel: String = rel
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
@@ -1519,6 +1523,10 @@ pub fn judge_and_notify(world: &mut World) {
                             m.chain_bytes / MIB,
                         ),
                         ("엔진: 메모리 내역: 개수 — 사슬(개)", m.chains),
+                        (
+                            "엔진: 메모리 내역: 개수 — 선 목록의 죽은 칸(개)",
+                            m.dead_slots,
+                        ),
                         (
                             "엔진: 메모리 내역: 개수 — 판정 결과(이번+직전) MiB",
                             stories / MIB,

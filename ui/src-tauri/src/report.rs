@@ -4,7 +4,7 @@
 //! **서비스는 거치지 않는다**(서비스는 파일을 쓰지 않는다). 저장 위치는 웹뷰가 주지 않는다 — 코어가 띄운 저장 대화상자에서
 //! 사용자가 고른 경로에만 쓴다. [열기]·[폴더 열기]도 코어가 마지막으로 쓴 경로만 연다(웹뷰가 경로를 넘기지 못한다).
 //! 가리기·HTML·파일 쓰기의 본체는 `report` 크레이트(순수 함수, Linux 에서 시험)에 있다.
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 /// 마지막으로 쓴 보고서 파일(앱을 켠 동안만)
@@ -16,7 +16,10 @@ const MAX_MODEL_BYTES: usize = 64 * 1024 * 1024;
 /// 이 PC 가 바깥으로 나갈 때 쓰는 주소. UDP 소켓의 connect 는 패킷을 보내지 않는다(경로만 고른다)
 fn local_ips() -> Vec<std::net::IpAddr> {
     let mut out = Vec::new();
-    for (bind, to) in [("0.0.0.0:0", "198.51.100.1:9"), ("[::]:0", "[2001:db8::1]:9")] {
+    for (bind, to) in [
+        ("0.0.0.0:0", "198.51.100.1:9"),
+        ("[::]:0", "[2001:db8::1]:9"),
+    ] {
         if let Ok(s) = std::net::UdpSocket::bind(bind) {
             if s.connect(to).is_ok() {
                 if let Ok(a) = s.local_addr() {
@@ -34,18 +37,57 @@ fn who() -> report::Who {
         .map(PathBuf::from)
         .and_then(|p| p.parent().map(|x| x.to_path_buf()))
         .and_then(|p| std::fs::read_dir(p).ok())
-        .map(|rd| rd.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).filter_map(|e| e.file_name().into_string().ok()).collect())
+        .map(|rd| {
+            rd.flatten()
+                .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect()
+        })
         .unwrap_or_default();
-    report::out::who_from(std::env::var("COMPUTERNAME").ok(), std::env::var("USERNAME").ok(), dirs, local_ips())
+    report::out::who_from(
+        std::env::var("COMPUTERNAME").ok(),
+        std::env::var("USERNAME").ok(),
+        dirs,
+        local_ips(),
+    )
 }
 
 /// 보고서 만든 기록 파일(2판 2.3): 사용자 폴더 `%LOCALAPPDATA%\\StoryFirewall\\report-log.jsonl`.
-/// 화면(일반 권한)이 쓴다 — 서비스의 기록에는 남기지 않는다. 자리를 못 찾으면 None(기록하지 않는다)
+/// 화면(일반 권한)이 쓴다 — 서비스의 기록에는 남기지 않는다. 자리를 못 찾거나 믿을 수 없으면 None(기록하지 않는다).
+///
+/// 57차 Q2: 폴더 자리는 환경 변수에서 오고, 그 아래 폴더는 같은 사용자의 다른 프로그램이 미리 바꿔 둘 수 있다.
+/// - 드라이브 글자로 시작하는 로컬 경로만 받는다(네트워크·장치 경로는 받지 않는다)
+/// - `StoryFirewall` 폴더나 기록 파일이 **다른 곳을 가리키는 연결(접합·심볼릭 링크)**이면 쓰지 않는다.
+///   화면을 "관리자 권한으로 실행"했을 때 일반 권한 프로그램이 심어 둔 연결을 따라 보호된 폴더에 쓰는 일을 막는다.
+///   (확인과 쓰기 사이에 바꿔치는 것까지는 막지 못한다 — 기록은 편의 기능이라 여기까지만 한다)
 fn made_log_file() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .map(|p| p.join("StoryFirewall").join("report-log.jsonl"))
+    let base = std::env::var_os("LOCALAPPDATA")?;
+    if !report::made_log::is_plain_local_path(&base.to_string_lossy()) {
+        return None;
+    }
+    let dir = PathBuf::from(base).join("StoryFirewall");
+    let file = dir.join("report-log.jsonl");
+    if is_link(&dir) || is_link(&file) {
+        return None;
+    }
+    Some(file)
+}
+
+/// 다른 곳을 가리키는 연결인가(접합·심볼릭 링크 등 재분석 지점). 없는 경로는 연결이 아니다
+fn is_link(p: &Path) -> bool {
+    let Ok(m) = std::fs::symlink_metadata(p) else {
+        return false;
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    {
+        m.file_type().is_symlink()
+    }
 }
 
 /// 기록 한 줄을 남긴다. 실패해도 보고서 저장을 막지 않는다(2.3) — 결과만 돌려준다(화면이 조용히 알릴 수 있게)
@@ -54,14 +96,20 @@ fn note_made(model: &report::Report, path: &str, reason: Option<&str>) -> bool {
         return false;
     };
     // 1단계는 원자료(JSON)를 함께 내지 않는다(3.3 의 3단계)
-    report::made_log::append(&file, &report::made_log::Entry::of(model, false, path, reason)).is_ok()
+    report::made_log::append(
+        &file,
+        &report::made_log::Entry::of(model, false, path, reason),
+    )
+    .is_ok()
 }
 
 /// 보고서 만든 기록을 최근 것부터 돌려준다(화면에서 보기 — 2.3). 이 PC 의 파일만 읽는다
 #[tauri::command]
 pub fn report_log(limit: Option<u32>) -> Vec<report::made_log::Entry> {
     let n = limit.unwrap_or(20).clamp(1, 200) as usize;
-    made_log_file().map(|f| report::made_log::recent(&f, n)).unwrap_or_default()
+    made_log_file()
+        .map(|f| report::made_log::recent(&f, n))
+        .unwrap_or_default()
 }
 
 #[cfg(windows)]
@@ -69,7 +117,10 @@ mod win {
     use std::path::PathBuf;
 
     use windows_sys::Win32::Foundation::HWND;
-    use windows_sys::Win32::UI::Controls::Dialogs::{GetSaveFileNameW, OFN_EXPLORER, OFN_HIDEREADONLY, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW};
+    use windows_sys::Win32::UI::Controls::Dialogs::{
+        GetSaveFileNameW, OFN_EXPLORER, OFN_HIDEREADONLY, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT,
+        OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    };
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -95,19 +146,35 @@ mod win {
         ofn.nMaxFile = file.len() as u32;
         ofn.lpstrTitle = title.as_ptr();
         ofn.lpstrDefExt = ext.as_ptr();
-        ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_HIDEREADONLY;
+        ofn.Flags = OFN_EXPLORER
+            | OFN_OVERWRITEPROMPT
+            | OFN_PATHMUSTEXIST
+            | OFN_NOCHANGEDIR
+            | OFN_HIDEREADONLY;
         if unsafe { GetSaveFileNameW(&mut ofn) } == 0 {
             return None;
         }
         let n = file.iter().position(|c| *c == 0).unwrap_or(file.len());
-        String::from_utf16(&file[..n]).ok().filter(|s| !s.is_empty()).map(PathBuf::from)
+        String::from_utf16(&file[..n])
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
     }
 
     /// 탐색기·기본 프로그램으로 연다
     pub fn shell_open(path: &std::path::Path) -> bool {
         let p = wide(&path.to_string_lossy());
         let op = wide("open");
-        let r = unsafe { ShellExecuteW(std::ptr::null_mut(), op.as_ptr(), p.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
+        let r = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                op.as_ptr(),
+                p.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                SW_SHOWNORMAL,
+            )
+        };
         r as isize > 32
     }
 }
@@ -115,14 +182,21 @@ mod win {
 /// 보고서를 만들어 사용자가 고른 위치에 쓴다. 반환: `{saved:false}`(대화상자에서 취소 — 아무 파일도 남기지 않는다)
 /// 또는 `{saved:true, path, bytes}`. `stamp` = "YYYYMMDD-HHMMSS"(파일 이름용)
 #[tauri::command]
-pub async fn report_save(app: tauri::AppHandle, model: report::Report, stamp: String) -> Result<serde_json::Value, String> {
+pub async fn report_save(
+    app: tauri::AppHandle,
+    model: report::Report,
+    stamp: String,
+) -> Result<serde_json::Value, String> {
     if model.program != "storyfirewall" {
         return Err("보고서 모형의 프로그램 이름이 다릅니다".into());
     }
     #[cfg(windows)]
     let owner: isize = {
         use tauri::Manager as _;
-        app.get_webview_window("main").and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize).unwrap_or(0)
+        app.get_webview_window("main")
+            .and_then(|w| w.hwnd().ok())
+            .map(|h| h.0 as isize)
+            .unwrap_or(0)
     };
     #[cfg(not(windows))]
     let _ = &app;
@@ -168,13 +242,20 @@ pub async fn report_save(app: tauri::AppHandle, model: report::Report, stamp: St
 /// 웹뷰는 경로를 넘기지 못한다 — 코어가 방금 쓴 `.html` 파일만 연다
 #[tauri::command]
 pub fn report_open(what: String) -> Result<(), String> {
-    let path = LAST.lock().unwrap().clone().ok_or_else(|| "이번에 만든 보고서가 없습니다".to_string())?;
+    let path = LAST
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "이번에 만든 보고서가 없습니다".to_string())?;
     if !path.is_file() {
         return Err("보고서 파일이 그 자리에 없습니다(옮기거나 지웠습니다)".into());
     }
     let target = match what.as_str() {
         "file" => path,
-        "folder" => path.parent().map(|p| p.to_path_buf()).ok_or_else(|| "폴더를 찾지 못했습니다".to_string())?,
+        "folder" => path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| "폴더를 찾지 못했습니다".to_string())?,
         _ => return Err("what".into()),
     };
     #[cfg(windows)]

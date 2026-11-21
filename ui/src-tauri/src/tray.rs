@@ -46,7 +46,13 @@ pub fn show_main(app: &AppHandle) {
 
 pub fn install(app: &tauri::App) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "열기", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "종료 (보호는 서비스가 계속합니다)", true, None::<&str>)?;
+    let quit = MenuItem::with_id(
+        app,
+        "quit",
+        "종료 (보호는 서비스가 계속합니다)",
+        true,
+        None::<&str>,
+    )?;
     let menu = Menu::with_items(app, &[&open, &quit])?;
     let mut b = TrayIconBuilder::with_id("main")
         .tooltip("Story Firewall")
@@ -58,7 +64,12 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, ev| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = ev {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = ev
+            {
                 show_main(tray.app_handle());
             }
         });
@@ -73,7 +84,11 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
 /// 트레이 툴팁으로 상태를 늘 보여 준다 (토스트는 드물게, 상태는 늘)
 fn set_tray_state(app: &AppHandle, up: bool) {
     if let Some(t) = app.tray_by_id("main") {
-        let _ = t.set_tooltip(Some(if up { "Story Firewall — 보호 중" } else { "Story Firewall — 서비스 연결 끊김" }));
+        let _ = t.set_tooltip(Some(if up {
+            "Story Firewall — 보호 중"
+        } else {
+            "Story Firewall — 서비스 연결 끊김"
+        }));
     }
 }
 
@@ -129,7 +144,10 @@ pub fn watchdog_loop(
             continue;
         }
         let since = *down_since.get_or_insert_with(Instant::now);
-        if !notified && since.elapsed() >= DOWN_NOTIFY_AFTER && last_notice.is_none_or(|t| t.elapsed() >= NOTIFY_MIN_GAP) {
+        if !notified
+            && since.elapsed() >= DOWN_NOTIFY_AFTER
+            && last_notice.is_none_or(|t| t.elapsed() >= NOTIFY_MIN_GAP)
+        {
             last_notice = Some(Instant::now());
             notify("Story Firewall — 서비스 연결 끊김", "보호 서비스에 30초 넘게 연결되지 않습니다. 차단 정책은 Windows 에 남아 있지만 새 기록·판정이 멈췄을 수 있습니다.");
             notified = true;
@@ -155,19 +173,55 @@ mod tests {
         let link = Link::default();
         let mut notes = vec![];
         let mut probes = 0;
-        watchdog_loop(&link, || { probes += 1; false }, |t, _| notes.push(t.to_string()), || {}, |_| {}, Duration::from_millis(1), Some(5));
+        watchdog_loop(
+            &link,
+            || {
+                probes += 1;
+                false
+            },
+            |t, _| notes.push(t.to_string()),
+            || {},
+            |_| {},
+            Duration::from_millis(1),
+            Some(5),
+        );
         assert!(notes.is_empty(), "30초 전에는 알림 없음: {notes:?}");
         assert_eq!(probes, 0, "유예 전에는 probe 없음");
         let mut avail = 0;
-        watchdog_loop(&link, || { probes += 1; true }, |t, _| notes.push(t.to_string()), || avail += 1, |_| {}, Duration::from_millis(1100), Some(6));
-        assert!(probes >= 1 && avail >= 1, "유예 뒤 probe → available ({probes}, {avail})");
+        watchdog_loop(
+            &link,
+            || {
+                probes += 1;
+                true
+            },
+            |t, _| notes.push(t.to_string()),
+            || avail += 1,
+            |_| {},
+            Duration::from_millis(1100),
+            Some(6),
+        );
+        assert!(
+            probes >= 1 && avail >= 1,
+            "유예 뒤 probe → available ({probes}, {avail})"
+        );
         assert!(notes.is_empty());
         // 연결됨이면 알림·probe 없음
         let link = Link::default();
         link.up.store(true, Ordering::SeqCst);
         let mut probes2 = 0;
         let mut states = vec![];
-        watchdog_loop(&link, || { probes2 += 1; true }, |_, _| panic!("알림 없어야"), || {}, |u| states.push(u), Duration::from_millis(1), Some(5));
+        watchdog_loop(
+            &link,
+            || {
+                probes2 += 1;
+                true
+            },
+            |_, _| panic!("알림 없어야"),
+            || {},
+            |u| states.push(u),
+            Duration::from_millis(1),
+            Some(5),
+        );
         assert_eq!(probes2, 0);
         assert_eq!(states, vec![true], "상태는 바뀔 때만 한 번");
     }

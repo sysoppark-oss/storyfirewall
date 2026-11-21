@@ -9,8 +9,8 @@ pub mod elevate;
 pub mod hud;
 pub mod rack;
 pub mod report;
-pub mod wordlang;
 pub mod tray;
+pub mod wordlang;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -29,7 +29,13 @@ struct AppState {
 /// 감시용: 마지막 끝점(없으면 파이프)에 새로 붙어 hello 만 하고 놓는다
 pub(crate) fn probe_service_at(ep: &str) -> bool {
     match Client::connect(ep, Box::new(|_| {})) {
-        Ok(c) => c.call("rpc.hello", serde_json::json!({"client_version": env!("CARGO_PKG_VERSION"), "api": [1, 0]}), Duration::from_secs(3)).is_ok(),
+        Ok(c) => c
+            .call(
+                "rpc.hello",
+                serde_json::json!({"client_version": env!("CARGO_PKG_VERSION"), "api": [1, 0]}),
+                Duration::from_secs(3),
+            )
+            .is_ok(),
         Err(_) => false,
     }
 }
@@ -42,7 +48,11 @@ pub(crate) fn probe_service() -> bool {
 
 /// 감시·HUD 가 붙을 끝점: 화면이 마지막으로 붙은 곳(없으면 파이프)
 pub(crate) fn probe_endpoint() -> String {
-    PROBE_EP.lock().unwrap().clone().unwrap_or_else(|| "pipe".to_string())
+    PROBE_EP
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| "pipe".to_string())
 }
 
 /// events.new 중 원격 세션 시작이면 알림 본문(서비스가 만든 사실 문장)
@@ -52,12 +62,24 @@ fn remote_session_toast(v: &serde_json::Value) -> Option<(String, bool)> {
     }
     let p = v.get("params")?;
     // 34차 Q3: RDP 섀도·세션 가로채기도 같은 즉시 알림(새 세션 없이 붙는 원격 조작)
-    if !matches!(p.get("kind").and_then(|k| k.as_str()), Some("remote_session_start" | "rdp_shadow" | "rdp_hijack")) {
+    if !matches!(
+        p.get("kind").and_then(|k| k.as_str()),
+        Some("remote_session_start" | "rdp_shadow" | "rdp_hijack")
+    ) {
         return None;
     }
     // 문장에는 외부에서 온 이름이 섞이지 않는다(도구 표시 이름은 서비스 목록의 상수) — 길이만 자른다
-    let body: String = p.get("detail").and_then(|d| d.as_str()).unwrap_or("").chars().take(240).collect();
-    Some((body, p.get("severity").and_then(|s| s.as_u64()).unwrap_or(3) >= 3))
+    let body: String = p
+        .get("detail")
+        .and_then(|d| d.as_str())
+        .unwrap_or("")
+        .chars()
+        .take(240)
+        .collect();
+    Some((
+        body,
+        p.get("severity").and_then(|s| s.as_u64()).unwrap_or(3) >= 3,
+    ))
 }
 
 /// 실시간 2(사용자 "실시간으로 문제를 찾아야 바로 해결가능함" 2026-11-07, 제품): 새 의심 사건(장이 올라갈 때만 — 서비스 should_notify)을
@@ -80,7 +102,11 @@ pub(crate) fn story_toast(v: &serde_json::Value) -> Option<(String, String)> {
         return None;
     }
     let label: String = p.get("label").and_then(|l| l.as_str()).unwrap_or("").chars().filter(|c| !c.is_control() && !matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')).take(80).collect();
-    let label = if label.is_empty() { "알 수 없는 프로그램".to_string() } else { label };
+    let label = if label.is_empty() {
+        "알 수 없는 프로그램".to_string()
+    } else {
+        label
+    };
     let ch = match p.get("chapter").and_then(|c| c.as_i64()).unwrap_or(0) {
         1 => "1장 유입",
         2 => "2장 실행",
@@ -89,7 +115,11 @@ pub(crate) fn story_toast(v: &serde_json::Value) -> Option<(String, String)> {
         5 => "5장 파괴 징후",
         _ => "",
     };
-    let body = if ch.is_empty() { "트레이 아이콘을 눌러 '이야기'에서 확인하세요.".to_string() } else { format!("{ch}까지 이어졌습니다. 트레이 아이콘을 눌러 '이야기'에서 확인하세요.") };
+    let body = if ch.is_empty() {
+        "트레이 아이콘을 눌러 '이야기'에서 확인하세요.".to_string()
+    } else {
+        format!("{ch}까지 이어졌습니다. 트레이 아이콘을 눌러 '이야기'에서 확인하세요.")
+    };
     Some((format!("의심 사건: {label}"), body))
 }
 
@@ -102,35 +132,56 @@ pub(crate) fn notify(app: &tauri::AppHandle, title: &str, body: &str) {
 // 잠금을 쥔 채 기다리면 모든 요청이 한 줄로 선다 (A22 러너에서 화면 멈춤으로 드러남).
 
 #[tauri::command]
-async fn connect(app: tauri::AppHandle, state: State<'_, AppState>, endpoint: String) -> Result<serde_json::Value, String> {
+async fn connect(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    endpoint: String,
+) -> Result<serde_json::Value, String> {
     // 이전 연결을 먼저 닫는다: 화면을 다시 읽거나 다시 연결할 때 예전 연결이 파이프 인스턴스를 쥐고 있으면 새 연결이 막힌다
     drop(state.client.lock().unwrap().take());
     let app2 = app.clone();
     let link = state.link.clone();
     let link2 = link.clone();
     let ep = endpoint.clone();
-    let c = tauri::async_runtime::spawn_blocking(move || -> Result<(Client, serde_json::Value), String> {
-        let c = Client::connect(&ep, Box::new(move |v| {
-            if v.get("method").and_then(|m| m.as_str()) == Some("client.disconnected") {
-                link2.up.store(false, std::sync::atomic::Ordering::SeqCst);
-            }
-            // 14판 20-4: 원격 제어 세션 시작은 창을 열지 않아도 바로 Windows 알림(조용함 원칙의 예외)
-            // 33차 Gemini Q4: 사용자가 "내가 쓰는 원격 도구"로 표시한 도구만 "알림"으로 낮춘다(알림 자체는 끄지 않음)
-            if let Some((body, alarm)) = remote_session_toast(&v) {
-                notify(&app2, if alarm { "원격 제어 경보" } else { "원격 제어 알림 (내가 쓰는 도구)" }, &body);
-            }
-            if STORY_TOAST.load(std::sync::atomic::Ordering::SeqCst) {
-                if let Some((title, body)) = story_toast(&v) {
-                    notify(&app2, &title, &body);
-                }
-            }
-            let _ = app2.emit("svc-notify", v);
-        }))
-        .map_err(|e| format!("connect {ep}: {e}"))?;
-        // 첫 메시지는 rpc.hello (13차 Q4)
-        let hello = c.call("rpc.hello", serde_json::json!({"client_version": env!("CARGO_PKG_VERSION"), "api": [1, 0]}), Duration::from_secs(5))?;
-        Ok((c, hello))
-    })
+    let c = tauri::async_runtime::spawn_blocking(
+        move || -> Result<(Client, serde_json::Value), String> {
+            let c = Client::connect(
+                &ep,
+                Box::new(move |v| {
+                    if v.get("method").and_then(|m| m.as_str()) == Some("client.disconnected") {
+                        link2.up.store(false, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    // 14판 20-4: 원격 제어 세션 시작은 창을 열지 않아도 바로 Windows 알림(조용함 원칙의 예외)
+                    // 33차 Gemini Q4: 사용자가 "내가 쓰는 원격 도구"로 표시한 도구만 "알림"으로 낮춘다(알림 자체는 끄지 않음)
+                    if let Some((body, alarm)) = remote_session_toast(&v) {
+                        notify(
+                            &app2,
+                            if alarm {
+                                "원격 제어 경보"
+                            } else {
+                                "원격 제어 알림 (내가 쓰는 도구)"
+                            },
+                            &body,
+                        );
+                    }
+                    if STORY_TOAST.load(std::sync::atomic::Ordering::SeqCst) {
+                        if let Some((title, body)) = story_toast(&v) {
+                            notify(&app2, &title, &body);
+                        }
+                    }
+                    let _ = app2.emit("svc-notify", v);
+                }),
+            )
+            .map_err(|e| format!("connect {ep}: {e}"))?;
+            // 첫 메시지는 rpc.hello (13차 Q4)
+            let hello = c.call(
+                "rpc.hello",
+                serde_json::json!({"client_version": env!("CARGO_PKG_VERSION"), "api": [1, 0]}),
+                Duration::from_secs(5),
+            )?;
+            Ok((c, hello))
+        },
+    )
     .await
     .map_err(|e| e.to_string())??;
     let (client, hello) = c;
@@ -141,10 +192,21 @@ async fn connect(app: tauri::AppHandle, state: State<'_, AppState>, endpoint: St
 }
 
 #[tauri::command]
-async fn rpc(state: State<'_, AppState>, method: String, params: serde_json::Value) -> Result<serde_json::Value, String> {
+async fn rpc(
+    state: State<'_, AppState>,
+    method: String,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
     // 잠금은 Arc 를 꺼낼 때만 잡는다
-    let c = state.client.lock().unwrap().clone().ok_or_else(|| "not connected".to_string())?;
-    tauri::async_runtime::spawn_blocking(move || c.call(&method, params, Duration::from_secs(10))).await.map_err(|e| e.to_string())?
+    let c = state
+        .client
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "not connected".to_string())?;
+    tauri::async_runtime::spawn_blocking(move || c.call(&method, params, Duration::from_secs(10)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// 이 UI 가 승격(관리자) 상태인가 — 변경 단추를 쓸 수 있는지 화면에 보여 준다
@@ -160,12 +222,19 @@ async fn approve(change_id: String) -> Result<i32, String> {
     if !approve::is_uuid(&change_id) {
         return Err("change_id 형식".into());
     }
-    tauri::async_runtime::spawn_blocking(move || elevate::run_helper(&change_id)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || elevate::run_helper(&change_id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 fn endpoint(state: State<'_, AppState>) -> Option<String> {
-    state.client.lock().unwrap().as_ref().map(|c| c.endpoint.clone())
+    state
+        .client
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|c| c.endpoint.clone())
 }
 
 /// 공개 빌드에서만 업데이트를 쓴다(릴리스 워크플로가 SF_UPDATER=1 로 빌드). 개발 빌드는 늘 꺼짐 —
@@ -200,8 +269,14 @@ async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
     }
     use tauri_plugin_updater::UpdaterExt;
     let u = app.updater().map_err(|e| e.to_string())?;
-    let up = u.check().await.map_err(|e| e.to_string())?.ok_or_else(|| "새 판이 없습니다".to_string())?;
-    up.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())
+    let up = u
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "새 판이 없습니다".to_string())?;
+    up.download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())
 }
 
 pub fn run() {
@@ -215,8 +290,29 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![connect, rpc, endpoint, elevated, approve, update_enabled, update_check, update_install, set_story_toast, hud::hud_state, hud::hud_mode, hud::set_hud_mode, hud::hud_last, hud::open_main, rack::netx_registered, rack::netx_diagnose, report::report_save, report::report_open,
-            report::report_log, wordlang::word_lang_get, wordlang::word_lang_set])
+        .invoke_handler(tauri::generate_handler![
+            connect,
+            rpc,
+            endpoint,
+            elevated,
+            approve,
+            update_enabled,
+            update_check,
+            update_install,
+            set_story_toast,
+            hud::hud_state,
+            hud::hud_mode,
+            hud::set_hud_mode,
+            hud::hud_last,
+            hud::open_main,
+            rack::netx_registered,
+            rack::netx_diagnose,
+            report::report_save,
+            report::report_open,
+            report::report_log,
+            wordlang::word_lang_get,
+            wordlang::word_lang_set
+        ])
         .on_window_event(|w, e| {
             // 닫기(X) = 트레이로 숨김. 끝내기는 트레이 메뉴 (A28)
             if let tauri::WindowEvent::CloseRequested { api, .. } = e {
@@ -271,7 +367,8 @@ mod tests {
         let (t, b) = story_toast(&v).unwrap();
         assert_eq!(t, "의심 사건: payload.exe");
         assert!(b.starts_with("4장 외부 접속까지 이어졌습니다"));
-        let other = serde_json::json!({"method": "events.new", "params": {"kind": "remote_session_start"}});
+        let other =
+            serde_json::json!({"method": "events.new", "params": {"kind": "remote_session_start"}});
         assert!(story_toast(&other).is_none());
     }
 }

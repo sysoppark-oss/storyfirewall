@@ -17,6 +17,12 @@ pub const MAX_BYTES: usize = 256 * 1024;
 const MAX_FIELD_CHARS: usize = 400;
 /// 구역 id 개수 상한(정상은 8개 이하)
 const MAX_SECTIONS: usize = 32;
+/// 구역 id 한 개의 글자 수 상한(정상은 "incidents" 같은 짧은 영문). 한 줄이 수십 KB 로 불어 기록 몇 건에 상한이 차지 않게(57차 Q8)
+const MAX_SECTION_CHARS: usize = 40;
+/// 바꿔 쓰기가 "다른 프로그램이 파일을 열고 있음"으로 막혔을 때 다시 해 보는 횟수와 간격.
+/// Windows 에서는 대상 파일을 백신 실시간 검사·미리 보기 등이 잠깐 잡고 있으면 이름 바꾸기가 거부된다(57차 Q1)
+const RENAME_TRIES: u32 = 4;
+const RENAME_WAIT: std::time::Duration = std::time::Duration::from_millis(40);
 
 /// 기록 한 줄
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -56,7 +62,7 @@ impl Entry {
                 .sections
                 .iter()
                 .take(MAX_SECTIONS)
-                .map(|s| clean(&s.id))
+                .map(|s| clean(&s.id).chars().take(MAX_SECTION_CHARS).collect())
                 .collect(),
             period_from: clean(&model.period_from),
             period_to: clean(&model.period_to),
@@ -102,7 +108,21 @@ fn read_capped(file: &Path) -> Option<String> {
         // 누가 키워 놓은 파일 — 읽지 않는다(기록은 새로 시작)
         return None;
     }
-    Some(String::from_utf8_lossy(&buf).into_owned())
+    // 메모장 등이 맨 앞에 붙인 BOM 은 벗긴다 — 두면 첫 줄을 못 읽고, 다시 쓸 때마다 그대로 따라간다(57차 Q7-2)
+    let text = String::from_utf8_lossy(&buf);
+    Some(text.trim_start_matches('\u{FEFF}').to_string())
+}
+
+/// 기록 파일을 둘 수 있는 평범한 로컬 경로인가: `C:\…` 처럼 드라이브 글자로 시작하는 절대 경로만.
+/// `\\서버\공유`(네트워크), `\\.\…`·`\\?\…`(장치·특수 경로)는 받지 않는다 — 폴더 자리는 환경 변수에서 오고,
+/// 환경 변수는 화면 프로그램을 띄운 쪽이 정한다(57차 Q2). 순수 함수라 Linux 에서 시험한다
+pub fn is_plain_local_path(p: &str) -> bool {
+    let b = p.as_bytes();
+    b.len() >= 3
+        && b[0].is_ascii_alphabetic()
+        && b[1] == b':'
+        && (b[2] == b'\\' || b[2] == b'/')
+        && !p.chars().any(|c| c.is_control())
 }
 
 /// 한 프로세스 안에서 기록 쓰기는 한 번에 하나씩(읽고 → 고쳐 → 바꿔 쓰기라 겹치면 서로의 줄을 지운다 — 별도 검수 지적 3)
@@ -132,7 +152,18 @@ pub fn append(file: &Path, entry: &Entry) -> std::io::Result<()> {
         f.write_all(body.as_bytes())?;
         f.sync_all()?;
         drop(f);
-        std::fs::rename(&tmp, file)
+        let mut tries = 1;
+        loop {
+            match std::fs::rename(&tmp, file) {
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::PermissionDenied && tries < RENAME_TRIES =>
+                {
+                    tries += 1;
+                    std::thread::sleep(RENAME_WAIT);
+                }
+                r => break r,
+            }
+        }
     })();
     if r.is_err() {
         // create_new 가 실패했다면(이미 있던 이름) 그 파일은 우리 것이 아니다 — 지우지 않는다
@@ -158,7 +189,7 @@ pub fn recent(file: &Path, limit: usize) -> Vec<Entry> {
                 .sections
                 .iter()
                 .take(MAX_SECTIONS)
-                .map(|s| clean(s))
+                .map(|s| clean(s).chars().take(MAX_SECTION_CHARS).collect())
                 .collect(),
             period_from: clean(&e.period_from),
             period_to: clean(&e.period_to),
@@ -381,5 +412,54 @@ mod tests {
             .all(|p| std::fs::read_to_string(p).unwrap() == "남의 것"));
         assert!(!file.exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 57차 Q7-2: BOM 이 붙은 파일(메모장으로 고쳐 저장)도 첫 줄을 읽고, 다시 쓰면 BOM 이 사라진다
+    #[test]
+    fn a_bom_does_not_hide_the_first_line() {
+        let dir = tmp("bom");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("report-log.jsonl");
+        let line = serde_json::to_string(&Entry::of(&model(), false, "C:\\a.html", None)).unwrap();
+        // BOM + CRLF 줄바꿈
+        std::fs::write(&file, format!("\u{FEFF}{line}\r\n{line}\r\n")).unwrap();
+        assert_eq!(recent(&file, 10).len(), 2);
+        append(&file, &Entry::of(&model(), false, "C:\\b.html", None)).unwrap();
+        assert_eq!(recent(&file, 10).len(), 3);
+        assert!(!std::fs::read(&file)
+            .unwrap()
+            .starts_with(&[0xEF, 0xBB, 0xBF]));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 57차 Q8: 구역 id 가 길어도 한 줄이 불어나지 않는다
+    #[test]
+    fn section_ids_are_capped() {
+        let mut m = model();
+        m.sections[0].id = "가".repeat(5000);
+        let e = Entry::of(&m, false, "x", None);
+        assert_eq!(e.sections[0].chars().count(), MAX_SECTION_CHARS);
+    }
+
+    /// 57차 Q2: 기록 파일은 드라이브 글자로 시작하는 로컬 경로에만 둔다
+    #[test]
+    fn only_plain_drive_paths_are_accepted() {
+        for ok in ["C:\\Users\\a\\AppData\\Local", "d:/data", "Z:\\"] {
+            assert!(is_plain_local_path(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "C:",
+            "C:rel",
+            "\\\\server\\share",
+            "\\\\.\\NUL",
+            "\\\\?\\C:\\Windows",
+            "\\\\.\\pipe\\x",
+            "NUL",
+            "/tmp/x",
+            "C:\\a\nb",
+        ] {
+            assert!(!is_plain_local_path(bad), "{bad}");
+        }
     }
 }

@@ -1111,6 +1111,8 @@ fn connect_census_splits_by_remote_proto() {
             "{round}번째 바꾼 뒤"
         );
         assert_eq!(inc.mem_stats().unwrap().edges, 7);
+        // 57차 Q7-1: 바뀐 선 5개의 옛 칸이 round 마다 쌓인다(전체 다시 만들기 전까지) — 수를 진단에 낸다
+        assert_eq!(inc.mem_stats().unwrap().dead_slots, 5 * round);
         let total: usize = inc
             .edge_census()
             .iter()

@@ -18,7 +18,10 @@ use std::cell::RefCell;
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
-use windows_sys::Win32::Graphics::Gdi::{CreateFontW, DeleteObject, GetSysColorBrush, IntersectRect, SetBkMode, SetTextColor, COLOR_WINDOW, HBRUSH, HDC, HFONT, TRANSPARENT};
+use windows_sys::Win32::Graphics::Gdi::{
+    CreateFontW, DeleteObject, GetSysColorBrush, IntersectRect, SetBkMode, SetTextColor,
+    COLOR_WINDOW, HBRUSH, HDC, HFONT, TRANSPARENT,
+};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
@@ -82,11 +85,20 @@ pub fn covered(hwnd: HWND, ignore_own: bool) -> bool {
             if !(ignore_own && pid == mypid) {
                 // 가상 데스크톱·일시 중단된 앱의 숨김(cloaked) 창은 화면에 없다
                 let mut cloaked: u32 = 0;
-                let hr = unsafe { DwmGetWindowAttribute(cur, DWMWA_CLOAKED as u32, &mut cloaked as *mut u32 as *mut _, 4) };
+                let hr = unsafe {
+                    DwmGetWindowAttribute(
+                        cur,
+                        DWMWA_CLOAKED as u32,
+                        &mut cloaked as *mut u32 as *mut _,
+                        4,
+                    )
+                };
                 if hr != 0 || cloaked == 0 {
                     let mut r: RECT = unsafe { std::mem::zeroed() };
                     let mut x: RECT = unsafe { std::mem::zeroed() };
-                    if unsafe { GetWindowRect(cur, &mut r) } != 0 && unsafe { IntersectRect(&mut x, &r, &me) } != 0 {
+                    if unsafe { GetWindowRect(cur, &mut r) } != 0
+                        && unsafe { IntersectRect(&mut x, &r, &me) } != 0
+                    {
                         return true;
                     }
                 }
@@ -127,7 +139,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 }
                 let fg = GetForegroundWindow() == hwnd;
                 if !fg || covered(hwnd, true) {
-                    let why = if !fg { "이 창이 맨 앞에 있지 않아" } else { "다른 프로그램의 창이 이 승인 창을 가리고 있어" };
+                    let why = if !fg {
+                        "이 창이 맨 앞에 있지 않아"
+                    } else {
+                        "다른 프로그램의 창이 이 승인 창을 가리고 있어"
+                    };
                     with(|s| {
                         SetWindowTextW(s.note, w(&format!("{why} 적용하지 않았습니다. 가린 창을 닫거나 이 창을 눌러 앞으로 가져온 뒤 다시 누르세요.")).as_ptr());
                     });
@@ -211,36 +227,168 @@ pub fn create(title: &str, text: &str, apply_label: &str, cancel_label: &str) ->
         let wh = 36 + pad + head_h + 8 + body_h + 8 + foot_h + 8 + 40 + 60;
         let x = (GetSystemMetrics(SM_CXSCREEN) - ww) / 2;
         let y = (GetSystemMetrics(SM_CYSCREEN) - wh) / 2;
-        let hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_DLGMODALFRAME, cls.as_ptr(), w(title).as_ptr(), WS_POPUP | WS_CAPTION | WS_SYSMENU, x, y, ww, wh, std::ptr::null_mut(), std::ptr::null_mut(), hinst, std::ptr::null());
+        let hwnd = CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_DLGMODALFRAME,
+            cls.as_ptr(),
+            w(title).as_ptr(),
+            WS_POPUP | WS_CAPTION | WS_SYSMENU,
+            x,
+            y,
+            ww,
+            wh,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            hinst,
+            std::ptr::null(),
+        );
         // 맑은 고딕 (없으면 시스템이 대체). 머리글은 굵게
-        let font = CreateFontW(-15, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, w("Malgun Gothic").as_ptr());
-        let bold = CreateFontW(-17, 0, 0, 0, 700, 0, 0, 0, 1, 0, 0, 5, 0, w("Malgun Gothic").as_ptr());
-        let child = |class: &str, txt: &str, style: u32, ex: u32, x: i32, y: i32, cw: i32, ch: i32, id: usize, f: HFONT| -> HWND {
-            let h = CreateWindowExW(ex, w(class).as_ptr(), w(txt).as_ptr(), WS_CHILD | WS_VISIBLE | style, x, y, cw, ch, hwnd, id as _, hinst, std::ptr::null());
+        let font = CreateFontW(
+            -15,
+            0,
+            0,
+            0,
+            400,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            5,
+            0,
+            w("Malgun Gothic").as_ptr(),
+        );
+        let bold = CreateFontW(
+            -17,
+            0,
+            0,
+            0,
+            700,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            5,
+            0,
+            w("Malgun Gothic").as_ptr(),
+        );
+        let child = |class: &str,
+                     txt: &str,
+                     style: u32,
+                     ex: u32,
+                     x: i32,
+                     y: i32,
+                     cw: i32,
+                     ch: i32,
+                     id: usize,
+                     f: HFONT|
+         -> HWND {
+            let h = CreateWindowExW(
+                ex,
+                w(class).as_ptr(),
+                w(txt).as_ptr(),
+                WS_CHILD | WS_VISIBLE | style,
+                x,
+                y,
+                cw,
+                ch,
+                hwnd,
+                id as _,
+                hinst,
+                std::ptr::null(),
+            );
             SendMessageW(h, WM_SETFONT, f as usize, 1);
             h
         };
         let mut cy = pad;
         if !head.is_empty() {
-            child("STATIC", &head, 0, 0, pad, cy, ww - 2 * pad - 16, head_h, 12, bold);
+            child(
+                "STATIC",
+                &head,
+                0,
+                0,
+                pad,
+                cy,
+                ww - 2 * pad - 16,
+                head_h,
+                12,
+                bold,
+            );
             cy += head_h + 8;
         }
         // 편집 상자는 CRLF 만 줄바꿈으로 본다. 테두리 없이(창 배경과 같은 흰색), 넘칠 때만 세로 스크롤
         let body = body_txt.replace('\n', "\r\n");
-        let edit_style = WS_TABSTOP | (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32 | if need_scroll { WS_VSCROLL } else { 0 };
-        child("EDIT", &body, edit_style, 0, pad, cy, ww - 2 * pad - 16, body_h, 10, font);
+        let edit_style = WS_TABSTOP
+            | (ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL) as u32
+            | if need_scroll { WS_VSCROLL } else { 0 };
+        child(
+            "EDIT",
+            &body,
+            edit_style,
+            0,
+            pad,
+            cy,
+            ww - 2 * pad - 16,
+            body_h,
+            10,
+            font,
+        );
         cy += body_h + 8;
         let mut muted = Vec::new();
         if !foot.is_empty() {
-            muted.push(child("STATIC", &foot, 0, 0, pad, cy, ww - 2 * pad - 16, foot_h, 13, font));
+            muted.push(child(
+                "STATIC",
+                &foot,
+                0,
+                0,
+                pad,
+                cy,
+                ww - 2 * pad - 16,
+                foot_h,
+                13,
+                font,
+            ));
             cy += foot_h + 8;
         }
         let note = child("STATIC", "'적용'은 이 창이 앞에 나온 뒤 잠시 후 켜집니다 — 가짜 창으로 덮어 클릭을 가로채는 공격을 막기 위해서입니다.", 0, 0, pad, cy, ww - 2 * pad - 16, 40, 11, font);
         let by = wh - 36 - 60 + 10;
-        let apply = child("BUTTON", apply_label, WS_TABSTOP | WS_DISABLED | BS_PUSHBUTTON as u32, 0, ww - 16 - 2 * 120 - 8 - pad, by, 120, 36, ID_APPLY, font);
-        let cancel = child("BUTTON", cancel_label, WS_TABSTOP | BS_DEFPUSHBUTTON as u32, 0, ww - 16 - 120 - pad, by, 120, 36, ID_CANCEL, font);
+        let apply = child(
+            "BUTTON",
+            apply_label,
+            WS_TABSTOP | WS_DISABLED | BS_PUSHBUTTON as u32,
+            0,
+            ww - 16 - 2 * 120 - 8 - pad,
+            by,
+            120,
+            36,
+            ID_APPLY,
+            font,
+        );
+        let cancel = child(
+            "BUTTON",
+            cancel_label,
+            WS_TABSTOP | BS_DEFPUSHBUTTON as u32,
+            0,
+            ww - 16 - 120 - pad,
+            by,
+            120,
+            36,
+            ID_CANCEL,
+            font,
+        );
         muted.push(note);
-        ST.with(|s| *s.borrow_mut() = Some(St { apply, note, muted, bold, armed: false, result: None }));
+        ST.with(|s| {
+            *s.borrow_mut() = Some(St {
+                apply,
+                note,
+                muted,
+                bold,
+                armed: false,
+                result: None,
+            })
+        });
         ShowWindow(hwnd, SW_SHOW);
         SetForegroundWindow(hwnd);
         SetFocus(cancel);
@@ -266,7 +414,9 @@ pub fn ask(title: &str, text: &str, apply_label: &str, cancel_label: &str) -> bo
     let (hwnd, font) = create(title, text, apply_label, cancel_label);
     pump(hwnd);
     unsafe { DeleteObject(font as _) };
-    ST.with(|s| s.borrow_mut().take()).and_then(|s| s.result).unwrap_or(false)
+    ST.with(|s| s.borrow_mut().take())
+        .and_then(|s| s.result)
+        .unwrap_or(false)
 }
 
 /// 시험 빌드 전용 자기 시험 (poc5): 승인 창을 띄워 스크린샷을 찍을 시간을 주고, 투명 최상위 덮개를 씌워 겹침 검사가 잡는지 본다.
@@ -275,7 +425,12 @@ pub fn ask(title: &str, text: &str, apply_label: &str, cancel_label: &str) -> bo
 pub fn selftest(show_ms: u32) -> (Vec<String>, bool) {
     let mut log = Vec::new();
     let text = "서비스가 계산한 실행 내용입니다. 확인을 누르면 적용합니다.\n\n끝낼 프로세스 1개 (생성 시각이 맞을 때만):\n  PID 2200 C:\\Users\\pjg\\AppData\\Local\\Temp\\payload.exe\n통신을 막을 프로그램 1개 (경로 기준):\n  C:\\Users\\pjg\\AppData\\Local\\Temp\\payload.exe\n24시간 막을 접속지 1개 (주소·포트·프로토콜):\n  203.0.113.9:8443/tcp — target (payload.exe)\n\n요청한 프로그램: (자기 시험)";
-    let (hwnd, font) = create("Story Firewall - 변경 승인 (자기 시험)", text, "적용", "취소");
+    let (hwnd, font) = create(
+        "Story Firewall - 변경 승인 (자기 시험)",
+        text,
+        "적용",
+        "취소",
+    );
     // 스크린샷용으로 잠시 메시지를 돌린다
     let until = std::time::Instant::now() + std::time::Duration::from_millis(show_ms as u64);
     unsafe {
@@ -313,13 +468,31 @@ pub fn selftest(show_ms: u32) -> (Vec<String>, bool) {
             std::ptr::null(),
         );
         SetLayeredWindowAttributes(h, 0, 1, LWA_ALPHA);
-        SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        SetWindowPos(
+            h,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
         h
     };
     let with_overlay = covered(hwnd, false);
     log.push(format!("covered_with_transparent_overlay={with_overlay}"));
     // 덮개를 비켜 놓으면 다시 깨끗
-    unsafe { SetWindowPos(overlay, HWND_TOPMOST, r.right + 50, r.bottom + 50, 10, 10, SWP_NOACTIVATE) };
+    unsafe {
+        SetWindowPos(
+            overlay,
+            HWND_TOPMOST,
+            r.right + 50,
+            r.bottom + 50,
+            10,
+            10,
+            SWP_NOACTIVATE,
+        )
+    };
     let moved = covered(hwnd, false);
     log.push(format!("covered_after_moving_overlay_away={moved}"));
     unsafe {

@@ -10,7 +10,9 @@ const VALUE: &str = "WordLang";
 
 #[cfg(windows)]
 mod win {
-    use windows_sys::Win32::System::Registry::{RegGetValueW, RegSetKeyValueW, HKEY, REG_SZ, RRF_RT_REG_SZ};
+    use windows_sys::Win32::System::Registry::{
+        RegGetValueW, RegSetKeyValueW, HKEY, REG_SZ, RRF_RT_REG_SZ,
+    };
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -21,7 +23,17 @@ mod win {
         let (k, v) = (wide(key), wide(value));
         let mut buf = [0u16; 64];
         let mut cb = (buf.len() * 2) as u32;
-        let r = unsafe { RegGetValueW(hive, k.as_ptr(), v.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr() as *mut _, &mut cb) };
+        let r = unsafe {
+            RegGetValueW(
+                hive,
+                k.as_ptr(),
+                v.as_ptr(),
+                RRF_RT_REG_SZ,
+                std::ptr::null_mut(),
+                buf.as_mut_ptr() as *mut _,
+                &mut cb,
+            )
+        };
         if r != 0 {
             return None;
         }
@@ -34,7 +46,16 @@ mod win {
     /// 글자열 값을 쓴다(열쇠가 없으면 만든다)
     pub fn set(hive: HKEY, key: &str, value: &str, data: &str) -> bool {
         let (k, v, d) = (wide(key), wide(value), wide(data));
-        let r = unsafe { RegSetKeyValueW(hive, k.as_ptr(), v.as_ptr(), REG_SZ, d.as_ptr() as *const _, (d.len() * 2) as u32) };
+        let r = unsafe {
+            RegSetKeyValueW(
+                hive,
+                k.as_ptr(),
+                v.as_ptr(),
+                REG_SZ,
+                d.as_ptr() as *const _,
+                (d.len() * 2) as u32,
+            )
+        };
         r == 0
     }
 }

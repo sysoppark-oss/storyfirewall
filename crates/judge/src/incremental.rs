@@ -120,6 +120,8 @@ pub struct MemStats {
     pub written_bytes: usize,
     pub chains: usize,
     pub chain_bytes: usize,
+    /// 선 목록에 남은 죽은 칸 수(다음 전체 다시 만들기까지 남는다)
+    pub dead_slots: usize,
 }
 
 fn str_cap(s: &Option<String>) -> usize {
@@ -180,6 +182,7 @@ impl MemStats {
             written_bytes: st.written.capacity() * size_of::<(i64, Option<i64>)>(),
             chains: st.cache.chains.len(),
             chain_bytes,
+            dead_slots: v.dead_slots(),
         }
     }
 

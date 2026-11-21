@@ -220,7 +220,17 @@ impl View {
             }
         }
         self.table_only.remove(&id);
+        // 죽은 칸은 다음 전체 다시 만들기까지 목록에 남는다. 칸 자체(구조체)는 어쩔 수 없지만
+        // 칸이 쥔 글자 버퍼(관계 이름, 속성)는 지금 돌려준다 — 선이 자주 제자리에서 바뀌면 이것이 쌓인다(57차 Q7-1)
+        let dead = &mut self.edges[idx];
+        dead.rel = String::new();
+        dead.attrs_json = None;
         Some(e)
+    }
+
+    /// 목록에 남은 죽은 칸 수(뺀 선·바뀌기 전 선). 진단용
+    pub fn dead_slots(&self) -> usize {
+        self.edges.len().saturating_sub(self.by_id.len())
     }
 
     /// 증분: 선 하나를 더한다. 두 끝점 노드가 `nodes` 에 이미 있어야 한다. 목록의 (ts, id) 순서를 지킨다

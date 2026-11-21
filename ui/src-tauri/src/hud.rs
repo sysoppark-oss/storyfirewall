@@ -57,7 +57,12 @@ pub fn summarize(events: &serde_json::Value, emergency: &serde_json::Value) -> H
     let items: Vec<serde_json::Value> = events
         .get("items")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter(|x| x["fresh"] != serde_json::json!(false)).cloned().collect())
+        .map(|a| {
+            a.iter()
+                .filter(|x| x["fresh"] != serde_json::json!(false))
+                .cloned()
+                .collect()
+        })
         .unwrap_or_default();
     let lv = |x: &serde_json::Value| x["level"].as_str().unwrap_or("").to_ascii_lowercase();
     let critical = items.iter().filter(|x| lv(x) == "critical").count();
@@ -77,14 +82,25 @@ pub fn summarize(events: &serde_json::Value, emergency: &serde_json::Value) -> H
     } else {
         Tone::Ok
     };
-    HudState { tone, critical, high, latest, emergency_left_min }
+    HudState {
+        tone,
+        critical,
+        high,
+        latest,
+        emergency_left_min,
+    }
 }
 
 pub fn tooltip(st: &HudState) -> String {
     let mut t = match st.tone {
         Tone::Down => "Story Firewall — 서비스 연결 끊김".to_string(),
-        _ if st.critical + st.high == 0 => "Story Firewall — 보호 중 · 미조치 심각·높음 없음".to_string(),
-        _ => format!("Story Firewall — 미조치 심각 {} · 높음 {}", st.critical, st.high),
+        _ if st.critical + st.high == 0 => {
+            "Story Firewall — 보호 중 · 미조치 심각·높음 없음".to_string()
+        }
+        _ => format!(
+            "Story Firewall — 미조치 심각 {} · 높음 {}",
+            st.critical, st.high
+        ),
     };
     if st.tone != Tone::Down {
         if let Some(m) = st.emergency_left_min {
@@ -153,7 +169,10 @@ static LAST: Mutex<Option<HudState>> = Mutex::new(None);
 
 /// HUD 방식: "tray"(② 트레이 아이콘만, 기본) | "window"(① 작은 상시 창 + 트레이). 사용자별 설정 파일에 둔다(자동 시작 때도 적용)
 fn mode_file(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    app.path().app_config_dir().ok().map(|d| d.join("hud-mode.txt"))
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|d| d.join("hud-mode.txt"))
 }
 
 pub fn read_mode(app: &tauri::AppHandle) -> String {
@@ -177,7 +196,11 @@ fn note(msg: String) {
 
 /// HUD 창(이름이 "hud" 로 시작)을 모두 찾는다
 fn hud_windows(app: &tauri::AppHandle) -> Vec<tauri::WebviewWindow> {
-    app.webview_windows().into_iter().filter(|(k, _)| k.starts_with("hud")).map(|(_, w)| w).collect()
+    app.webview_windows()
+        .into_iter()
+        .filter(|(k, _)| k.starts_with("hud"))
+        .map(|(_, w)| w)
+        .collect()
 }
 
 /// 상시 창을 열거나 닫는다. 창은 서비스에 붙지 않고 `hud-state` 이벤트만 그린다(권한 최소)
@@ -199,18 +222,28 @@ pub fn apply_mode(app: &tauri::AppHandle, mode: &str) {
     // install-109 실측: "index.html#hud" 는 앱 URL 에서 해시가 경로로 바뀌어 빈 창이 됐다 → 주소는 그대로, 창 이름(hud…)으로 알아본다.
     // 위치는 만들 때 논리 좌표로(만든 뒤 set_position 은 왼쪽 위에 그대로 있었다)
     let (w_l, h_l) = (340.0, 84.0); // 검수: 최근 인시던트 줄이 잘려 넓힘([열기] 단추 없앰 — 창을 누르면 열림)
-    let label = format!("hud-{}", HUD_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-    let mut b = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::App("index.html".into()))
-        .title("Story Firewall HUD")
-        .inner_size(w_l, h_l)
-        .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .focused(false);
+    let label = format!(
+        "hud-{}",
+        HUD_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let mut b =
+        tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::App("index.html".into()))
+            .title("Story Firewall HUD")
+            .inner_size(w_l, h_l)
+            .resizable(false)
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false);
     // install-112 실측: 0x8007139F(올바른 상태 아님) — 본 창은 additionalBrowserArgs(외부 통신 줄임)를 쓰는데
     // 같은 사용자 데이터 폴더에서 다른 인자로 WebView2 환경을 만들면 실패한다 → 본 창 설정의 인자를 그대로 쓴다
-    if let Some(args) = app.config().app.windows.first().and_then(|w| w.additional_browser_args.clone()) {
+    if let Some(args) = app
+        .config()
+        .app
+        .windows
+        .first()
+        .and_then(|w| w.additional_browser_args.clone())
+    {
         b = b.additional_browser_args(&args);
     }
     let mut pos = String::from("위치 기본값");
@@ -274,9 +307,21 @@ pub fn spawn(app: tauri::AppHandle, link: Arc<crate::tray::Link>) {
         let mut last: Option<HudState> = None;
         loop {
             let st = if link.up.load(Ordering::SeqCst) {
-                query().unwrap_or(HudState { tone: Tone::Down, critical: 0, high: 0, latest: None, emergency_left_min: None })
+                query().unwrap_or(HudState {
+                    tone: Tone::Down,
+                    critical: 0,
+                    high: 0,
+                    latest: None,
+                    emergency_left_min: None,
+                })
             } else {
-                HudState { tone: Tone::Down, critical: 0, high: 0, latest: None, emergency_left_min: None }
+                HudState {
+                    tone: Tone::Down,
+                    critical: 0,
+                    high: 0,
+                    latest: None,
+                    emergency_left_min: None,
+                }
             };
             if last.as_ref() != Some(&st) {
                 apply(&app, &st);
@@ -303,16 +348,27 @@ fn query() -> Option<HudState> {
     let ep = crate::probe_endpoint();
     let c = crate::client::Client::connect(&ep, Box::new(|_| {})).ok()?;
     let t = Duration::from_secs(5);
-    c.call("rpc.hello", serde_json::json!({"client_version": env!("CARGO_PKG_VERSION"), "api": [1, 0]}), t).ok()?;
+    c.call(
+        "rpc.hello",
+        serde_json::json!({"client_version": env!("CARGO_PKG_VERSION"), "api": [1, 0]}),
+        t,
+    )
+    .ok()?;
     // install-113 실측: call 은 응답 봉투 전체({"jsonrpc","id","result"|"error"})를 돌려준다 —
     // 봉투에서 바로 items 를 찾아 늘 0건("보호 중")이 됐다 → result 를 꺼내고, error 면 끊김으로 본다
     let ev = result_of(c.call("story.events", serde_json::json!({"level_min": "suspicious", "triage": "open", "cursor": {"limit": 200}}), t).ok()?)?;
-    let em = c.call("emergency.status", serde_json::json!({}), t).ok().and_then(result_of).unwrap_or_default();
+    let em = c
+        .call("emergency.status", serde_json::json!({}), t)
+        .ok()
+        .and_then(result_of)
+        .unwrap_or_default();
     Some(summarize(&ev, &em))
 }
 
 fn apply(app: &tauri::AppHandle, st: &HudState) {
-    let Some(tray) = app.tray_by_id("main") else { return };
+    let Some(tray) = app.tray_by_id("main") else {
+        return;
+    };
     let _ = tray.set_tooltip(Some(tooltip(st)));
     if let Some(base) = app.default_window_icon() {
         let (w, h) = (base.width(), base.height());
@@ -338,34 +394,66 @@ mod tests {
         ]));
         let st = summarize(&e, &serde_json::json!({"active": false}));
         assert_eq!((st.tone, st.critical, st.high), (Tone::Critical, 1, 2));
-        assert_eq!(st.latest.as_deref(), Some("invoice-viewer.exe — 5장 파괴 행위까지 진행"));
-        let st = summarize(&ev(serde_json::json!([{"level": "Suspicious", "title": "x", "last_ts": 1}])), &serde_json::json!({}));
+        assert_eq!(
+            st.latest.as_deref(),
+            Some("invoice-viewer.exe — 5장 파괴 행위까지 진행")
+        );
+        let st = summarize(
+            &ev(serde_json::json!([{"level": "Suspicious", "title": "x", "last_ts": 1}])),
+            &serde_json::json!({}),
+        );
         assert_eq!(st.tone, Tone::High);
-        let st = summarize(&ev(serde_json::json!([])), &serde_json::json!({"active": false}));
+        let st = summarize(
+            &ev(serde_json::json!([])),
+            &serde_json::json!({"active": false}),
+        );
         assert_eq!(st.tone, Tone::Ok);
         // 소문자 수준·오늘 새 활동 없는 것(fresh=false)은 빼기
-        let st2 = summarize(&ev(serde_json::json!([
-            {"level": "critical", "title": "c", "last_ts": 1},
-            {"level": "Suspicious", "title": "old", "last_ts": 2, "fresh": false},
-        ])), &serde_json::json!({}));
+        let st2 = summarize(
+            &ev(serde_json::json!([
+                {"level": "critical", "title": "c", "last_ts": 1},
+                {"level": "Suspicious", "title": "old", "last_ts": 2, "fresh": false},
+            ])),
+            &serde_json::json!({}),
+        );
         assert_eq!((st2.critical, st2.high), (1, 0));
         // 응답 봉투에서 result 꺼내기 · error 는 None
-        assert_eq!(result_of(serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": {"items": []}})), Some(serde_json::json!({"items": []})));
-        assert_eq!(result_of(serde_json::json!({"jsonrpc": "2.0", "id": 1, "error": {"code": -1}})), None);
-        assert_eq!(tooltip(&st), "Story Firewall — 보호 중 · 미조치 심각·높음 없음");
+        assert_eq!(
+            result_of(serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": {"items": []}})),
+            Some(serde_json::json!({"items": []}))
+        );
+        assert_eq!(
+            result_of(serde_json::json!({"jsonrpc": "2.0", "id": 1, "error": {"code": -1}})),
+            None
+        );
+        assert_eq!(
+            tooltip(&st),
+            "Story Firewall — 보호 중 · 미조치 심각·높음 없음"
+        );
     }
 
     #[test]
     fn tooltip_has_emergency_and_is_capped() {
         let long = "가".repeat(300);
-        let e = ev(serde_json::json!([{"level": "Critical", "title": format!("[심각] {long}\u{7}"), "last_ts": 1}]));
-        let st = summarize(&e, &serde_json::json!({"active": true, "remaining_secs": 61}));
+        let e = ev(
+            serde_json::json!([{"level": "Critical", "title": format!("[심각] {long}\u{7}"), "last_ts": 1}]),
+        );
+        let st = summarize(
+            &e,
+            &serde_json::json!({"active": true, "remaining_secs": 61}),
+        );
         assert_eq!(st.emergency_left_min, Some(2));
         let t = tooltip(&st);
         assert!(t.contains("긴급 차단 중 · 2분 남음"), "{t}");
         assert!(t.chars().count() <= TIP_MAX, "{}", t.chars().count());
         assert!(!t.chars().any(|c| c == '\u{7}'));
-        let down = HudState { tone: Tone::Down, critical: 3, high: 0, latest: Some("x".into()), emergency_left_min: Some(5) };
+        let down = HudState {
+            tone: Tone::Down,
+            critical: 3,
+            high: 0,
+            latest: Some("x".into()),
+            emergency_left_min: Some(5),
+        };
         assert_eq!(tooltip(&down), "Story Firewall — 서비스 연결 끊김");
     }
 
@@ -376,7 +464,11 @@ mod tests {
         let out = badge_rgba(&base, w, h, tone_color(Tone::Critical));
         let px = |x: u32, y: u32| &out[((y * w + x) * 4) as usize..((y * w + x) * 4 + 4) as usize];
         assert_eq!(px(0, 0), &[0, 0, 0, 0], "왼쪽 위는 그대로");
-        assert_eq!(px(w - 8, h - 8), &tone_color(Tone::Critical), "오른쪽 아래 점");
+        assert_eq!(
+            px(w - 8, h - 8),
+            &tone_color(Tone::Critical),
+            "오른쪽 아래 점"
+        );
         // 크기가 안 맞으면 그대로 돌려준다
         assert_eq!(badge_rgba(&[1, 2, 3], 2, 2, [9, 9, 9, 9]), vec![1, 2, 3]);
     }

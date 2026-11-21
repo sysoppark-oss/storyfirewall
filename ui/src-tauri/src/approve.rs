@@ -31,7 +31,14 @@ const CAPTION: &str = "Story Firewall - 변경 승인";
 
 pub fn is_uuid(s: &str) -> bool {
     let b = s.as_bytes();
-    b.len() == 36 && b.iter().enumerate().all(|(i, c)| if matches!(i, 8 | 13 | 18 | 23) { *c == b'-' } else { c.is_ascii_hexdigit() })
+    b.len() == 36
+        && b.iter().enumerate().all(|(i, c)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                *c == b'-'
+            } else {
+                c.is_ascii_hexdigit()
+            }
+        })
 }
 
 pub fn new_uuid() -> String {
@@ -40,7 +47,14 @@ pub fn new_uuid() -> String {
     b[6] = (b[6] & 0x0f) | 0x40;
     b[8] = (b[8] & 0x3f) | 0x80;
     let h: String = b.iter().map(|x| format!("{x:02x}")).collect();
-    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
 }
 
 /// 대화상자·시험 자동 응답
@@ -73,8 +87,13 @@ impl Ask for Dialogs {
         crate::approve_win::ask(CAPTION, text, "유지", "지금 되돌리기")
     }
     fn info(&mut self, text: &str) {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, MB_TOPMOST};
-        Self::show(text, MB_OK | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND, MB_TOPMOST,
+        };
+        Self::show(
+            text,
+            MB_OK | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND,
+        );
     }
 }
 
@@ -85,7 +104,11 @@ struct Auto(std::path::PathBuf);
 impl Auto {
     fn log(&self, s: &str) {
         use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&self.0) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.0)
+        {
             let _ = writeln!(f, "{s}");
         }
     }
@@ -117,7 +140,9 @@ pub fn from_args(args: &[String]) -> Option<i32> {
         return Some(if ok { EXIT_OK } else { EXIT_ERROR });
     }
     let i = args.iter().position(|a| a == "--approve")?;
-    let Some(id) = args.get(i + 1).filter(|x| is_uuid(x)) else { return Some(EXIT_BAD_ARGS) };
+    let Some(id) = args.get(i + 1).filter(|x| is_uuid(x)) else {
+        return Some(EXIT_BAD_ARGS);
+    };
     // 시험 빌드만: `--e2e-auto <파일>` 이면 대화상자 대신 자동 응답 (배포 빌드에서는 인자를 무시한다)
     #[cfg(feature = "e2e-cdp")]
     if let Some(j) = args.iter().position(|a| a == "--e2e-auto") {
@@ -127,7 +152,11 @@ pub fn from_args(args: &[String]) -> Option<i32> {
             #[cfg(windows)]
             {
                 use std::sync::atomic::Ordering;
-                a.log(&format!("[server] pid={} session={}", crate::client::pipe::SERVER_PID.load(Ordering::SeqCst), crate::client::pipe::SERVER_SESSION.load(Ordering::SeqCst)));
+                a.log(&format!(
+                    "[server] pid={} session={}",
+                    crate::client::pipe::SERVER_PID.load(Ordering::SeqCst),
+                    crate::client::pipe::SERVER_SESSION.load(Ordering::SeqCst)
+                ));
             }
             a.log(&format!("[exit] {code}"));
             return Some(code);
@@ -144,10 +173,16 @@ pub fn from_args(args: &[String]) -> Option<i32> {
 }
 
 fn code_of(v: &serde_json::Value) -> Option<i64> {
-    v.get("error").and_then(|e| e.get("code")).and_then(|c| c.as_i64())
+    v.get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_i64())
 }
 fn msg_of(v: &serde_json::Value) -> String {
-    v.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or("").to_string()
+    v.get("error")
+        .and_then(|e| e.get("message"))
+        .and_then(|m| m.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 fn run(change_id: &str, ask: &mut dyn Ask) -> i32 {
@@ -164,7 +199,11 @@ fn run(change_id: &str, ask: &mut dyn Ask) -> i32 {
         }
     };
     let t = Duration::from_secs(15);
-    let hello = c.call("rpc.hello", serde_json::json!({"client_version": env!("CARGO_PKG_VERSION"), "api": [1, 0]}), t);
+    let hello = c.call(
+        "rpc.hello",
+        serde_json::json!({"client_version": env!("CARGO_PKG_VERSION"), "api": [1, 0]}),
+        t,
+    );
     if hello.as_ref().map(|v| code_of(v).is_some()).unwrap_or(true) {
         ask.info("서비스 인사(hello)에 실패했습니다.");
         return EXIT_ERROR;
@@ -180,11 +219,17 @@ fn run(change_id: &str, ask: &mut dyn Ask) -> i32 {
             }
         };
         if code_of(&g).is_some() {
-            ask.info(&format!("변경을 찾지 못했습니다(5분이 지나면 만료됩니다): {}", msg_of(&g)));
+            ask.info(&format!(
+                "변경을 찾지 못했습니다(5분이 지나면 만료됩니다): {}",
+                msg_of(&g)
+            ));
             return EXIT_ERROR;
         }
         let r = &g["result"];
-        let lines: Vec<&str> = r["lines"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect()).unwrap_or_default();
+        let lines: Vec<&str> = r["lines"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|x| x.as_str()).collect())
+            .unwrap_or_default();
         let digest = r["digest"].as_str().unwrap_or("").to_string();
         let mut text = String::new();
         if round > 0 {
@@ -192,11 +237,18 @@ fn run(change_id: &str, ask: &mut dyn Ask) -> i32 {
         }
         text.push_str("서비스가 계산한 실행 내용입니다. 확인을 누르면 적용합니다.\n\n");
         text.push_str(&lines.join("\n"));
-        text.push_str(&format!("\n\n요청한 프로그램: {}", r["staged_by"].as_str().unwrap_or("?")));
+        text.push_str(&format!(
+            "\n\n요청한 프로그램: {}",
+            r["staged_by"].as_str().unwrap_or("?")
+        ));
         if !ask.approve(&text) {
             return EXIT_CANCEL;
         }
-        let v = match c.call("change.commit", serde_json::json!({"request_id": change_id, "change_id": change_id, "digest": digest}), Duration::from_secs(60)) {
+        let v = match c.call(
+            "change.commit",
+            serde_json::json!({"request_id": change_id, "change_id": change_id, "digest": digest}),
+            Duration::from_secs(60),
+        ) {
             Ok(v) => v,
             Err(e) => {
                 ask.info(&format!("적용 요청이 실패했습니다: {e}"));
@@ -224,18 +276,29 @@ fn run(change_id: &str, ask: &mut dyn Ask) -> i32 {
     // 60초 확인: 결과에 든 정책 (policy.apply = 객체 하나, cut.apply = policies 목록)
     let mut pols: Vec<(i64, i64)> = Vec::new();
     let mut push = |x: &serde_json::Value| {
-        if let (Some(p), Some(v)) = (x.get("policy_id").and_then(|a| a.as_i64()), x.get("version").and_then(|a| a.as_i64())) {
+        if let (Some(p), Some(v)) = (
+            x.get("policy_id").and_then(|a| a.as_i64()),
+            x.get("version").and_then(|a| a.as_i64()),
+        ) {
             pols.push((p, v));
         }
     };
     push(&result);
-    for x in result.get("policies").and_then(|a| a.as_array()).into_iter().flatten() {
+    for x in result
+        .get("policies")
+        .and_then(|a| a.as_array())
+        .into_iter()
+        .flatten()
+    {
         push(x);
     }
     if pols.is_empty() {
         return EXIT_OK;
     }
-    let list: Vec<String> = pols.iter().map(|(p, v)| format!("정책 #{p} 판 {v}")).collect();
+    let list: Vec<String> = pols
+        .iter()
+        .map(|(p, v)| format!("정책 #{p} 판 {v}"))
+        .collect();
     let keep = ask.keep(&format!(
         "적용했습니다: {}\n\n인터넷·원격 접속 등이 정상인지 확인하세요.\n예 = 유지, 아니요 = 지금 되돌리기\n60초 안에 답하지 않으면 서비스가 자동으로 되돌립니다.",
         list.join(", ")
@@ -243,9 +306,15 @@ fn run(change_id: &str, ask: &mut dyn Ask) -> i32 {
     let mut code = EXIT_OK;
     for (p, ver) in pols {
         let (m, params) = if keep {
-            ("policy.confirm", serde_json::json!({"request_id": new_uuid(), "policy_id": p, "version": ver}))
+            (
+                "policy.confirm",
+                serde_json::json!({"request_id": new_uuid(), "policy_id": p, "version": ver}),
+            )
         } else {
-            ("policy.rollback", serde_json::json!({"request_id": new_uuid(), "policy_id": p}))
+            (
+                "policy.rollback",
+                serde_json::json!({"request_id": new_uuid(), "policy_id": p}),
+            )
         };
         match c.call(m, params, t) {
             Ok(v) if code_of(&v).is_none() => {
@@ -274,8 +343,18 @@ mod tests {
     fn uuid_and_args() {
         assert!(is_uuid(&new_uuid()));
         assert_eq!(from_args(&["x".into()]), None);
-        assert_eq!(from_args(&["x".into(), "--approve".into(), "nope".into()]), Some(EXIT_BAD_ARGS));
+        assert_eq!(
+            from_args(&["x".into(), "--approve".into(), "nope".into()]),
+            Some(EXIT_BAD_ARGS)
+        );
         // 인자에 셸 문자를 끼워 넣어도 UUID 가 아니면 거부
-        assert_eq!(from_args(&["x".into(), "--approve".into(), "0f3c2a1e-9b7d-4c6a-8e5f-12345678\" &x".into()]), Some(EXIT_BAD_ARGS));
+        assert_eq!(
+            from_args(&[
+                "x".into(),
+                "--approve".into(),
+                "0f3c2a1e-9b7d-4c6a-8e5f-12345678\" &x".into()
+            ]),
+            Some(EXIT_BAD_ARGS)
+        );
     }
 }
