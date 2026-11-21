@@ -522,6 +522,9 @@ impl<'a> Ingester<'a> {
                     // 종료 표시 (A19: 프로세스 상세·끊기에서 "이미 끝남")
                     self.store
                         .merge_node_attrs(id, &serde_json::json!({ "ended": true }))?;
+                    // 끝난 프로세스의 UDP 흐름을 잊는다. 번호를 물려받은 새 프로세스의 시작 이벤트가 늦게 오면
+                    // 그 송신이 이 노드로 풀리는데, 흐름이 남아 있으면 "이어짐"으로 묻혀 아무 기록도 안 남는다(2차 검수 지적 3)
+                    self.udp_flows.forget_proc(id);
                 }
                 Ok(0)
             }
@@ -654,9 +657,10 @@ impl<'a> Ingester<'a> {
                 self.store.add_traffic_hour(ev.ts, 0, 0, 1)?;
                 // 선을 실제로 넣은 뒤에만 흐름을 기억한다(넣기 전에 적으면, 실패했을 때 다음 송신이 "이어짐"으로 묻힌다)
                 if *direction == Direction::Out && matches!(proto, crate::event::Proto::Udp) {
-                    let dns_domain = self.dns_cache.get(&ip).map(|(d, _)| d.as_str());
+                    // 이름은 소문자로 맞춰 견준다(대소문자만 다른 조회가 새 접속이 되지 않게)
+                    let dns_domain = self.dns_cache.get(&ip).map(|(d, _)| d.to_ascii_lowercase());
                     self.udp_flows
-                        .emitted((p, ip.clone(), *rport), ev.ts, dns_domain);
+                        .emitted((p, ip.clone(), *rport), ev.ts, dns_domain.as_deref());
                 }
                 if *direction == Direction::Out && !is_svc {
                     if let Some(d) = &domain {
@@ -898,11 +902,17 @@ impl<'a> Ingester<'a> {
         raddr: &str,
         rport: u16,
     ) -> Result<bool> {
+        // 시스템 서비스의 접속은 선마다 귀속 판단(시간 창·인증서 확인 짝·connected_via)을 받는다. 묶으면 그 판단이 빠져
+        // "고립 svchost" 가 늘고 원인 프로세스의 외부 접속 장이 빠진다(2차 검수 지적 1·2) — 서비스는 묶지 않는다.
+        // 예외는 DNS 전송(UDP 53): 귀속 대상이 아니고(`resolved` 로 따로 남는다) 양이 많다.
+        if self.is_service(proc.pid) && !is_dns_transport(crate::event::Proto::Udp, rport) {
+            return Ok(false);
+        }
         let p = self.resolve_proc(proc, ts)?;
         let ip = normalize_ip(raddr);
         // 흐름을 가르는 도메인은 "직전 DNS 응답이 이 주소에 붙인 이름"이다. 같은 주소:포트 뒤의 다른 이름으로
         // 새 접속을 열면 이 값이 달라져 이어짐이 아니게 된다(공유 CDN)
-        let dns_domain = self.dns_cache.get(&ip).map(|(d, _)| d.clone());
+        let dns_domain = self.dns_cache.get(&ip).map(|(d, _)| d.to_ascii_lowercase());
         if !self
             .udp_flows
             .continues(&(p, ip, rport), ts, dns_domain.as_deref())

@@ -255,3 +255,89 @@ fn continuing_udp_sends_still_count_as_recent_user_connects() {
         assert!(attrs.contains("via_ambiguous"), "{attrs}");
     }
 }
+
+/// 2차 검수 지적 1·2: 시스템 서비스의 UDP 접속은 묶지 않는다 — 선마다 귀속 판단을 받는다. DNS 전송(53)만 묶는다
+#[test]
+fn service_udp_is_not_folded_except_dns_transport() {
+    let st = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&st);
+    ing.ingest(&start(T, 900, r"C:\Windows\System32\svchost.exe"))
+        .unwrap();
+    ing.ingest(&ev(
+        T,
+        "scm",
+        EventKind::ServiceMap {
+            pid: 900,
+            services: vec!["CryptSvc".into()],
+            system_token: Some(true),
+            create_time: Some(T),
+        },
+    ))
+    .unwrap();
+    ing.ingest(&start(T, 200, APP)).unwrap();
+    // 서비스가 초당 UDP 송신 중, 5초째에 사용자 프로세스가 TCP 접속 → 그 뒤 서비스 송신은 그 프로세스에 귀속된다
+    for s in 1..=4 {
+        ing.ingest(&send(T + s * S, 900, Proto::Udp, "192.0.2.80", 3478))
+            .unwrap();
+    }
+    ing.ingest(&send(T + 5 * S, 200, Proto::Tcp, "198.51.100.5", 443))
+        .unwrap();
+    ing.ingest(&send(T + 5 * S + 1, 900, Proto::Udp, "192.0.2.80", 3478))
+        .unwrap();
+    let via = count(
+        &st,
+        "SELECT COUNT(*) FROM edges WHERE rel = 'connected_via'",
+    );
+    assert_eq!(via, 1, "이어지는 서비스 송신도 귀속 판단을 받는다");
+    let svc_edges = count(&st, "SELECT COUNT(*) FROM edges e JOIN nodes n ON n.id = e.dst WHERE e.rel = 'connected' AND n.key = '192.0.2.80:3478'");
+    assert_eq!(svc_edges, 5, "서비스의 UDP 는 묶지 않는다");
+    // DNS 전송은 서비스여도 묶는다
+    for s in 10..=40 {
+        ing.ingest(&send(T + s * S, 900, Proto::Udp, "192.0.2.53", 53))
+            .unwrap();
+    }
+    let dns_edges = count(&st, "SELECT COUNT(*) FROM edges e JOIN nodes n ON n.id = e.dst WHERE e.rel = 'connected' AND n.key = '192.0.2.53:53'");
+    assert_eq!(dns_edges, 1);
+}
+
+/// 2차 검수 지적 3: 프로세스가 끝나면 흐름을 잊는다 — 번호를 물려받은 새 프로세스의 시작 이벤트가 늦어도 송신이 남는다
+#[test]
+fn a_stopped_process_forgets_its_flows() {
+    let st = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&st);
+    ing.ingest(&start(T, 100, APP)).unwrap();
+    ing.ingest(&send(T + S, 100, Proto::Udp, "203.0.113.7", 443))
+        .unwrap();
+    ing.ingest(&ev(
+        T + 2 * S,
+        "etw:process",
+        EventKind::ProcessStop { pid: 100 },
+    ))
+    .unwrap();
+    // 새 프로세스의 시작 이벤트는 아직 안 왔다. 10초 뒤 같은 곳으로 송신
+    assert_eq!(
+        ing.ingest(&send(T + 12 * S, 100, Proto::Udp, "203.0.113.7", 443))
+            .unwrap(),
+        1
+    );
+    assert_eq!(connected(&st), 2);
+}
+
+/// 2차 검수 지적 4: 대소문자만 다른 이름은 같은 흐름
+#[test]
+fn domain_case_does_not_split_a_flow() {
+    let st = Store::open_in_memory().unwrap();
+    let mut ing = Ingester::new(&st);
+    ing.ingest(&start(T, 100, APP)).unwrap();
+    ing.ingest(&dns(T + S, 100, "CDN.Example.com", "203.0.113.7"))
+        .unwrap();
+    ing.ingest(&send(T + 2 * S, 100, Proto::Udp, "203.0.113.7", 443))
+        .unwrap();
+    ing.ingest(&dns(T + 3 * S, 100, "cdn.example.com", "203.0.113.7"))
+        .unwrap();
+    assert_eq!(
+        ing.ingest(&send(T + 4 * S, 100, Proto::Udp, "203.0.113.7", 443))
+            .unwrap(),
+        0
+    );
+}
