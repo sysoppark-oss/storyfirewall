@@ -125,6 +125,16 @@ jobs:
           Check ($rack.Exe -eq $svcExe) "rack Exe = service exe ($($rack.Exe))"
           Check ($rack.ClientExe -eq (Join-Path $dir "story-firewall-ui.exe")) "rack ClientExe = ui exe ($($rack.ClientExe))"
           Check ($rack.Kind -eq "service" -and $rack.Api -eq "1.0") "rack Kind/Api ($($rack.Kind) $($rack.Api))"
+          # Chassis review 2 (5.2): the slot must be in the 64-bit registry view. NSIS is a 32-bit stub; without
+          # SetRegView 64 (Tauri template macro SetContext, ARCH=x64) it would land in WOW6432Node, where a 64-bit chassis does not look.
+          # Read both views explicitly through .NET (independent of this shell's bitness).
+          $lm64 = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
+          $lm32 = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry32)
+          $k64 = $lm64.OpenSubKey("SOFTWARE\Antioch\Modules\storyfirewall")
+          $k32 = $lm32.OpenSubKey("SOFTWARE\Antioch\Modules\storyfirewall")
+          Check ($null -ne $k64 -and $k64.GetValue("Exe") -eq $svcExe) "rack slot in 64-bit view (Exe=$(if ($k64) { $k64.GetValue('Exe') }))"
+          Check ($null -eq $k32) "rack slot NOT in 32-bit view (WOW6432Node)"
+          Log ("shell is64=" + [Environment]::Is64BitProcess)
           $acl = (Get-Acl $dir).Access | Where-Object { $_.IdentityReference -match 'Users|Authenticated' -and $_.FileSystemRights -match 'Write|Modify|FullControl' -and $_.AccessControlType -eq 'Allow' }
           Check ($null -eq $acl) "users cannot write install dir"
           $start = (Get-CimInstance Win32_Service -Filter "Name='StoryFirewall'")
@@ -188,6 +198,8 @@ jobs:
           Check ($st3 -match 'wfp_filters=0') "no WFP filters left"
           Check (Test-Path (Join-Path $env:ProgramData "StoryFirewall")) "data kept on silent uninstall"
           Check (-not (Test-Path "HKLM:\SOFTWARE\Antioch\Modules\storyfirewall")) "rack registry entry removed on uninstall"
+          $lm32u = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry32)
+          Check ($null -eq $lm32u.OpenSubKey("SOFTWARE\Antioch\Modules\storyfirewall")) "no rack slot left in 32-bit view after uninstall"
           Log "assert: $bad failed"
           if ($bad -gt 0) { exit 1 }
 
