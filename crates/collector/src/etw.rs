@@ -127,11 +127,6 @@ pub fn process_provider(ctx: Arc<Ctx>) -> Provider {
                         return;
                     };
                     // CreateTime: FILETIME 8바이트. 없으면 None (Ingester 가 이벤트 시각 사용) — P8 에서 존재 확인
-                    // 프로세스 번호는 재사용된다 — 같은 번호를 쓰던 옛 프로세스의 UDP 흐름을 잊어, 새 프로세스의 첫 송신이 접속으로 남게 한다
-                    ctx.udp_flows
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .forget_pid(pid);
                     let create_time = p.try_parse::<i64>("CreateTime").ok();
                     let image = ctx.win32_path(&image);
                     // 10판 5-9 (1): 복구 수단 도구만 명령줄을 읽는다(시작 이벤트에 명령줄 없음 — poc3 스키마).
@@ -472,7 +467,7 @@ pub fn network_provider(ctx: Arc<Ctx>) -> Provider {
                         .unwrap_or_default();
                     let sport = portf(&p, "sport").unwrap_or(0);
                     if kind == "udp_send" {
-                        // UDP 송신은 용량에 더하고, 접속 선은 흐름 단위로만 남긴다(udp_flow.rs: 60초 넘게 쉬었다 다시 보낼 때, 이어지면 한 시간에 한 번)
+                        // UDP 송신은 용량에도 더하고, 같은 목적지 1초 안 반복은 Connect 로 보내지 않는다
                         ctx.add_bytes(
                             ConnKey {
                                 pid,
@@ -483,13 +478,16 @@ pub fn network_provider(ctx: Arc<Ctx>) -> Provider {
                             size,
                             0,
                         );
-                        let new_flow = ctx
-                            .udp_flows
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .on_send((pid, daddr.clone(), dport), ts);
-                        if !new_flow {
-                            return;
+                        let mut recent = ctx.recent_udp.lock().unwrap();
+                        let key = (pid, daddr.clone(), dport);
+                        if let Some(last) = recent.get(&key) {
+                            if ts - *last < 10_000_000 {
+                                return;
+                            }
+                        }
+                        recent.insert(key, ts);
+                        if recent.len() > 4096 {
+                            recent.retain(|_, t| ts - *t < 10_000_000);
                         }
                     }
                     // Kernel-Network 의 saddr/sport 는 늘 **로컬**, daddr/dport 는 늘 **원격**이다(방향과 무관).

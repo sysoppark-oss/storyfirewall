@@ -40,7 +40,6 @@ mod snapshot;
 mod svcreg;
 #[cfg(any(windows, feature = "host-check"))]
 mod token;
-pub mod udp_flow;
 
 #[cfg(any(windows, feature = "host-check"))]
 pub use pipeline::{run, start, Config, Report, Session};
