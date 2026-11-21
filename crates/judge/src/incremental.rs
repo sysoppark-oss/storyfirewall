@@ -170,7 +170,8 @@ impl MemStats {
                 .map(|l| l.capacity() * size_of::<(i64, RootKind)>())
                 .sum::<usize>();
         Self {
-            edges: v.edges.len(),
+            // 살아 있는 선 수. 목록에는 뺀 선·바뀌기 전 선의 칸이 남는다(별도 검수 지적 1)
+            edges: v.by_id.len(),
             edge_bytes,
             nodes: v.nodes.len(),
             node_bytes,
@@ -254,11 +255,20 @@ impl Incremental {
         let Some(st) = self.state.as_ref() else {
             return Vec::new();
         };
-        let now = st.view.edges.iter().map(|e| e.ts).max().unwrap_or(0);
+        let now = st
+            .view
+            .edges
+            .iter()
+            .enumerate()
+            .filter(|(i, e)| st.view.by_id.get(&e.id) == Some(i))
+            .map(|(_, e)| e.ts)
+            .max()
+            .unwrap_or(0);
         let mut m: std::collections::BTreeMap<&str, ([usize; 4], usize)> = Default::default();
-        for e in &st.view.edges {
-            // 뺀 선의 칸은 목록에 남는다 — 살아 있는 선만
-            if st.view.by_id.get(&e.id).is_none() {
+        for (i, e) in st.view.edges.iter().enumerate() {
+            // 뺀 선·바뀌기 전 선의 칸은 목록에 남는다 — 색인이 **이 칸**을 가리키는 선만 센다.
+            // (id 가 색인에 있는지만 보면, 제자리에서 바뀐 선은 옛 칸까지 거듭 세어진다 — 별도 검수 지적 1)
+            if st.view.by_id.get(&e.id) != Some(&i) {
                 continue;
             }
             let age = now.saturating_sub(e.ts);
@@ -306,8 +316,8 @@ impl Incremental {
         let mut out = [0usize; 6];
         let mut udp_pairs: HashMap<(i64, i64), usize> = HashMap::new();
         let mut tcp_pairs: HashSet<(i64, i64)> = HashSet::new();
-        for e in &v.edges {
-            if e.rel != "connected" || v.by_id.get(&e.id).is_none() {
+        for (i, e) in v.edges.iter().enumerate() {
+            if e.rel != "connected" || v.by_id.get(&e.id) != Some(&i) {
                 continue;
             }
             // 나가는 접속은 도착이, 들어온 접속은 출발이 원격지다
@@ -403,7 +413,10 @@ impl Incremental {
     ) -> Result<(Vec<Story>, Profile)> {
         let r = self.run_inner(store, from_ts, to_ts, baseline);
         if r.is_err() {
+            // 상태를 버리면서 번호도 올린다: 그 사이 다른 스레드가 미리 만들던 것은 "지워진 변경 기록" 검사(adopt 의 pruned)를
+            // 받을 옛 상태가 없어 그대로 통과한다 — 번호로 막는다(별도 검수 지적 7)
             self.state = None;
+            self.epoch += 1;
         }
         r
     }

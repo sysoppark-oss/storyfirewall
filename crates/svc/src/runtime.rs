@@ -827,16 +827,31 @@ impl Timings {
         t.0.extend(gate.stats());
         t
     }
-    /// 최대가 큰 순, 상위 n
+    /// 이름에 "개수"가 든 항목은 걸린 시간이 아니라 센 값을 같은 칸에 실은 것이다(선 수, MiB, MHz …)
+    pub fn is_count(name: &str) -> bool {
+        name.contains("개수")
+    }
+    /// 걸린 시간만, 최대가 큰 순, 상위 n.
+    /// 센 값은 뺀다: 수십만짜리 값이 "최대 큰 순" 앞자리를 차지해 실제 시간 항목이 잘렸다 —
+    /// 화면 상단 "판정 지연"이 이 목록에서 "엔진: 주기 판정"을 찾는데 상위 15 밖으로 밀려 사라졌다(별도 검수 지적 2)
     pub fn to_json(&self, n: usize) -> serde_json::Value {
-        let mut v: Vec<_> = self.0.iter().collect();
+        self.json_where(n, |k| !Self::is_count(k))
+    }
+    /// 센 값만(진단 파일용). 이름 순 — 값의 크기로 줄 세울 뜻이 없다
+    pub fn counts_json(&self) -> serde_json::Value {
+        let mut v: Vec<_> = self.0.iter().filter(|(k, _)| Self::is_count(k)).collect();
+        v.sort_by(|a, b| a.0.cmp(b.0));
+        serde_json::Value::Array(v.into_iter().map(Self::row).collect())
+    }
+    fn row(
+        (k, (c, tot, max, last)): (&&'static str, &(u64, u128, u128, u128)),
+    ) -> serde_json::Value {
+        serde_json::json!({ "name": k, "count": c, "avg_ms": (*tot / (*c).max(1) as u128) as u64, "max_ms": *max as u64, "last_ms": *last as u64 })
+    }
+    fn json_where(&self, n: usize, keep: impl Fn(&str) -> bool) -> serde_json::Value {
+        let mut v: Vec<_> = self.0.iter().filter(|(k, _)| keep(k)).collect();
         v.sort_by(|a, b| b.1 .2.cmp(&a.1 .2));
-        serde_json::Value::Array(
-            v.into_iter()
-                .take(n)
-                .map(|(k, (c, tot, max, last))| serde_json::json!({ "name": k, "count": c, "avg_ms": (*tot / (*c).max(1) as u128) as u64, "max_ms": *max as u64, "last_ms": *last as u64 }))
-                .collect(),
-        )
+        serde_json::Value::Array(v.into_iter().take(n).map(Self::row).collect())
     }
 }
 
@@ -1133,7 +1148,11 @@ fn write_timings_file(world: &World) {
     if db.as_os_str().is_empty() {
         return;
     }
-    let body = serde_json::json!({ "wall": world.engine_wall(), "timings": world.timings.with_reads(&world.read_gate).to_json(200) });
+    // 걸린 시간(상위 200) 뒤에 센 값을 모두 붙인다 — 진단 실행기는 "timings" 배열을 줄마다 찍는다
+    let all = world.timings.with_reads(&world.read_gate);
+    let mut rows = all.to_json(200).as_array().cloned().unwrap_or_default();
+    rows.extend(all.counts_json().as_array().cloned().unwrap_or_default());
+    let body = serde_json::json!({ "wall": world.engine_wall(), "timings": rows });
     let tmp = dir.join("timings.json.tmp");
     if std::fs::write(&tmp, body.to_string()).is_ok() {
         let _ = std::fs::rename(&tmp, dir.join("timings.json"));
@@ -1430,6 +1449,10 @@ pub fn judge_and_notify(world: &mut World) {
                 "엔진: 주기 판정(전체)"
             };
             world.timings.record(label, t0.elapsed());
+            // 판정 직후의 메모리·코어를 **진단이 뷰를 훑기 전에** 잡아 둔다 — 아래 메모리 내역·선 세기가 선·노드 전부를 읽어
+            // "판정 뒤 올려 둔 크기"를 스스로 부풀렸다(별도 검수 지적 6)
+            let mem1 = crate::perfdiag::memory_now();
+            let class1 = crate::perfdiag::core_class_now();
             // 벽시계 시간만으로는 "노트북이 바빠서 밀렸다"와 "우리 계산이 늘었다"를 가를 수 없다(diag-251).
             // 같은 구간의 스레드 CPU 시간을 나란히 남긴다: CPU 는 그대로인데 벽시계만 늘면 부하·디스크 대기다.
             if let (Some(a), Some(b)) = (cpu0, thread_cpu_time()) {
@@ -1540,9 +1563,7 @@ pub fn judge_and_notify(world: &mut World) {
                 }
             }
             // diag-261: 서비스 메모리가 덜어졌다가 판정 때 다시 올라오는지. 판정 앞과 뒤의 "올려 둔 크기" 차이가 그 양이다
-            if let (Some((ws0, commit, load, avail)), Some((ws1, ..))) =
-                (mem0, crate::perfdiag::memory_now())
-            {
+            if let (Some((ws0, commit, load, avail)), Some((ws1, ..))) = (mem0, mem1) {
                 for (name, v) in [
                     ("엔진: 메모리: 개수 — 판정 전 올려 둔 크기 MiB", ws0),
                     ("엔진: 메모리: 개수 — 판정 뒤 올려 둔 크기 MiB", ws1),
@@ -1573,10 +1594,7 @@ pub fn judge_and_notify(world: &mut World) {
             }
             // 판정 시작과 끝 두 번 본다(도중에 코어를 옮길 수 있다). 천분율: 1000 = 가장 높은 등급(성능 코어), 0 = 가장 낮은 등급.
             // 코어 구분이 없는 PC(최고 등급 0)에서는 남기지 않는다.
-            for (class, max) in [class0, crate::perfdiag::core_class_now()]
-                .into_iter()
-                .flatten()
-            {
+            for (class, max) in [class0, class1].into_iter().flatten() {
                 if max > 0 {
                     world.timings.record(
                         "엔진: 전원: 개수 — 성능 코어에서 돈 몫(천분율)",
@@ -1714,6 +1732,37 @@ mod tests {
             (false, None)
         );
         assert_eq!(backoff_state(None, t0), (false, None));
+    }
+
+    #[test]
+    fn counts_do_not_push_timings_out_of_the_top_list() {
+        use super::Timings;
+        use std::time::Duration;
+        let mut t = Timings::default();
+        t.record("엔진: 주기 판정", Duration::from_millis(2100));
+        // 센 값 30개(수십만) — 예전에는 이것들이 상위 15를 다 차지해 "엔진: 주기 판정"이 빠졌다(화면 상단 "판정 지연"이 사라짐)
+        const NAMES: [&str; 3] = [
+            "엔진: 뷰 선: 개수 — connected 하루 안",
+            "엔진: 메모리 내역: 개수 — 선 MiB",
+            "엔진: 점수: 개수 — 다룬 선",
+        ];
+        for n in NAMES {
+            t.record(n, Duration::from_millis(600_000));
+        }
+        for i in 0..30u64 {
+            let name: &'static str = Box::leak(format!("엔진: 시험: 개수 — {i}").into_boxed_str());
+            t.record(name, Duration::from_millis(500_000 + i));
+        }
+        let top = t.to_json(15);
+        let names: Vec<&str> = top
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["엔진: 주기 판정"]);
+        // 센 값은 따로, 빠짐없이
+        assert_eq!(t.counts_json().as_array().unwrap().len(), 33);
     }
 
     #[test]

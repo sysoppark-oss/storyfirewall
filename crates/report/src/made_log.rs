@@ -88,46 +88,64 @@ pub fn appended(old: &str, line: &str, max_bytes: usize) -> String {
     out
 }
 
+/// 기록 파일을 읽는다. 없거나 열지 못하면 빈 글자.
+/// - 상한의 4배까지만 읽는다(크기를 먼저 재고 읽으면 그 사이에 파일을 키울 수 있다 — 읽는 양 자체를 막는다)
+/// - UTF-8 이 아닌 바이트가 섞여도 버리지 않는다: 깨진 줄만 못 읽게 되고 나머지 줄은 산다
+///   (예전에는 한 바이트만 깨져도 전체를 빈 것으로 보고, 다음 기록 때 앞의 줄을 모두 지웠다 — 별도 검수 지적 4·5)
+fn read_capped(file: &Path) -> Option<String> {
+    use std::io::Read as _;
+    let f = std::fs::File::open(file).ok()?;
+    let cap = (MAX_BYTES * 4) as u64;
+    let mut buf = Vec::new();
+    f.take(cap + 1).read_to_end(&mut buf).ok()?;
+    if buf.len() as u64 > cap {
+        // 누가 키워 놓은 파일 — 읽지 않는다(기록은 새로 시작)
+        return None;
+    }
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// 한 프로세스 안에서 기록 쓰기는 한 번에 하나씩(읽고 → 고쳐 → 바꿔 쓰기라 겹치면 서로의 줄을 지운다 — 별도 검수 지적 3)
+static APPEND_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// 기록 파일에 한 줄을 더한다. 폴더가 없으면 만든다. 같은 폴더의 임시 이름에 다 쓴 뒤 이름을 바꾼다(반쪽 파일을 남기지 않는다).
+/// 임시 파일은 **새로 만들 때만** 연다(`create_new`): 누가 그 이름에 미리 놓아 둔 링크를 따라가 다른 파일을 덮어쓰지 않는다.
 /// 실패하면 오류를 돌려줄 뿐이다 — **부르는 쪽은 이 실패로 보고서 저장을 막지 않는다**(2.3).
 pub fn append(file: &Path, entry: &Entry) -> std::io::Result<()> {
     let line = serde_json::to_string(entry).map_err(std::io::Error::other)?;
+    let _one = APPEND_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    // 읽지 못하면(없음·깨짐) 빈 것으로 보고 새로 시작한다. 상한의 몇 배가 넘는 파일은 읽지 않는다(누가 키워 놓은 경우)
-    let old = match std::fs::metadata(file) {
-        Ok(m) if m.len() as usize <= MAX_BYTES * 4 => {
-            std::fs::read_to_string(file).unwrap_or_default()
-        }
-        _ => String::new(),
-    };
+    let old = read_capped(file).unwrap_or_default();
     let body = appended(&old, &line, MAX_BYTES);
+    let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut tmp = file.as_os_str().to_os_string();
-    tmp.push(format!(".{}.part", std::process::id()));
+    tmp.push(format!(".{}.{seq}.part", std::process::id()));
     let tmp = std::path::PathBuf::from(tmp);
     let r = (|| {
-        let mut f = std::fs::File::create(&tmp)?;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
         f.write_all(body.as_bytes())?;
         f.sync_all()?;
         drop(f);
         std::fs::rename(&tmp, file)
     })();
     if r.is_err() {
-        let _ = std::fs::remove_file(&tmp);
+        // create_new 가 실패했다면(이미 있던 이름) 그 파일은 우리 것이 아니다 — 지우지 않는다
+        if !matches!(&r, Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists) {
+            let _ = std::fs::remove_file(&tmp);
+        }
     }
     r
 }
 
 /// 최근 것부터 `limit` 건. 읽지 못하는 줄(손으로 고쳤거나 깨진 줄)은 건너뛴다. 파일이 없으면 빈 목록
 pub fn recent(file: &Path, limit: usize) -> Vec<Entry> {
-    let Ok(m) = std::fs::metadata(file) else {
-        return Vec::new();
-    };
-    if m.len() as usize > MAX_BYTES * 4 {
-        return Vec::new();
-    }
-    let Ok(text) = std::fs::read_to_string(file) else {
+    let Some(text) = read_capped(file) else {
         return Vec::new();
     };
     text.lines()
@@ -293,6 +311,75 @@ mod tests {
         e.path = "C:\\a\u{7}b".into();
         std::fs::write(&file, serde_json::to_string(&e).unwrap() + "\n").unwrap();
         assert_eq!(recent(&file, 1)[0].path, "C:\\ab");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 별도 검수 지적 3: 여러 스레드가 한꺼번에 적어도 줄이 사라지지 않는다
+    #[test]
+    fn concurrent_appends_keep_every_line() {
+        let dir = tmp("concurrent");
+        let file = dir.join("report-log.jsonl");
+        let m = model();
+        std::thread::scope(|sc| {
+            for t in 0..4 {
+                let (file, m) = (&file, &m);
+                sc.spawn(move || {
+                    for i in 0..50 {
+                        append(
+                            file,
+                            &Entry::of(m, false, &format!("C:\\t{t}-{i}.html"), None),
+                        )
+                        .unwrap();
+                    }
+                });
+            }
+        });
+        assert_eq!(recent(&file, 1000).len(), 200);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 별도 검수 지적 4: UTF-8 이 아닌 바이트가 섞여도 나머지 줄은 살고, 다음 기록이 앞의 줄을 지우지 않는다
+    #[test]
+    fn a_broken_byte_does_not_wipe_the_log() {
+        let dir = tmp("badbyte");
+        let file = dir.join("report-log.jsonl");
+        let m = model();
+        for i in 0..3 {
+            append(
+                &file,
+                &Entry::of(&m, false, &format!("C:\\r{i}.html"), None),
+            )
+            .unwrap();
+        }
+        let mut raw = std::fs::read(&file).unwrap();
+        raw.extend([0xFF, b'\n']);
+        std::fs::write(&file, raw).unwrap();
+        assert_eq!(recent(&file, 10).len(), 3);
+        append(&file, &Entry::of(&m, false, "C:\\r3.html", None)).unwrap();
+        assert_eq!(recent(&file, 10).len(), 4);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 별도 검수 지적 5: 임시 이름에 미리 놓인 파일(링크일 수 있다)을 따라 덮어쓰지 않는다
+    #[test]
+    fn a_planted_temp_file_is_not_overwritten() {
+        let dir = tmp("planted");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("report-log.jsonl");
+        let seq = TMP_SEQ.load(std::sync::atomic::Ordering::Relaxed);
+        // 다음에 쓸 임시 이름 몇 개를 미리 차지해 둔다(다른 시험이 번호를 올려도 걸리게 넉넉히)
+        let planted: Vec<_> = (seq..seq + 400)
+            .map(|n| dir.join(format!("report-log.jsonl.{}.{n}.part", std::process::id())))
+            .collect();
+        for p in &planted {
+            std::fs::write(p, "남의 것").unwrap();
+        }
+        let r = append(&file, &Entry::of(&model(), false, "C:\\x.html", None));
+        assert!(r.is_err(), "이미 있는 임시 이름이면 쓰지 않고 실패한다");
+        assert!(planted
+            .iter()
+            .all(|p| std::fs::read_to_string(p).unwrap() == "남의 것"));
+        assert!(!file.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1095,4 +1095,27 @@ fn connect_census_splits_by_remote_proto() {
     assert!(inc.connect_census().is_none());
     check(&s, &mut inc, &bl, "connect-census");
     assert_eq!(inc.connect_census(), Some([1, 6, 0, 2, 5, 1]));
+    // 별도 검수 지적 1: 선이 제자리에서 바뀌면(증분이 뺐다가 같은 id 로 다시 넣는다) 옛 칸이 목록에 남는다.
+    // 그 칸까지 세면 바뀔 때마다 개수가 불어난다 — 세 번 바꿔도 그대로여야 한다
+    for round in 1..=3 {
+        s.conn()
+            .execute(
+                "UPDATE edges SET ts = ts + 1 WHERE rel = 'connected' AND src = ?1 AND dst = ?2",
+                rusqlite::params![p, udp],
+            )
+            .unwrap();
+        check(&s, &mut inc, &bl, "connect-census-changed");
+        assert_eq!(
+            inc.connect_census(),
+            Some([1, 6, 0, 2, 5, 1]),
+            "{round}번째 바꾼 뒤"
+        );
+        assert_eq!(inc.mem_stats().unwrap().edges, 7);
+        let total: usize = inc
+            .edge_census()
+            .iter()
+            .map(|(_, a, _)| a.iter().sum::<usize>())
+            .sum();
+        assert_eq!(total, 7);
+    }
 }
