@@ -61,6 +61,12 @@ fn who() -> report::Who {
 ///   화면을 "관리자 권한으로 실행"했을 때 일반 권한 프로그램이 심어 둔 연결을 따라 보호된 폴더에 쓰는 일을 막는다.
 ///   (확인과 쓰기 사이에 바꿔치는 것까지는 막지 못한다 — 기록은 편의 기능이라 여기까지만 한다)
 fn made_log_file() -> Option<PathBuf> {
+    // 관리자 권한으로 뜬 화면은 기록하지 않는다. 폴더 자리는 띄운 쪽이 정한 환경 변수에서 오므로, 연결이 아니어도
+    // `LOCALAPPDATA=C:\Windows\System32` 같은 값이면 보호된 폴더에 쓰게 된다(별도 검수 지적).
+    // 일반 권한에서는 그런 자리에 쓰려 해도 권한이 없어 실패할 뿐이다.
+    if crate::elevate::is_elevated() {
+        return None;
+    }
     let base = std::env::var_os("LOCALAPPDATA")?;
     if !report::made_log::is_plain_local_path(&base.to_string_lossy()) {
         return None;
@@ -73,10 +79,12 @@ fn made_log_file() -> Option<PathBuf> {
     Some(file)
 }
 
-/// 다른 곳을 가리키는 연결인가(접합·심볼릭 링크 등 재분석 지점). 없는 경로는 연결이 아니다
+/// 다른 곳을 가리키는 연결인가(접합·심볼릭 링크 등 재분석 지점). 없는 경로는 연결이 아니고, 확인하지 못하면 연결로 본다
 fn is_link(p: &Path) -> bool {
-    let Ok(m) = std::fs::symlink_metadata(p) else {
-        return false;
+    let m = match std::fs::symlink_metadata(p) {
+        Ok(m) => m,
+        // 아직 없는 경로는 연결이 아니다. 그 밖의 오류(접근 거부 등)는 확인하지 못한 것 — 연결로 보고 기록하지 않는다
+        Err(e) => return e.kind() != std::io::ErrorKind::NotFound,
     };
     #[cfg(windows)]
     {

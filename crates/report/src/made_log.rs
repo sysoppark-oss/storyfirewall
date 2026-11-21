@@ -125,6 +125,44 @@ pub fn is_plain_local_path(p: &str) -> bool {
         && !p.chars().any(|c| c.is_control())
 }
 
+/// "다른 프로그램이 파일을 잡고 있다"는 오류인가. Windows 는 이것을 두 가지로 낸다:
+/// 접근 거부(5 — 표준 라이브러리가 PermissionDenied 로 옮긴다)와 공유 위반(32 — 옮기는지 확실하지 않아 번호로도 본다).
+/// 방금 쓴 임시 파일을 백신이 검사하는 흔한 경우가 32 다(별도 검수 지적)
+fn busy(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::PermissionDenied
+        || (cfg!(windows) && e.raw_os_error() == Some(32))
+}
+
+/// 예전 실행이 치우지 못하고 남긴 임시 파일을 지운다(이름에 프로세스 번호가 들어 있어 다음 실행은 같은 이름을 쓰지 않는다).
+/// 10분 넘게 묵은 `<기록 파일 이름>.….part` 만 — 지금 쓰는 중인 것은 건드리지 않는다. 실패는 무시한다
+fn sweep_stale_parts(file: &Path) {
+    const STALE: std::time::Duration = std::time::Duration::from_secs(600);
+    let (Some(dir), Some(name)) = (file.parent(), file.file_name().and_then(|n| n.to_str())) else {
+        return;
+    };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let prefix = format!("{name}.");
+    // 폴더에 파일이 아주 많아도 오래 붙잡지 않게 훑는 수를 막는다
+    for ent in rd.flatten().take(2000) {
+        let fname = ent.file_name();
+        let Some(f) = fname.to_str() else { continue };
+        if !(f.starts_with(&prefix) && f.ends_with(".part")) {
+            continue;
+        }
+        // symlink_metadata: 연결이면 가리키는 곳이 아니라 연결 자체의 나이를 보고, 지워도 연결만 지워진다
+        let old = std::fs::symlink_metadata(ent.path())
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > STALE);
+        if old {
+            let _ = std::fs::remove_file(ent.path());
+        }
+    }
+}
+
 /// 한 프로세스 안에서 기록 쓰기는 한 번에 하나씩(읽고 → 고쳐 → 바꿔 쓰기라 겹치면 서로의 줄을 지운다 — 별도 검수 지적 3)
 static APPEND_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -138,6 +176,7 @@ pub fn append(file: &Path, entry: &Entry) -> std::io::Result<()> {
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    sweep_stale_parts(file);
     let old = read_capped(file).unwrap_or_default();
     let body = appended(&old, &line, MAX_BYTES);
     let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -155,9 +194,7 @@ pub fn append(file: &Path, entry: &Entry) -> std::io::Result<()> {
         let mut tries = 1;
         loop {
             match std::fs::rename(&tmp, file) {
-                Err(e)
-                    if e.kind() == std::io::ErrorKind::PermissionDenied && tries < RENAME_TRIES =>
-                {
+                Err(e) if busy(&e) && tries < RENAME_TRIES => {
                     tries += 1;
                     std::thread::sleep(RENAME_WAIT);
                 }
@@ -461,5 +498,42 @@ mod tests {
         ] {
             assert!(!is_plain_local_path(bad), "{bad}");
         }
+    }
+
+    /// 별도 검수 지적: 예전 실행이 남긴 묵은 임시 파일은 다음 기록 때 치운다(새것은 두고)
+    #[test]
+    fn stale_part_files_are_swept() {
+        let dir = tmp("sweep");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("report-log.jsonl");
+        let stale = dir.join("report-log.jsonl.4242.7.part");
+        let fresh = dir.join("report-log.jsonl.4242.8.part");
+        let other = dir.join("notes.part");
+        for p in [&stale, &fresh, &other] {
+            std::fs::write(p, "x").unwrap();
+        }
+        // 묵은 것으로 보이게 수정 시각을 한 시간 전으로
+        let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        for p in [&stale, &other] {
+            std::fs::File::options()
+                .write(true)
+                .open(p)
+                .unwrap()
+                .set_modified(hour_ago)
+                .unwrap();
+        }
+        append(&file, &Entry::of(&model(), false, "C:\\x.html", None)).unwrap();
+        assert!(!stale.exists(), "묵은 임시 파일은 지운다");
+        assert!(fresh.exists(), "방금 것은 둔다");
+        assert!(other.exists(), "이름이 다른 파일은 건드리지 않는다");
+        // 구역 id 상한은 읽을 때도 걸린다(손으로 고친 파일)
+        let mut e = Entry::of(&model(), false, "x", None);
+        e.sections = vec!["가".repeat(5000)];
+        std::fs::write(&file, serde_json::to_string(&e).unwrap() + "\n").unwrap();
+        assert_eq!(
+            recent(&file, 1)[0].sections[0].chars().count(),
+            MAX_SECTION_CHARS
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
