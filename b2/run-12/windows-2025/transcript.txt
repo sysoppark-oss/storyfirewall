@@ -1,16 +1,16 @@
 ﻿**********************
 Windows PowerShell transcript start
-Start time: 20261106183028
-Username: runnervmm7ud1\runneradmin
-RunAs User: runnervmm7ud1\runneradmin
+Start time: 20261122235118
+Username: runnervmbpeip\runneradmin
+RunAs User: runnervmbpeip\runneradmin
 Configuration Name: 
-Machine: runnervmm7ud1 (Microsoft Windows NT 10.0.26100.0)
+Machine: runnervmbpeip (Microsoft Windows NT 10.0.26100.0)
 Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -File story-firewall\poc\b2\b2-run.ps1 -InstallSysmon -Seconds 90 -Root D:\a\storyfirewall\storyfirewall
-Process ID: 1544
-PSVersion: 5.1.26100.33648
+Process ID: 7704
+PSVersion: 5.1.26100.33822
 PSEdition: Desktop
-PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.33648
-BuildVersion: 10.0.26100.33648
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.33822
+BuildVersion: 10.0.26100.33822
 CLRVersion: 4.0.30319.42000
 WSManStackVersion: 3.0
 PSRemotingProtocolVersion: 2.3
@@ -40,7 +40,7 @@ At D:\a\storyfirewall\storyfirewall\story-firewall\poc\b2\b2-run.ps1:129 char:13
     + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.NewItemPropertyCommand
 
 
-[b2] inbound: 5 connects to 10.1.0.15:47556
+[b2] inbound: 5 connects to 10.1.0.13:47556
 
 
 
@@ -83,28 +83,29 @@ At D:\a\storyfirewall\storyfirewall\story-firewall\poc\b2\b2-run.ps1:129 char:13
 
 [b2] exporting Sysmon events
 
-b2 run 20261106-183028
-commit=15d7080
+b2 run 20261122-235118
+commit=98a3698
 os=Microsoft Windows Server 2025 Datacenter build=26100
-ram_gb=16 free_gb=13.1
-cpu=AMD EPYC 9V74 80-Core Processor
+ram_gb=16 free_gb=13.3
+cpu=INTEL(R) XEON(R) PLATINUM 8573C
 sysmon=15.22
 seconds=90 scenario=True
-window_utc=2026-11-06 18:33:25.325 .. 2026-11-06 18:34:40.769
-sysmon_events_exported=462
+window_utc=2026-11-22 23:53:07.613 .. 2026-11-22 23:54:24.193
+sysmon_events_exported=285
 collector_exit=0
-mem_free_mb_start=13556 mem_free_mb_end=13468 collector_ws_max_mb=38 product_svc_ws_mb=-
-B2 누락률 — 구간 2026-11-06 18:33:25.325Z ~ 2026-11-06 18:34:40.769Z (허용치 2000ms)
-sysmon_lines=462 sysmon_bad=0 sysmon_keyed=410 ours_keyed=786 sysmon_etw_offset_ms=0
+mem_free_mb_start=13543 mem_free_mb_end=13598 collector_ws_max_mb=37 product_svc_ws_mb=-
+B2 누락률 — 구간 2026-11-22 23:53:07.613Z ~ 2026-11-22 23:54:24.193Z (허용치 2000ms)
+sysmon_lines=285 sysmon_bad=0 sysmon_keyed=283 ours_keyed=438 sysmon_etw_offset_ms=0
 category               sysmon  matched   missed     miss%  ours_only  by_offset  boundary
-dns(22)                    68       68        0     0.00%         44          0         0
-network_in(3)               7        7        0     0.00%          0          0         0
-network_out(3)            135      135        0     0.00%         19          0         0
-process_start(1)           73       73        0     0.00%          0          0         0
-process_stop(5)            71       71        0     0.00%          0          0         0
+dns(22)                    55       55        0     0.00%          6          0         0
+network_in(3)               5        5        0     0.00%          0          0         0
+network_out(3)             82       81        1     1.22%          2          0         0
+process_start(1)           48       48        0     0.00%          0          0         0
+process_stop(5)            49       49        0     0.00%          0          0         0
+missed[network_out(3)] 2026-11-22 23:53:09.701Z Net { pid: 2056, proto: "udp", dir: "out", addr: "168.63.129.16", port: 53 } img=C:\Windows\System32\svchost.exe
 
-[b2] done -> D:\a\storyfirewall\storyfirewall\logs\b2-20261106-183028
+[b2] done -> D:\a\storyfirewall\storyfirewall\logs\b2-20261122-235118
 **********************
 Windows PowerShell transcript end
-End time: 20261106183453
+End time: 20261122235435
 **********************
