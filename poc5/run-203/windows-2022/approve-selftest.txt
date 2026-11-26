@@ -1,0 +1,6 @@
+armed_after_4000ms=true foreground=true
+covered_before=false
+covered_with_transparent_overlay=true
+covered_after_moving_overlay_away=false
+ok=true
+exit=0
