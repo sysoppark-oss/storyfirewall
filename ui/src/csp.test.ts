@@ -1,74 +1,144 @@
 // CSP 고정 시험 — 화면(webview)이 스크립트를 어디서 받아 실행할 수 있는지를 설정 파일에서 직접 읽어 못 박는다.
 // 배경: CVE-2026-95626(GHSA-6vxm-x265-58qf). Tauri 가 script-src 에 nonce 를 넣어도, 같은 줄에 data: 나 blob: 이
 // 있으면 CSP Level 3 규칙상 그쪽이 그대로 통해서 nonce 보호가 무력해진다. 지금 설정은 'self' 하나라 해당이 없다.
-// 이 시험은 누가 나중에 편의로 data:/blob:/'unsafe-inline' 등을 넣는 순간 빌드에서 드러나게 한다.
+// 이 시험은 누가 나중에 편의로 출처를 넓히는 순간 빌드에서 드러나게 한다.
+//
+// 방식: 금지 목록이 아니라 허용 목록. CSP 전체(지시어 이름 집합과 값)가 아래 EXPECTED 와 정확히 같아야 한다.
+// CSP 를 바꿔야 하면 이 표를 함께 고친다 — 그 차이가 검토 대상이다.
+//
+// 별도 Claude 검수(2026-11-26)에서 드러난 것을 반영:
+//  - Tauri 는 CSP 문자열을 ';' 로 쪼개 HashMap 에 넣고 다시 조립한다(tauri-utils config.rs). 같은 지시어가 두 번이면
+//    '마지막'이 남고, 대소문자만 다른 이름은 둘 다 남아 순서가 실행마다 달라진다. 브라우저 규칙(첫 번째)으로 읽으면 속는다
+//    → 중복·대문자 이름은 그 자체로 거부한다.
+//  - tauri.conf.json 말고도 병합되는 설정 파일(tauri.windows.conf.json 등)로 통째로 덮을 수 있다 → 다른 파일에 app 이 있으면 거부.
+//  - 원격 주소를 띄우면 이 CSP 는 붙지 않는다 → frontendDist·창 url·capability 의 remote 를 함께 고정.
+// 이 시험이 못 보는 것: CI 가 빌드 때 만들어 --config 로 넘기는 설정(tauri.release.conf.json, tauri.devbuild.conf.json)과
+// TAURI_CONFIG 환경 변수. 그쪽은 작업 흐름 파일에서 app 항목을 넣지 않는 것으로 지킨다.
 import { describe, expect, it } from "vitest";
 // @ts-ignore — node 내장 모듈(@types/node 없이 시험에서만 씀, word.test.ts 와 같은 방식)
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 // @ts-ignore
 import { fileURLToPath } from "node:url";
 
-const confPath = fileURLToPath(new URL("../src-tauri/tauri.conf.json", import.meta.url));
-const conf = JSON.parse(readFileSync(confPath, "utf8"));
+const dir = fileURLToPath(new URL("../src-tauri/", import.meta.url));
+const read = (name: string): any => JSON.parse(readFileSync(dir + name, "utf8"));
+const conf = read("tauri.conf.json");
 
-// "a b; c d" -> { a: ["b"], c: ["d"] }. 지시어 이름은 소문자로 맞춘다(CSP 는 대소문자를 가리지 않음).
-function directives(csp: string): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
+const EXPECTED: Record<string, string[]> = {
+  "default-src": ["'self'"],
+  "script-src": ["'self'"],
+  "style-src": ["'self'"],
+  "img-src": ["'self'", "data:"],
+  "connect-src": ["ipc:", "http://ipc.localhost"],
+  "font-src": ["'self'"],
+  "object-src": ["'none'"],
+  "base-uri": ["'none'"],
+  "frame-ancestors": ["'none'"],
+  "form-action": ["'none'"],
+};
+
+// "a b; c d" -> [["a", ["b"]], ["c", ["d"]]]. 이름·값을 손대지 않고 그대로 돌려준다(대소문자·중복을 호출 쪽이 판단).
+function parse(csp: string): [string, string[]][] {
+  const out: [string, string[]][] = [];
   for (const part of csp.split(";")) {
     const words = part.trim().split(/\s+/).filter(Boolean);
     if (words.length === 0) continue;
-    const name = (words[0] ?? "").toLowerCase();
-    // 같은 지시어가 두 번 나오면 브라우저는 첫 번째만 쓴다. 뒤엣것으로 덮어 시험을 속이지 못하게 첫 번째를 남긴다.
-    if (!(name in out)) out[name] = words.slice(1).map((w) => w.toLowerCase());
+    out.push([words[0] ?? "", words.slice(1)]);
   }
   return out;
 }
 
+// 문제를 사람이 읽을 문장으로 모아 돌려준다. 빈 배열이면 통과.
+function problems(csp: unknown, expected: Record<string, string[]>): string[] {
+  if (typeof csp !== "string" || csp.length === 0) return ["csp 가 문자열이 아니다(없거나 객체 형식)"];
+  // 쉼표는 '정책을 하나 더 붙이는' 구분자다. 우리 값에는 쉼표가 들어갈 일이 없다.
+  if (csp.includes(",")) return ["csp 에 쉼표가 있다(정책이 둘로 나뉜다)"];
+  const bad: string[] = [];
+  const seen = new Set<string>();
+  for (const [name, values] of parse(csp)) {
+    if (name !== name.toLowerCase()) bad.push(`지시어 이름에 대문자: ${name}`);
+    const key = name.toLowerCase();
+    if (seen.has(key)) bad.push(`같은 지시어가 두 번: ${key}`);
+    seen.add(key);
+    const want = expected[key];
+    if (!want) { bad.push(`표에 없는 지시어: ${key}`); continue; }
+    if (values.length !== want.length || values.some((v, i) => v !== want[i])) bad.push(`${key} 값이 다르다: ${values.join(" ")}`);
+  }
+  for (const key of Object.keys(expected)) if (!seen.has(key)) bad.push(`빠진 지시어: ${key}`);
+  return bad;
+}
+
 describe("tauri.conf.json 의 CSP", () => {
-  const csp = conf?.app?.security?.csp;
+  const sec = conf?.app?.security ?? {};
 
-  it("문자열로 적혀 있다(없거나 null 이면 Tauri 가 CSP 를 아예 걸지 않는다)", () => {
-    expect(typeof csp).toBe("string");
-    expect(csp.length).toBeGreaterThan(0);
+  it("표(EXPECTED)와 정확히 같다", () => {
+    expect(problems(sec.csp, EXPECTED)).toEqual([]);
   });
 
-  it("script-src 는 'self' 하나뿐이다", () => {
-    const d = directives(csp);
-    expect(d["script-src"]).toEqual(["'self'"]);
-  });
-
-  it("script-src-elem / script-src-attr 로 따로 풀어 주지 않는다", () => {
-    // 이 둘이 있으면 script-src 보다 먼저 적용되므로, 위 시험을 통과한 채로 구멍을 낼 수 있다.
-    const d = directives(csp);
-    expect(d["script-src-elem"]).toBeUndefined();
-    expect(d["script-src-attr"]).toBeUndefined();
-  });
-
-  it("default-src 에도 스크립트로 번질 수 있는 출처가 없다", () => {
-    // script-src 가 지워졌을 때 default-src 가 대신 쓰이므로 같이 지킨다.
-    const d = directives(csp);
-    const bad = ["data:", "blob:", "filesystem:", "'unsafe-inline'", "'unsafe-eval'", "*", "http:", "https:"];
-    expect(d["default-src"]).toBeDefined();
-    for (const b of bad) expect(d["default-src"]).not.toContain(b);
-  });
-
-  it("플러그인·base 주소·폼 전송은 막혀 있다", () => {
-    const d = directives(csp);
-    expect(d["object-src"]).toEqual(["'none'"]);
-    expect(d["base-uri"]).toEqual(["'none'"]);
-    expect(d["form-action"]).toEqual(["'none'"]);
+  it("개발용 CSP 를 따로 두지 않는다", () => {
+    expect(sec.devCsp).toBeUndefined();
   });
 
   it("Tauri 의 CSP 손질(nonce·hash 주입)을 끄지 않았다", () => {
-    expect(conf?.app?.security?.dangerousDisableAssetCspModification ?? false).toBe(false);
+    expect(sec.dangerousDisableAssetCspModification ?? false).toBe(false);
   });
 });
 
-describe("directives() 자체", () => {
-  it("같은 지시어가 두 번 나오면 첫 번째를 쓴다", () => {
-    expect(directives("script-src 'self' data:; script-src 'self'")["script-src"]).toEqual(["'self'", "data:"]);
+describe("CSP 가 붙지 않는 길이 없다", () => {
+  it("화면 묶음은 로컬 폴더다(원격 주소가 아니다)", () => {
+    expect(conf?.build?.frontendDist).toBe("../dist");
   });
-  it("대소문자와 여분 공백을 흡수한다", () => {
-    expect(directives("  Script-Src   'SELF'  ;; ")["script-src"]).toEqual(["'self'"]);
+
+  it("설정에 적힌 창은 주소(url)를 따로 지정하지 않는다", () => {
+    for (const w of conf?.app?.windows ?? []) expect(w.url).toBeUndefined();
+  });
+
+  it("권한 묶음은 default 하나이고, 원격 주소에 열어 준 것이 없다", () => {
+    expect(conf?.app?.security?.capabilities).toEqual(["default"]);
+    const files = (readdirSync(dir + "capabilities") as string[]).sort();
+    expect(files).toEqual(["default.json"]);
+    expect(read("capabilities/default.json").remote).toBeUndefined();
+  });
+
+  it("전역 Tauri 객체를 화면에 내놓지 않는다", () => {
+    expect(conf?.app?.withGlobalTauri ?? false).toBe(false);
+  });
+
+  it("병합되는 다른 설정 파일이 app 항목을 덮지 않는다", () => {
+    // tauri.<플랫폼>.conf.json, tauri.conf.json5, Tauri.toml 은 주 설정에 병합된다. 지금은 설치 파일용(bundle 만) 하나뿐이다.
+    const names = (readdirSync(dir) as string[]).filter((n) => /^tauri\..*(json5?|toml)$/i.test(n) || /^tauri\.toml$/i.test(n)).sort();
+    expect(names).toEqual(["tauri.conf.json", "tauri.installer.conf.json"]);
+    const inst = read("tauri.installer.conf.json");
+    expect(Object.keys(inst).filter((k) => k !== "$schema")).toEqual(["bundle"]);
+  });
+});
+
+describe("problems() 가 잡아야 하는 것", () => {
+  const ok = "default-src 'self'; script-src 'self'";
+  const exp = { "default-src": ["'self'"], "script-src": ["'self'"] };
+  const cases: [string, string][] = [
+    ["뒤에 넓은 script-src 를 한 번 더(Tauri 는 마지막을 쓴다)", ok + "; script-src 'self' blob: data:"],
+    ["대문자 이름으로 한 번 더", ok + "; Script-Src 'self' blob:"],
+    ["script-src 에 data:", "default-src 'self'; script-src 'self' data:"],
+    ["script-src 에 blob:", "default-src 'self'; script-src 'self' blob:"],
+    ["script-src 에 'unsafe-inline'", "default-src 'self'; script-src 'self' 'unsafe-inline'"],
+    ["script-src-elem 추가", ok + "; script-src-elem *"],
+    ["worker-src 추가", ok + "; worker-src blob:"],
+    ["frame-src 추가", ok + "; frame-src https:"],
+    ["default-src 에 호스트 와일드카드", "default-src 'self' https://*; script-src 'self'"],
+    ["script-src 삭제", "default-src 'self'"],
+    ["쉼표로 정책 하나 더", ok + ", script-src *"],
+    ["탭으로 붙인 출처", "default-src 'self'; script-src 'self'\tblob:"],
+  ];
+  for (const [name, csp] of cases) it(name, () => expect(problems(csp, exp)).not.toEqual([]));
+
+  it("객체 형식·빈 값은 거부한다", () => {
+    expect(problems({ "script-src": "'self'" }, exp)).not.toEqual([]);
+    expect(problems(null, exp)).not.toEqual([]);
+    expect(problems("", exp)).not.toEqual([]);
+  });
+
+  it("같은 내용은 통과한다(끝 세미콜론·여분 공백 허용)", () => {
+    expect(problems("  default-src   'self' ;script-src 'self'; ", exp)).toEqual([]);
   });
 });

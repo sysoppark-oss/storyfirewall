@@ -1,6 +1,7 @@
 name: Dependency advisories (cargo audit)
 
-# 의존성 보안 권고 점검. RustSec 권고 DB 와 잠금 파일 두 개(작업공간, 화면)를 대조한다.
+# 의존성 보안 권고 점검. RustSec 권고 DB 와 저장소의 모든 Cargo.lock(작업공간, 화면, PoC)을 대조한다.
+# 초록은 '알려진 취약점 없음'이지 '경고 없음'이 아니다 — unsound 경고(지금: board 의 ratatui 가 끌어오는 lru)는 실행 기록에서 본다.
 # - 취약점(vulnerability)이 있으면 실패. unmaintained / unsound 는 경고로만 남긴다(cargo audit 기본 동작).
 # - 권고는 우리가 코드를 올리지 않아도 새로 나오므로 날마다 한 번 돈다.
 # - 개발 빌드(devbuild)와 별개 작업이라, 여기서 실패해도 노트북 설치 순환은 막지 않는다.
@@ -8,8 +9,7 @@ name: Dependency advisories (cargo audit)
 on:
   push:
     paths:
-      - "Cargo.lock"
-      - "ui/src-tauri/Cargo.lock"
+      - "**/Cargo.lock"
       - ".github/workflows/audit.yml"
   schedule:
     # 매일 21:17 UTC (한국 06:17). 정각을 피한다.
@@ -38,9 +38,13 @@ jobs:
       - name: Install cargo-audit 0.23.0
         if: steps.tool.outputs.cache-hit != 'true'
         run: cargo install cargo-audit --version 0.23.0 --locked
-      - name: Audit workspace (Cargo.lock)
-        run: cargo audit --file Cargo.lock
-      - name: Audit UI (ui/src-tauri/Cargo.lock)
-        # 앞 단계가 실패해도 이쪽 결과를 함께 본다
-        if: always()
-        run: cargo audit --file ui/src-tauri/Cargo.lock
+      - name: Audit every tracked Cargo.lock
+        # 잠금 파일을 이름으로 적지 않고 저장소에서 찾는다(새로 생겨도 저절로 포함). 하나가 실패해도 나머지를 끝까지 보고 마지막에 실패한다.
+        run: |
+          rc=0
+          for f in $(git ls-files 'Cargo.lock' '**/Cargo.lock'); do
+            echo "::group::$f"
+            cargo audit --file "$f" || rc=1
+            echo "::endgroup::"
+          done
+          exit $rc
