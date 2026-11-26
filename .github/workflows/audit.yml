@@ -1,0 +1,46 @@
+name: Dependency advisories (cargo audit)
+
+# 의존성 보안 권고 점검. RustSec 권고 DB 와 잠금 파일 두 개(작업공간, 화면)를 대조한다.
+# - 취약점(vulnerability)이 있으면 실패. unmaintained / unsound 는 경고로만 남긴다(cargo audit 기본 동작).
+# - 권고는 우리가 코드를 올리지 않아도 새로 나오므로 날마다 한 번 돈다.
+# - 개발 빌드(devbuild)와 별개 작업이라, 여기서 실패해도 노트북 설치 순환은 막지 않는다.
+# cargo-audit: MIT OR Apache-2.0 (rustsec/rustsec). 빌드 때만 쓰는 점검 도구이며 배포물에 들어가지 않는다.
+on:
+  push:
+    paths:
+      - "Cargo.lock"
+      - "ui/src-tauri/Cargo.lock"
+      - ".github/workflows/audit.yml"
+  schedule:
+    # 매일 21:17 UTC (한국 06:17). 정각을 피한다.
+    - cron: "17 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # 도구 판을 고정한다(점검 도구가 저절로 바뀌어 결과가 달라지지 않게). 올릴 때는 이 줄과 캐시 키를 함께 바꾼다.
+      - uses: actions/cache@v4
+        id: tool
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.23.0-${{ runner.os }}
+      - name: Install cargo-audit 0.23.0
+        if: steps.tool.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --version 0.23.0 --locked
+      - name: Audit workspace (Cargo.lock)
+        run: cargo audit --file Cargo.lock
+      - name: Audit UI (ui/src-tauri/Cargo.lock)
+        # 앞 단계가 실패해도 이쪽 결과를 함께 본다
+        if: always()
+        run: cargo audit --file ui/src-tauri/Cargo.lock
