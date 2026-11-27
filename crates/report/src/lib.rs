@@ -215,7 +215,9 @@ pub fn render_html(r: &Report) -> String {
     for s in &r.sections {
         h.push_str(&format!("<section><h2>{}</h2>\n", esc(&s.title)));
         let shown = shown_of(s);
-        if shown < s.count {
+        // 요약 구역(summary)은 건수가 아니라 사실 한 묶음이다 — "1건"으로 적지 않는다(실기 확인 2026-11-28)
+        if s.id == "summary" {
+        } else if shown < s.count {
             h.push_str(&format!(
                 "<p class=\"note\">전체 {}건 중 상위 {}건</p>\n",
                 s.count, shown
@@ -400,6 +402,18 @@ mod tests {
             }
             assert_inert(&render_html(&sample(&s)));
         }
+    }
+
+    #[test]
+    fn summary_section_has_no_count_line() {
+        let mut r = sample("x");
+        r.sections[0].id = "summary".into();
+        r.sections[0].count = 1;
+        r.sections[0].blocks = vec![Block::Facts {
+            rows: vec![("연결 수".into(), "5건".into())],
+        }];
+        let html = render_html(&r);
+        assert!(!html.contains("<p class=\"note\">1건</p>"), "{html}");
     }
 
     #[test]

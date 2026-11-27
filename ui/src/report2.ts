@@ -104,7 +104,7 @@ export function summarySection(x: SummaryInput, period: Period): Section {
   if (k !== null) {
     facts.push(["처음 본 목적지", `${n(k)}곳${x.connsCapped ? " 이상" : ""}`]);
     item.first_seen_remotes = k;
-    notes.push(`‘처음 본 목적지’는 기간 안에 이 PC에서 나간 연결의 목적지 주소(포트는 따지지 않음) 가운데, 이 PC가 그 주소를 처음 기록한 때가 기간 안인 곳입니다(서비스가 돌려준 연결 기록 — ${when(x.connsFrom)} 이후, 최근 것부터 최대 1,000줄 — 기준). 그 전 기록이 보관 기간이 지나 지워졌으면 처음으로 셉니다.`);
+    notes.push(`‘처음 본 목적지’는 기간 안에 이 PC에서 나간 연결의 목적지 주소(포트는 따지지 않음) 가운데, 이 PC가 그 주소를 처음 기록한 때가 기간 안인 곳입니다(서비스가 돌려준 연결 기록 — ${when(x.connsFrom)} 이후, 최근 것부터 최대 1,000줄 — 기준). 그 전 기록이 보관 기간이 지나 지워졌거나 이 PC가 기록을 시작한 지 얼마 안 됐으면(설치 직후) 대부분을 처음으로 셉니다.`);
     const c = coverNote(period, x.connsFrom, "‘처음 본 목적지’ 수는");
     if (c) notes.unshift(c);
   } else {
