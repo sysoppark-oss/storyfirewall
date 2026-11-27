@@ -458,9 +458,32 @@ pub fn connections_list(
         .unwrap_or_default()
         .normalized();
     let now_ft = crate::runtime::unix_to_filetime(now);
+    // 상세 보고서 직접 기간(선택): until = 끝 시각(unix 초, 그 초 끝까지 포함). 없으면 지금까지. since 보다 앞이면 빈 목록.
+    // 0 보다 작거나 정수가 아니면 거부(FILETIME 변환 곱셈이 넘치지 않게 — 재검수 지적)
+    let until_ft = match p.get("until") {
+        None | Some(serde_json::Value::Null) => i64::MAX,
+        Some(v) => match v.as_i64() {
+            Some(u) if u >= 0 => crate::runtime::unix_to_filetime(u.min(now) + 1) - 1,
+            _ => {
+                return Err(RpcError::with(
+                    ErrorCode::InvalidParams,
+                    "until 은 0 이상의 unix 초".to_string(),
+                ))
+            }
+        },
+    };
     let scope = caller.scope();
-    let rows: Vec<_> = graph::views::connections(g, now_ft - since_secs * 10_000_000, cur.limit)
-        .map_err(internal)?
+    // 하나 더 받아 상한을 넘었는지 본다 — 보이는 범위로 거르기 전에 센다(일반 사용자는 거른 뒤 수가 줄어 잘림을 놓친다, 보고서 2단계 검수)
+    let mut raw = graph::views::connections_between(
+        g,
+        now_ft - since_secs * 10_000_000,
+        until_ft,
+        cur.limit + 1,
+    )
+    .map_err(internal)?;
+    let truncated = raw.len() > cur.limit;
+    raw.truncate(cur.limit);
+    let rows: Vec<_> = raw
         .into_iter()
         .filter(|r| scope.process_visible(g, r.process_id))
         .collect();
@@ -469,7 +492,7 @@ pub fn connections_list(
         .map(|r| serde_json::json!({
             "process_id": r.process_id, "pid": r.pid, "image": r.image, "remote_id": r.remote_id,
             "raddr": r.raddr, "rport": r.rport, "proto": r.proto, "domain": r.domain, "direction": r.direction,
-            "count": r.count, "first_ft": r.first_ts, "last_ft": r.last_ts, "sent": r.sent, "recv": r.recv, "proxied_for": r.proxied_for,
+            "count": r.count, "first_ft": r.first_ts, "last_ft": r.last_ts, "remote_first_ft": r.remote_first_ts, "sent": r.sent, "recv": r.recv, "proxied_for": r.proxied_for,
             // 등록 국가·ASN·주소 종류 (오프라인 DB-IP Lite, 등록 국가이지 서버 위치가 아님)
             "where": geo::global().lookup_str(&r.raddr),
         }))
@@ -488,7 +511,7 @@ pub fn connections_list(
         .collect();
     let g = geo::global();
     Ok(
-        serde_json::json!({ "items": items, "since_secs": since_secs, "geo": { "country_db": g.has_country(), "built": g.country_built, "source": "DB-IP Lite (CC BY 4.0) https://db-ip.com" } }),
+        serde_json::json!({ "items": items, "since_secs": since_secs, "truncated": truncated, "until_ft": (until_ft != i64::MAX).then_some(until_ft), "geo": { "country_db": g.has_country(), "built": g.country_built, "source": "DB-IP Lite (CC BY 4.0) https://db-ip.com" } }),
     )
 }
 

@@ -206,6 +206,28 @@ fn connections_are_aggregated_per_process_remote_with_bytes() {
 }
 
 #[test]
+fn connections_between_cuts_the_window_and_keeps_remote_first_seen() {
+    let st = scenario();
+    let all = views::connections(&st, T, 100).unwrap();
+    let p = all.iter().find(|r| r.pid == 2200).expect("payload 접속");
+    // 원격지를 처음 기록한 시각은 조회 창과 무관하게 노드의 처음 시각
+    assert!(p.remote_first_ts.is_some_and(|t| t <= p.first_ts));
+    // 끝 시각을 첫 접속 직후로 자르면 두 번째 접속은 빠진다(횟수·마지막 모두 창 안)
+    let cut = views::connections_between(&st, T, p.first_ts, 100).unwrap();
+    let q = cut.iter().find(|r| r.pid == 2200).expect("첫 접속은 창 안");
+    assert_eq!(q.count, 1);
+    assert_eq!(q.last_ts, p.first_ts);
+    assert_eq!(
+        q.remote_first_ts, p.remote_first_ts,
+        "처음 본 시각은 창과 무관"
+    );
+    // 끝이 시작보다 앞이면 비어 있다
+    assert!(views::connections_between(&st, T + 5 * S, T, 100)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn process_detail_has_signature_origin_children_and_autoruns() {
     let st = scenario();
     let id = proc_id(&st, 2200, T + 3 * S);

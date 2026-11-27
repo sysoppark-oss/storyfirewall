@@ -1,4 +1,4 @@
-// 상세 보고서(통합프로젝트 「상세 보고서 기능 — 공통 규칙과 개발 의뢰 (1판)」 1·2·3장) — 1단계: incidents·blocked·policy.
+// 상세 보고서(통합프로젝트 「상세 보고서 기능 — 공통 규칙과 개발 의뢰 (2판)」 1·2·3장) — 1단계: incidents·blocked·policy(2단계 구역은 report2.ts).
 // 여기서는 조회 결과를 **보고서 모형**(구역 → 문단·표)으로만 바꾼다(순수 함수). 가리기·HTML 바꿔 쓰기·파일 쓰기는 코어(src-tauri/report.rs →
 // crates/report)가 한다. 모형에는 글자만 넣는다 — HTML 을 넣을 수 없고, 넣어도 코어가 전부 바꿔 쓴다.
 // 문장은 화면 문장을 그대로 싣는다(3.1: 보고서용으로 다시 쓰지 않는다).
@@ -29,13 +29,18 @@ export interface Period { from: number; to: number }
 export type PeriodKind = "today" | "7d" | "30d" | "custom";
 
 export const SOURCE_URL = "https://github.com/sysoppark-oss/storyfirewall";
-/// 1단계에서 고를 수 있는 구역(3.1 의 id·메뉴 순서)
-export const SECTIONS_1 = [
+/// 고를 수 있는 구역(3.1 의 id·메뉴 순서). 1단계 incidents·blocked·policy, 2단계 summary·network·installs
+export const SECTIONS = [
+  { id: "summary", title: "대시보드 요약" },
+  { id: "network", title: "네트워크" },
   { id: "incidents", title: "인시던트" },
   { id: "blocked", title: "차단 기록" },
+  { id: "installs", title: "설치 이력" },
   { id: "policy", title: "정책" },
 ] as const;
-export type SectionId = (typeof SECTIONS_1)[number]["id"];
+/// 1단계 구역만(예전 시험·기록과의 호환)
+export const SECTIONS_1 = SECTIONS.filter((s) => s.id === "incidents" || s.id === "blocked" || s.id === "policy");
+export type SectionId = (typeof SECTIONS)[number]["id"];
 /// 사건 상한(구역 하나). 넘으면 "전체 N건 중 상위 M건"
 export const MAX_INCIDENTS = 200;
 /// 표 행 상한(2.7)
@@ -345,7 +350,7 @@ export function plainTime(iso: string): string {
 }
 /// 기록 한 줄을 화면 글자로: [시각, 구역, 기간, 가리기·원자료, 결과, 경로] — 2.3 의 일곱 항목이 모두 읽혀야 한다(검수 지적)
 export function madeCells(e: MadeEntry): string[] {
-  const title = (id: string) => SECTIONS_1.find((s) => s.id === id)?.title ?? id;
+  const title = (id: string) => SECTIONS.find((s) => s.id === id)?.title ?? id;
   return [
     plainTime(e.at),
     e.sections.map(title).join(", ") || "-",

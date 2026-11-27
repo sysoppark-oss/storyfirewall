@@ -40,6 +40,9 @@ fn connections_list_uses_covering_partial_index() {
     let store = graph::store::Store::open_in_memory().unwrap();
     let p = plan(&store, "SELECT src, dst, COUNT(*), MIN(ts), MAX(ts) FROM edges WHERE rel = 'connected' AND ts >= 0 GROUP BY src, dst");
     assert!(p.contains("ix_edges_conn"), "{p}");
+    // 상세 보고서 직접 기간(connections_between): 끝 시각 조건이 붙어도 같은 색인의 범위로 읽어야 한다
+    let p = plan(&store, "SELECT src, dst, COUNT(*), MIN(ts), MAX(ts) FROM edges WHERE rel = 'connected' AND ts >= 0 AND ts <= 9 GROUP BY src, dst");
+    assert!(p.contains("ix_edges_conn"), "{p}");
 }
 
 /// L047: 같은 PID 의 가장 최근 프로세스(수집 이벤트마다·듣는 포트 줄마다)는 (kind, key) 색인 범위로 찾아야 한다

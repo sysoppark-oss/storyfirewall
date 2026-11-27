@@ -1,16 +1,17 @@
-// 보고서 만들기(통합프로젝트 「상세 보고서 기능 — 공통 규칙과 개발 의뢰 (2판)」 1장, 3.3 의 1단계, 2.3 의 보고서 만든 기록).
+// 보고서 만들기(통합프로젝트 「상세 보고서 기능 — 공통 규칙과 개발 의뢰 (2판)」 1장, 3.3 의 1·2단계, 2.3 의 보고서 만든 기록).
 // 구역을 고르고 → 기간 → 가리기 → [만들기] → (진행·취소) → 저장 위치는 코어의 저장 대화상자에서 사용자가 고른다 → [열기] [폴더 열기].
 // 자료는 기존 조회 메서드(읽기 전용)로만 받는다. 서비스는 파일을 쓰지 않는다. 업로드·보내기 단추는 없다(2.3).
 import { rpc } from "../rpc";
 import { state } from "../state";
 import { el, button, clear } from "../ui";
 import {
-  SECTIONS_1, type SectionId, type Section, type Period, type PeriodKind, type REvent, type RBlocked, type RPolicy, type RAddressBlock, type RHistory,
+  SECTIONS, type SectionId, type Section, type Period, type PeriodKind, type REvent, type RBlocked, type RPolicy, type RAddressBlock, type RHistory,
   periodOf, incidentsSection, blockedSection, policySection, makeReport, saveReport, openReport, reportLog, madeCells,
 } from "../report";
+import { summarySection, networkSection, installsSection, type RHour, type RHealth, type RConn, type RListener, type RInstall } from "../report2";
 
 /// 뒤 단계에서 넣을 구역(3.3 의 2·3단계) — 고를 수 없다는 것을 보여 준다
-const LATER = ["대시보드 요약", "네트워크", "설치 이력", "AI 에이전트 감시", "설정 › 진단"];
+const LATER = ["AI 에이전트 감시", "설정 › 진단"];
 const EVENTS_PAGE = 200;
 const EVENTS_MAX = 2000;
 /// blocked.recent 의 limit 상한(1~1000). 기간 안이 더 많으면 구역 설명에 "N건 가운데 최근 1000건만"이라고 적힌다
@@ -44,7 +45,7 @@ export function reportScreen(): HTMLElement {
   const secBox = el("fieldset", "card");
   secBox.append(el("legend", undefined, "담을 메뉴"));
   const checks = new Map<SectionId, HTMLInputElement>();
-  for (const s of SECTIONS_1) {
+  for (const s of SECTIONS) {
     const c = el("input");
     c.type = "checkbox";
     c.checked = true;
@@ -74,7 +75,7 @@ export function reportScreen(): HTMLElement {
     perBox.append(el("label", "block", r, ` ${label}`, ...(k === "custom" ? [custom] : [])));
   }
   custom.hidden = true;
-  perBox.append(el("p", "muted small", "정책은 기간이 없는 메뉴라 만든 시각 기준으로 적습니다(변경 이력만 기간으로 거릅니다)."));
+  perBox.append(el("p", "muted small", "정책과 듣는 포트는 기간이 없는 목록이라 만든 시각 기준으로 적습니다(정책 변경 이력만 기간으로 거릅니다). 연결 기록은 최근 7일, 시간대 요약·설치 이력은 최근 30일까지만 받을 수 있어, 그보다 긴 기간이면 보고서에 그렇다고 적습니다."));
 
   // 3) 가리기
   const maskBox = el("fieldset", "card");
@@ -141,7 +142,7 @@ export function reportScreen(): HTMLElement {
 
   async function start() {
     if (running) return;
-    const picked = SECTIONS_1.filter((s) => checks.get(s.id)!.checked).map((s) => s.id);
+    const picked = SECTIONS.filter((s) => checks.get(s.id)!.checked).map((s) => s.id);
     if (!picked.length) return say("담을 메뉴를 하나 이상 골라 주세요.", "warn");
     const now = Math.floor(Date.now() / 1000);
     const kind = kinds.find(([k]) => radios.get(k)!.checked)![0];
@@ -157,10 +158,11 @@ export function reportScreen(): HTMLElement {
     try {
       const sections: Section[] = [];
       const warns: string[] = [];
+      const shared: Shared = {};
       for (const [i, id] of picked.entries()) {
-        const title = SECTIONS_1.find((s) => s.id === id)!.title;
+        const title = SECTIONS.find((s) => s.id === id)!.title;
         say(`${title} 기록을 모으는 중… (${i + 1}/${picked.length})`);
-        const sec = await collect(id, period, now, alive, warns);
+        const sec = await collect(id, period, now, alive, warns, shared);
         if (!alive()) throw new Cancelled();
         sections.push(sec);
       }
@@ -193,12 +195,74 @@ export function reportScreen(): HTMLElement {
   return root;
 }
 
-/// 구역 하나의 자료를 받아 모형으로. 못 받은 것은 0건으로 그리지 않고 구역 설명·경고에 적는다
-async function collect(id: SectionId, period: Period, now: number, alive: () => boolean, warns: string[]): Promise<Section> {
-  if (id === "incidents") {
-    const got = await collectEvents(alive);
+/// 여러 구역이 같이 쓰는 조회(요약·인시던트의 사건 목록, 요약·네트워크의 연결 기록)는 한 번만 받는다
+interface Shared {
+  events?: Promise<{ events: REvent[]; partial: boolean; error?: string }>;
+  conns?: Promise<{ items: RConn[] | null; from: number; capped: boolean; windowed: boolean; error?: string }>;
+}
+/// connections.list 의 상한: 7일, 1,000줄(서비스 쪽 clamp·PAGE_MAX)
+const CONN_MAX_SECS = 7 * 86400;
+const CONN_LIMIT = 1000;
+/// traffic.hourly·installs.list 의 상한: 30일
+const DAYS_30 = 30 * 86400;
+const INSTALLS_LIMIT = 100;
+function sharedEvents(s: Shared, alive: () => boolean, warns: string[]) {
+  if (!s.events) s.events = collectEvents(alive).then((got) => {
     if (got.error) warns.push(`인시던트 목록을 끝까지 받지 못했습니다(${got.error}). 받은 ${got.events.length}건만 실었습니다.`);
+    return got;
+  });
+  return s.events;
+}
+function sharedConns(s: Shared, period: Period, now: number, warns: string[]) {
+  if (!s.conns) {
+    const secs = Math.min(CONN_MAX_SECS, Math.max(1, now - period.from));
+    // 직접 기간(끝이 지금보다 앞)은 서비스에 끝 시각을 넘겨 그 뒤 접속을 빼고 센다(보고서 2단계 검수 2번)
+    const until = period.to < now ? period.to : undefined;
+    s.conns = rpc<{ items: RConn[]; truncated?: boolean; until_ft?: number | null }>("connections.list", { since_secs: secs, ...(until !== undefined ? { until } : {}), cursor: { limit: CONN_LIMIT } }).then((r) => {
+      if (!r.ok) {
+        warns.push(`연결 기록을 받지 못했습니다(${r.error.message}).`);
+        return { items: null, from: now - secs, capped: false, windowed: true, error: r.error.message };
+      }
+      const items = r.result.items ?? [];
+      // 잘림은 서비스가 보이는 범위로 거르기 전에 센 값(일반 사용자는 거른 뒤 수가 줄어 놓친다). 예전 서비스면 받은 줄 수로
+      return { items, from: now - secs, capped: r.result.truncated ?? items.length >= CONN_LIMIT, windowed: until === undefined || r.result.until_ft != null };
+    });
+  }
+  return s.conns;
+}
+/// 구역 하나의 자료를 받아 모형으로. 못 받은 것은 0건으로 그리지 않고 구역 설명·경고에 적는다
+async function collect(id: SectionId, period: Period, now: number, alive: () => boolean, warns: string[], shared: Shared = {}): Promise<Section> {
+  if (id === "incidents") {
+    const got = await sharedEvents(shared, alive, warns);
     return incidentsSection(got.events, period, got.partial);
+  }
+  if (id === "summary") {
+    const [hr, hl, ev, cn] = await Promise.all([
+      rpc<{ items: RHour[] }>("traffic.hourly", { since_secs: Math.min(DAYS_30, Math.max(3600, now - period.from)) }),
+      rpc<RHealth>("collector.health", {}),
+      sharedEvents(shared, alive, warns),
+      sharedConns(shared, period, now, warns),
+    ]);
+    if (!hr.ok) warns.push(`시간대 요약을 받지 못했습니다(${hr.error.message}).`);
+    if (!hl.ok) warns.push(`수집기 상태를 받지 못했습니다(${hl.error.message}).`);
+    return summarySection({
+      hours: hr.ok ? hr.result.items ?? [] : null, hoursFrom: now - DAYS_30,
+      // 첫 쪽부터 못 받았으면 0건이 아니라 "받지 못함"(검수 5번)
+      events: ev.error && !ev.events.length ? null : ev.events, eventsPartial: ev.partial,
+      conns: cn.items, connsFrom: cn.from, connsCapped: cn.capped,
+      health: hl.ok ? hl.result : null,
+    }, period);
+  }
+  if (id === "network") {
+    const [cn, ls] = await Promise.all([sharedConns(shared, period, now, warns), rpc<{ items: RListener[] }>("listeners.list", {})]);
+    if (!ls.ok) warns.push(`듣는 포트 목록을 받지 못했습니다(${ls.error.message}).`);
+    return networkSection(cn.items, ls.ok ? ls.result.items ?? [] : null, period, { connsFrom: cn.from, capped: cn.capped, windowed: cn.windowed });
+  }
+  if (id === "installs") {
+    const days = Math.min(30, Math.max(1, Math.ceil((now - period.from) / 86400)));
+    const r = await rpc<{ items: RInstall[] }>("installs.list", { days, limit: INSTALLS_LIMIT });
+    if (!r.ok) warns.push(`설치 이력을 받지 못했습니다(${r.error.message}).`);
+    return installsSection(r.ok ? r.result.items ?? [] : null, period, { coverFrom: now - days * 86400, limit: INSTALLS_LIMIT });
   }
   if (id === "blocked") {
     const r = await rpc<{ items: RBlocked[]; matched?: number; total?: number; oldest?: number | null }>("blocked.recent", { limit: BLOCKED_LIMIT, q: "", since: period.from });

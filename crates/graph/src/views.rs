@@ -80,6 +80,8 @@ pub struct ConnRow {
     pub count: i64,
     pub first_ts: i64,
     pub last_ts: i64,
+    /// 원격지 노드를 처음 기록한 시각(FILETIME) — 조회 창과 무관한 "처음 본" 기준(상세 보고서 summary)
+    pub remote_first_ts: Option<i64>,
     pub sent: i64,
     pub recv: i64,
     /// 서비스 경유 귀속이 있으면 원래 요청한 프로세스 노드
@@ -88,18 +90,29 @@ pub struct ConnRow {
 
 /// `since_ts` 이후 접속, 마지막 접속이 늦은 순. `limit` 상한.
 pub fn connections(store: &Store, since_ts: i64, limit: usize) -> Result<Vec<ConnRow>> {
+    connections_between(store, since_ts, i64::MAX, limit)
+}
+
+/// `since_ts` 이상 `until_ts` 이하 접속만 센다(횟수·처음·마지막 모두 그 창 안). 상세 보고서의 직접 기간용.
+/// 주고받은 양(sent·recv)은 conn_bytes 가 (pid, 원격지)별 누계라 창으로 자르지 못한다 — 부르는 쪽이 그렇다고 밝힐 것.
+pub fn connections_between(
+    store: &Store,
+    since_ts: i64,
+    until_ts: i64,
+    limit: usize,
+) -> Result<Vec<ConnRow>> {
     let mut st = store.conn().prepare(
         r#"
         WITH agg AS (
             -- 27차 perf(100만 건 7일 2.2초): 선을 먼저 (src, dst) 쌍으로 접고(부분 색인 ix_edges_conn 만 읽음) 그 뒤 노드와 잇는다
             SELECT src, dst, COUNT(*) AS n, MIN(ts) AS f, MAX(ts) AS l
             FROM edges
-            WHERE rel = 'connected' AND ts >= ?1
+            WHERE rel = 'connected' AND ts >= ?1 AND ts <= ?3
             GROUP BY src, dst
         )
         SELECT p.id, p.key, p.attrs_json, r.id, r.attrs_json,
                CASE WHEN a.src = p.id THEN 'out' ELSE 'in' END AS dir,
-               SUM(a.n), MIN(a.f), MAX(a.l)
+               SUM(a.n), MIN(a.f), MAX(a.l), r.first_ts
         FROM agg a
         JOIN nodes p ON p.id IN (a.src, a.dst) AND p.kind = 'process'
         JOIN nodes r ON r.id IN (a.src, a.dst) AND r.kind = 'remote'
@@ -108,7 +121,7 @@ pub fn connections(store: &Store, since_ts: i64, limit: usize) -> Result<Vec<Con
         LIMIT ?2
         "#,
     )?;
-    let rows = st.query_map(params![since_ts, limit as i64], |r| {
+    let rows = st.query_map(params![since_ts, limit as i64, until_ts], |r| {
         Ok((
             r.get::<_, i64>(0)?,
             r.get::<_, String>(1)?,
@@ -119,12 +132,13 @@ pub fn connections(store: &Store, since_ts: i64, limit: usize) -> Result<Vec<Con
             r.get::<_, i64>(6)?,
             r.get::<_, i64>(7)?,
             r.get::<_, i64>(8)?,
+            r.get::<_, Option<i64>>(9)?,
         ))
     })?;
     let mut bytes = store.conn().prepare("SELECT COALESCE(SUM(sent),0), COALESCE(SUM(recv),0) FROM conn_bytes WHERE pid = ?1 AND raddr = ?2 AND rport = ?3")?;
     let mut out = Vec::new();
     for row in rows {
-        let (pid_node, pkey, pattrs, rid, rattrs, dir, count, first, last) = row?;
+        let (pid_node, pkey, pattrs, rid, rattrs, dir, count, first, last, rfirst) = row?;
         let pa: serde_json::Value = pattrs
             .as_deref()
             .and_then(|s| serde_json::from_str(s).ok())
@@ -154,6 +168,7 @@ pub fn connections(store: &Store, since_ts: i64, limit: usize) -> Result<Vec<Con
             count,
             first_ts: first,
             last_ts: last,
+            remote_first_ts: rfirst,
             sent,
             recv,
             proxied_for: ra["proxied_for"].as_i64(),

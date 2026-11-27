@@ -576,3 +576,56 @@ fn story_lane_answers_while_db_lane_is_full() {
     assert!(r["result"]["items"].is_array(), "{r}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// 상세 보고서 2단계: connections.list 의 until(직접 기간 끝)·truncated·remote_first_ft
+#[test]
+fn connections_list_until_is_validated_and_cuts_window() {
+    let w = Store::open_in_memory().unwrap();
+    let now_ft = svc::runtime::unix_to_filetime(NOW);
+    Ingester::new(&w)
+        .ingest_all(&svc::demo::demo_events(now_ft))
+        .unwrap();
+    let mut rs = ReadState::default();
+    let call = |rs: &mut ReadState, p: serde_json::Value| {
+        reads::connections_list(&w, rs, NOW, p, &caller())
+    };
+    // 끝 시각이 0 보다 작거나 정수가 아니면 거부(FILETIME 곱셈 넘침 방지)
+    for bad in [
+        serde_json::json!(i64::MIN),
+        serde_json::json!(-1),
+        serde_json::json!("어제"),
+        serde_json::json!(1.5),
+    ] {
+        assert!(
+            call(
+                &mut rs,
+                serde_json::json!({ "since_secs": 86_400, "until": bad })
+            )
+            .is_err(),
+            "{bad}"
+        );
+    }
+    // 지금까지(until 없음): 칸이 붙고 잘리지 않았다
+    let all = call(&mut rs, serde_json::json!({ "since_secs": 7 * 86_400 })).unwrap();
+    let items = all["items"].as_array().unwrap();
+    assert!(!items.is_empty());
+    assert_eq!(all["truncated"], false);
+    assert!(all["until_ft"].is_null());
+    assert!(items.iter().all(|it| it.get("remote_first_ft").is_some()));
+    // 끝 시각을 일주일 전으로 자르면 비고, 응답이 자른 끝을 돌려준다
+    let cut = call(
+        &mut rs,
+        serde_json::json!({ "since_secs": 7 * 86_400, "until": NOW - 8 * 86_400 }),
+    )
+    .unwrap();
+    assert!(cut["items"].as_array().unwrap().is_empty());
+    assert!(cut["until_ft"].as_i64().is_some());
+    // 상한 1줄이면 잘림 표시
+    let one = call(
+        &mut rs,
+        serde_json::json!({ "since_secs": 7 * 86_400, "cursor": { "limit": 1 } }),
+    )
+    .unwrap();
+    assert_eq!(one["items"].as_array().unwrap().len(), 1);
+    assert_eq!(one["truncated"], items.len() > 1);
+}
