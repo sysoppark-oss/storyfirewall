@@ -212,7 +212,7 @@ export function networkSection(conns: RConn[] | null, listeners: RListener[] | n
     const open = listeners.filter((l) => l.any_addr).sort((a, b) => a.lport - b.lport || a.proto.localeCompare(b.proto));
     cut("듣는 포트 표", open.length, MAX_ROWS);
     blocks.push(open.length
-      ? { kind: "table", headers: ["포트", "프로그램", "경로"], rows: open.slice(0, MAX_ROWS).map((l) => [`${l.lport}/${l.proto.toUpperCase()}`, l.image ? baseName(l.image) : "(프로그램 확인 못 함)", l.image ?? ""]) }
+      ? { kind: "table", headers: ["포트", "듣는 주소", "프로그램", "경로"], rows: open.slice(0, MAX_ROWS).map((l) => [`${l.lport}/${l.proto.toUpperCase()}`, l.laddr, l.image ? baseName(l.image) : "(프로그램 확인 못 함)", l.image ?? ""]) }
       : { kind: "para", text: "모든 주소(0.0.0.0·::)에서 듣는 포트가 없습니다." });
     notes.push("듣는 포트는 기간이 없는 목록이라 보고서를 만든 시각 기준입니다. 밖에서 실제로 닿는지는 Windows 방화벽·공유기 설정에 따라 다릅니다.");
   }
@@ -227,11 +227,19 @@ export interface RInstall {
   /// 잘렸어도 접속·자동 실행·파일 쓰기를 한 자손은 모두 담았나(그러면 개수에 "이상"을 붙이지 않는다 — 화면과 같게)
   facts_complete?: boolean;
 }
+/// 만든 파일 수 칸: 자손이 잘렸고 사실을 다 담았다고 하지 않으면 "이상", 0 이면서 잘렸으면 "확인 못 함(잘림)"
+function filesText(r: RInstall): string {
+  const partial = !!r.truncated && !r.facts_complete;
+  if (partial && !r.files.length) return "확인 못 함(잘림)";
+  return `${n(r.files.length)}개${partial ? " 이상" : ""}`;
+}
 export function installsSection(runs: RInstall[] | null, period: Period, meta: { coverFrom: number; limit: number }): Section {
   const notes = [
     `${HOW_FOUND} 화면의 설치 이력과 같은 기준이며, 기간 안에 시작한 설치만 실었습니다.`,
     `자동 실행 등록의 ${AUTORUN_SCOPE}.`,
     "‘인터넷 출신’은 설치 파일에 붙은 내려받은 곳 표시(MOTW)를 읽은 것입니다. 표시가 없으면 비워 둡니다 — 인터넷에서 오지 않았다는 뜻은 아닙니다.",
+    "‘만든 실행 파일’은 사용자가 쓸 수 있는 경로(사용자 폴더 등)에 만든 실행 파일·스크립트만 셉니다. Program Files·Windows 폴더처럼 관리자만 쓰는 곳에 만든 파일은 수집 범위 밖이라 0으로 나옵니다.",
+    "‘서명’은 Windows가 믿는 인증서로 유효하게 서명한 회사 이름입니다. 자체 서명(시험용) 파일은 ‘유효한 서명 확인 안 됨’으로 나옵니다 — 인시던트 구역에서는 같은 파일을 ‘자체 서명’으로 자세히 적을 수 있습니다.",
     "한계: 이름 기준에 맞지 않는 실행 파일(예: 내려받아 바로 실행한 이름 모를 프로그램)은 이 구역에 나오지 않습니다 — 그런 실행은 ‘인시던트’ 구역의 4장 판정(유입 → 실행 → 자리잡기 → 외부 접속)으로 봅니다. 서명은 설치 프로그램 자신의 것만 적었습니다. 서비스는 설치 묶음을 최근 것부터 400개까지 들고 있습니다.",
   ];
   if (runs && outOfCover(period, meta.coverFrom)) {
@@ -250,7 +258,7 @@ export function installsSection(runs: RInstall[] | null, period: Period, meta: {
   if (!rows.length) blocks.push({ kind: "para", text: "기간 안에 시작한 설치가 없습니다." });
   else {
     blocks.push({ kind: "table", headers: ["시작", "설치 프로그램", "서명", "인터넷 출신", "만든 실행 파일", "자동 실행 등록"], rows: rows.map((r) => [
-      when(ftToUnix(r.start_ts)), r.image, r.signer ? r.signer : "서명 없음·확인 안 됨", r.origin ?? "", `${n(r.files.length)}개${r.truncated && !r.facts_complete ? " 이상" : ""}`, `${n(r.autoruns.length)}건`,
+      when(ftToUnix(r.start_ts)), r.image, r.signer ? r.signer : "유효한 서명 확인 안 됨", r.origin ?? "", filesText(r), `${n(r.autoruns.length)}건`,
     ]) });
     const auto = rows.flatMap((r) => r.autoruns.map(([where, target]) => [when(ftToUnix(r.start_ts)), baseName(r.image), where, target]));
     if (auto.length > MAX_ROWS) notes.push(`자동 실행 등록이 ${n(auto.length)}건이라 표에는 ${n(MAX_ROWS)}건만 실었습니다.`);

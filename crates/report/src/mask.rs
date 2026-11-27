@@ -189,12 +189,15 @@ impl Masker {
         }
         // 2) 사용자 폴더 경로의 이름 자리
         out = mask_user_dirs(&out);
-        // 3) 이름: 낱말 경계에서만(대소문자 무시). 긴 이름부터
+        // 3) 이름: 낱말 경계에서만(대소문자 무시). 긴 이름부터.
+        //    흔한 낱말인 계정 이름("user", "admin" …)은 낱말로 바꾸지 않는다 — Windows 규칙 이름 "Query User" 가
+        //    "Query 사용자"로 망가지고, 오히려 계정 이름이 그 낱말임을 드러낸다(실기 보고서 검수 2026-11-28).
+        //    그런 이름도 사용자 폴더 경로 안에서는 2) 가 가린다
         let mut names: Vec<(String, &str)> = self
             .who
             .users
             .iter()
-            .filter(|u| u.chars().count() >= 2)
+            .filter(|u| u.chars().count() >= 2 && !is_generic_account(u))
             .map(|u| (u.clone(), "사용자"))
             .collect();
         if self.who.pc_name.chars().count() >= 2 {
@@ -216,6 +219,28 @@ impl Masker {
             _ => {}
         }
     }
+}
+
+/// 사람을 가리키지 않는 흔한 계정 이름(낱말 바꾸기에서 뺀다)
+fn is_generic_account(name: &str) -> bool {
+    const GENERIC: &[&str] = &[
+        "user",
+        "users",
+        "admin",
+        "administrator",
+        "owner",
+        "guest",
+        "pc",
+        "home",
+        "default",
+        "public",
+        "test",
+        "system",
+        "사용자",
+        "관리자",
+    ];
+    let n = name.trim().to_lowercase();
+    GENERIC.contains(&n.as_str())
 }
 
 /// `name` 이 낱말로 나온 곳을 `label` 로(대소문자 무시). 다른 낱말의 일부면 그대로 둔다
@@ -289,6 +314,20 @@ mod tests {
         assert_eq!(m.text(r"desktop-rblmsdi\PJG 로그온"), r"PC-1\사용자 로그온");
         // 다른 낱말의 일부는 건드리지 않는다
         assert_eq!(m.text("pjgtool.exe, mypjg"), "pjgtool.exe, mypjg");
+    }
+
+    #[test]
+    fn generic_account_name_is_masked_only_in_user_dirs() {
+        let mut m = Masker::new(Who {
+            pc_name: "desktop-x".into(),
+            users: vec!["user".into()],
+            ..Default::default()
+        });
+        assert_eq!(
+            m.text(r"C:\Users\user\AppData\x.exe"),
+            r"C:\Users\사용자\AppData\x.exe"
+        );
+        assert_eq!(m.text("Query User {3F2A}"), "Query User {3F2A}");
     }
 
     #[test]

@@ -144,7 +144,7 @@ describe("installs", () => {
     const s = installsSection([run({}), run({ root: 2, start_ts: ft(NOW - 5 * 86400) })], P, { coverFrom: NOW - 86400, limit: 100 });
     expect(s.count).toBe(1);
     const t = s.blocks[0] as { rows: string[][] };
-    expect(t.rows[0]![2]).toBe("서명 없음·확인 안 됨");
+    expect(t.rows[0]![2]).toBe("유효한 서명 확인 안 됨");
     expect(t.rows[0]![3]).toBe("https://example.com/setup.exe");
     expect(JSON.stringify(s.blocks)).toContain("schtasks /create");
   });

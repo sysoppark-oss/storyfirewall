@@ -249,6 +249,7 @@ export function blockedSection(items: RBlocked[], period: Period, meta: { matche
   if (meta.oldest && meta.oldest > period.from) notes.unshift(`주의: 이 구역은 기간 전체가 아니라 ${when(meta.oldest)} 이후의 차단만 담고 있습니다. 서비스가 가진 가장 오래된 차단 기록이 그 시각이며, 그 전은(서비스가 다시 시작됐거나 오래된 기록이 밀려나) 이 보고서에 없습니다 — 차단이 없었다는 뜻이 아닙니다.`);
   else if (meta.oldest === null && !rows.length) notes.unshift("주의: 서비스가 가진 차단 기록이 없습니다. 서비스를 다시 시작한 뒤라면 그 전의 차단은 이 보고서에 없습니다(없었다는 뜻이 아닙니다).");
   if (rows.length < count) notes.push(`기간 안 ${count}건 가운데 최근 ${rows.length}건만 받아, 아래 표는 그 ${rows.length}건으로 셌습니다.`);
+  if (byDest.length > 100) notes.push(`상위 차단 목적지 표는 전체 ${byDest.length.toLocaleString("ko-KR")}곳 가운데 많은 순 100곳만 실었습니다.`);
   const blocks: Block[] = rows.length
     ? [
         { kind: "heading", text: "규칙별 차단 건수" },
