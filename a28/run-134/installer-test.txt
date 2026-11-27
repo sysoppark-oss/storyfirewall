@@ -4,7 +4,7 @@ PASS  ui exe in Program Files
 PASS  svc exe in Program Files
 PASS  geo data installed
 PASS  service running after install (Running)
-status: state=4 published=\\.\pipe\story-firewall-1c92bc7ff407435687552bf12beacfbb wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
+status: state=4 published=\\.\pipe\story-firewall-2f32e77ae10e41aeba771d419f22dc4d wfp_filters=0 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
 
 PASS  pipe name published
 PASS  data dir owner trusted
@@ -12,6 +12,9 @@ PASS  HKLM Run --tray ("C:\Program Files\Story Firewall\story-firewall-ui.exe" -
 PASS  rack Exe = service exe (C:\Program Files\Story Firewall\story-firewall-svc.exe)
 PASS  rack ClientExe = ui exe (C:\Program Files\Story Firewall\story-firewall-ui.exe)
 PASS  rack Kind/Api (service 1.0)
+PASS  rack slot in 64-bit view (Exe=C:\Program Files\Story Firewall\story-firewall-svc.exe)
+PASS  rack slot NOT in 32-bit view (WOW6432Node)
+shell is64=True
 PASS  users cannot write install dir
 PASS  start mode auto (Auto)
 PASS  service path in Program Files ("C:\Program Files\Story Firewall\story-firewall-svc.exe" run)
@@ -24,11 +27,11 @@ apply: policy_id=1 version=1 filters=2 confirm=ok
 PASS  policy applied and confirmed before upgrade
 PASS  WFP filters present before upgrade (2)
 reinstall exit=0
-during upgrade: samples=40 min=2
+during upgrade: samples=37 min=2
 PASS  filters never dropped during upgrade (min=2, before=2)
 PASS  service running after reinstall
-service pid before=6832 after=5512 (restarted = files replaced)
-status: state=4 published=\\.\pipe\story-firewall-5cfb25025043463cbb98ae31c56555d6 wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
+service pid before=7340 after=5116 (restarted = files replaced)
+status: state=4 published=\\.\pipe\story-firewall-007383ed3cf84f4c94f2c2b48633efbb wfp_filters=2 data_dir=C:\ProgramData\StoryFirewall owner_trusted=true exe_version=0.1.6
 
 PASS  same filter count after upgrade + restart reconcile
 uninstall exit=0
@@ -41,4 +44,5 @@ PASS  pipe name unpublished
 PASS  no WFP filters left
 PASS  data kept on silent uninstall
 PASS  rack registry entry removed on uninstall
+PASS  no rack slot left in 32-bit view after uninstall
 assert: 0 failed
